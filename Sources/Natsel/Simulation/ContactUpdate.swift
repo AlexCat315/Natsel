@@ -281,43 +281,40 @@ extension World {
         } else if shapeA.type == .meshShape || shapeA.type == .heightShape {
             touching = computeMeshManifolds(contactId, shapeA: shapeA, transformA: xfA,
                                              shapeB: shapeB, transformB: xfB, isFast: isFast, cs: &cs)
-            var c = cs.get(contactId)
-            if touching && ((shapeA.flags | shapeB.flags) & ShapeFlags.enableHitEvents.rawValue) != 0 {
-                c.flags |= ContactFlags.simEnableHitEvent.rawValue
-            } else {
-                c.flags &= ~ContactFlags.simEnableHitEvent.rawValue
+            let enableHit = touching
+                && ((shapeA.flags | shapeB.flags) & ShapeFlags.enableHitEvents.rawValue) != 0
+            cs.withContact(contactId) { contact in
+                if enableHit {
+                    contact.flags |= ContactFlags.simEnableHitEvent.rawValue
+                } else {
+                    contact.flags &= ~ContactFlags.simEnableHitEvent.rawValue
+                }
             }
-            cs.set(contactId, c)
 
         } else {
             // Convex-vs-convex
             touching = updateConvexContact(contactId, shapeA, xfA, shapeB, xfB, false, &cs)
         }
 
-        contact = cs.get(contactId)
-
         if touching {
             let centerA = rotateVector(xfA.q, localCenterA)
             let centerB = rotateVector(xfB.q, localCenterB)
 
-            // Adjust anchors to be relative to center of mass
-            for i in 0..<contact.manifoldCount {
-                var manifold = contact.manifolds[Int(i)]
-                for j in 0..<manifold.pointCount {
-                    var mp = manifold.points[Int(j)]
-                    mp.anchorA = mp.anchorA - centerA
-                    mp.anchorB = mp.anchorB - centerB
-                    manifold.points[Int(j)] = mp
+            // Adjust anchors to be relative to center of mass, editing the stored contact in place.
+            cs.withContact(contactId) { contact in
+                for i in 0..<contact.manifoldCount {
+                    for j in 0..<contact.manifolds[Int(i)].pointCount {
+                        contact.manifolds[Int(i)].points[Int(j)].anchorA =
+                            contact.manifolds[Int(i)].points[Int(j)].anchorA - centerA
+                        contact.manifolds[Int(i)].points[Int(j)].anchorB =
+                            contact.manifolds[Int(i)].points[Int(j)].anchorB - centerB
+                    }
                 }
-                contact.manifolds[Int(i)] = manifold
+                contact.flags |= ContactFlags.simTouching.rawValue
             }
-
-            contact.flags |= ContactFlags.simTouching.rawValue
         } else {
-            contact.flags &= ~ContactFlags.simTouching.rawValue
+            cs.withContact(contactId) { $0.flags &= ~ContactFlags.simTouching.rawValue }
         }
-
-        cs.set(contactId, contact)
 
         return touching
     }

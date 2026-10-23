@@ -99,9 +99,7 @@ extension World {
         var stateBits = BitSet(bitCapacity: contactCapacity)
         stateBits.setBitCountAndClear(contactCapacity)
 
-        for contactId in contactIndices {
-            collideOneContact(contactId, &stateBits)
-        }
+        collideEachContact(contactIndices, &stateBits)
         collideStatePass(stateBits)
     }
 
@@ -117,8 +115,13 @@ extension World {
                 continue
             }
 
+            // Read the flag word first: most slots are untouched on a given step, and copying the
+            // whole contact (three reference-counted fields) for them was pure overhead.
+            let flags = contacts[Int(contactId)].flags
+            guard flags != 0 else {
+                continue
+            }
             var contact = contacts[Int(contactId)]
-            let flags = contact.flags
 
             if (flags & ContactFlags.simDisjoint.rawValue) != 0 {
                 // Bounding boxes no longer overlap
@@ -202,10 +205,16 @@ extension World {
         }
     }
 
-    /// Update one awake contact.
-    private func collideOneContact(_ contactId: Int32, _ stateBits: inout BitSet) {
+    /// Update the awake contacts one by one, sharing one store across the whole pass.
+    ///
+    /// `ContactStore` holds a write reference to the world's contact array. Taking it per contact
+    /// made the array multiply referenced for every contact, so each write copied the entire array;
+    /// with tens of thousands of contacts that copy dominated the collide phase.
+    private func collideEachContact(_ contactIds: [Int32], _ stateBits: inout BitSet) {
         var store = ContactStore(&contacts)
-        collideOneContact(contactId, &stateBits, store: &store, nil)
+        for contactId in contactIds {
+            collideOneContact(contactId, &stateBits, store: &store, nil)
+        }
     }
 
     private func collideOneContact(

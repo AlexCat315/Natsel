@@ -40,6 +40,18 @@ struct ContactStore {
         }
     }
 
+    /// Borrow one contact for in-place mutation without copying it.
+    ///
+    /// `Contact` carries three reference-counted fields, so a get/modify/set round trip retains and
+    /// releases several arrays per contact. This hands out the stored element directly.
+    @inline(__always)
+    func withContact<R>(_ id: Int32, _ body: (inout Contact) -> R) -> R {
+        if buffer.count > 0 {
+            return body(&buffer[Int(id)])
+        }
+        return body(&array!.pointee[Int(id)])
+    }
+
     @inline(__always)
     var count: Int {
         if buffer.count > 0 { return buffer.count }

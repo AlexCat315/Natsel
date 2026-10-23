@@ -165,6 +165,7 @@ extension World {
     func solveContinuous(_ bodySimIndex: Int32, _ dt: Float) {
         var awakeSet = solverSets[Int(SetType.awakeSet.rawValue)]
         solveContinuous(bodySimIndex, dt, &awakeSet)
+        solverSets[Int(SetType.awakeSet.rawValue)] = awakeSet
     }
 
     /// Continuous pass against an awake set the caller already owns. The caller keeps the set so

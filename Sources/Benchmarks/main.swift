@@ -79,14 +79,31 @@ for (index, benchmark) in benchmarks.enumerated() {
 
         world.step(1.0 / 60.0, subStepCount: 4)
 
+        var acc = Profile()
         let start = DispatchTime.now().uptimeNanoseconds
         for stepIndex in 1..<stepCount {
             if benchmark.step != nil {
                 benchmark.step!(world, stepIndex)
             }
             world.step(1.0 / 60.0, subStepCount: 4)
+            let pr = world.profile
+            acc.pairs += pr.pairs; acc.collide += pr.collide
+            acc.prepareConstraints += pr.prepareConstraints; acc.warmStart += pr.warmStart
+            acc.solveImpulses += pr.solveImpulses; acc.relaxImpulses += pr.relaxImpulses
+            acc.storeImpulses += pr.storeImpulses
+            acc.integrateVelocities += pr.integrateVelocities; acc.integratePositions += pr.integratePositions
+            acc.transforms += pr.transforms; acc.hitEvents += pr.hitEvents
+            acc.sleepIslands += pr.sleepIslands; acc.constraints += pr.constraints
         }
         let end = DispatchTime.now().uptimeNanoseconds
+        let n = Float(stepCount - 1)
+        if ProcessInfo.processInfo.environment["NATSEL_PHASE"] == "1" {
+            print(String(format: "AVG %@ pairs=%.2f collide=%.2f prepare=%.2f warm=%.2f push=%.2f solve=%.2f store=%.2f intV=%.2f intP=%.2f finalize=%.2f hit=%.2f sleep=%.2f substeps=%.2f",
+                benchmark.name, acc.pairs/n, acc.collide/n, acc.prepareConstraints/n, acc.warmStart/n,
+                acc.solveImpulses/n, acc.relaxImpulses/n, acc.storeImpulses/n,
+                acc.integrateVelocities/n, acc.integratePositions/n, acc.transforms/n,
+                acc.hitEvents/n, acc.sleepIslands/n, acc.constraints/n))
+        }
 
         let ms = Double(end - start) / 1_000_000.0
         if ProcessInfo.processInfo.environment["NATSEL_PHASE"] == "1" {

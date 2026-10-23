@@ -154,13 +154,16 @@ extension World {
 
         // Iterate contacts in id order so events are deterministic.
         for contactId in 0..<Int32(contacts.count) {
-            let contact = contacts[Int(contactId)]
-            if contact.contactId == B3.nullIndex {
+            // Filter on the cheap scalar fields before copying the contact: the copy retains three
+            // arrays, and almost every slot fails this test.
+            let flags = contacts[Int(contactId)].flags
+            guard (flags & ContactFlags.simEnableHitEvent.rawValue) != 0 else {
                 continue
             }
-            guard contact.setIndex == SetType.awakeSet.rawValue,
-                contact.colorIndex != B3.nullIndex,
-                (contact.flags & ContactFlags.simEnableHitEvent.rawValue) != 0
+            let contact = contacts[Int(contactId)]
+            guard contact.contactId != B3.nullIndex,
+                contact.setIndex == SetType.awakeSet.rawValue,
+                contact.colorIndex != B3.nullIndex
             else {
                 continue
             }

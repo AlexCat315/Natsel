@@ -3,6 +3,37 @@
 // wide support query is reproduced including the mantissa index embedding so near ties resolve
 // to the same vertex.
 
+
+/// Run `body` with a mutable buffer over an inline array's storage.
+///
+/// `InlineArray` has no `withUnsafeMutableBufferPointer`, but the collision kernels below take raw
+/// pointers into these scratch vectors. The array is stack allocated, so this adds no work.
+@inline(__always)
+func withInlineBuffer<let N: Int, Element, R>(
+    _ array: inout InlineArray<N, Element>,
+    _ body: (UnsafeMutableBufferPointer<Element>) -> R
+) -> R {
+    withUnsafeMutablePointer(to: &array) { pointer in
+        let raw = UnsafeMutableRawPointer(pointer)
+        let typed = raw.assumingMemoryBound(to: Element.self)
+        return body(UnsafeMutableBufferPointer(start: typed, count: N))
+    }
+}
+
+/// Read-only form of `withInlineBuffer`.
+@inline(__always)
+func withInlineReadBuffer<let N: Int, Element, R>(
+    _ array: InlineArray<N, Element>,
+    _ body: (UnsafeBufferPointer<Element>) -> R
+) -> R {
+    var copy = array
+    return withUnsafePointer(to: &copy) { pointer in
+        let raw = UnsafeRawPointer(pointer)
+        let typed = raw.assumingMemoryBound(to: Element.self)
+        return body(UnsafeBufferPointer(start: typed, count: N))
+    }
+}
+
 // MARK: - Constants
 
 let maxHullEdges: Int32 = B3.maxHullEdges
@@ -313,12 +344,14 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
     // Adjust the radius to ensure the best axis isn't skipped.
     let radiusBound = radius - (B3.linearSlop + 0.001 * (centerDistance + radius))
 
-    var dotA = [Float](repeating: 0, count: Int(maxHullFaces) + 4)
-    var dotB = [Float](repeating: 0, count: Int(maxHullFaces) + 4)
-    var planeDotA = [Float](repeating: 0, count: Int(maxHullFaces) + 4)
-    var planeDotB = [Float](repeating: 0, count: Int(maxHullFaces) + 4)
+    // Stack scratch: this routine runs per candidate hull pair, so heap arrays here dominated the
+    // collide cost. The sizes are fixed by the hull limits.
+    var dotA = InlineArray<132, Float>(repeating: 0)
+    var dotB = InlineArray<132, Float>(repeating: 0)
+    var planeDotA = InlineArray<132, Float>(repeating: 0)
+    var planeDotB = InlineArray<132, Float>(repeating: 0)
 
-    dotA.withUnsafeMutableBufferPointer { getFaceDots(hullA, deltaCenter, $0.baseAddress!) }
+    withInlineBuffer(&dotA) { getFaceDots(hullA, deltaCenter, $0.baseAddress!) }
 
     // Find the face of hullA that most aligns with centerDelta.
     var seedIndexA: Int32 = 0
@@ -390,7 +423,7 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
     let cA = aabbCenter(hullA.aabb)
     let hA = aabbExtents(hullA.aabb)
 
-    dotB.withUnsafeMutableBufferPointer {
+    withInlineBuffer(&dotB) {
         getFaceDots(hullB, -mulMV(invR, deltaCenter), $0.baseAddress!)
     }
 
@@ -456,12 +489,12 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
     // separation.
     let halfEdgeCountA = hullA.halfEdgeCount
     let halfEdgesA = hullA.edges!
-    var edgeIndicesA = [Int32](repeating: 0, count: Int(maxHullEdges) + 4)
+    var edgeIndicesA = InlineArray<132, Int32>(repeating: 0)
     var na: Int32 = 0
 
     let halfEdgeCountB = hullB.halfEdgeCount
     let halfEdgesB = hullB.edges!
-    var edgeIndicesB = [Int32](repeating: 0, count: Int(maxHullEdges))
+    var edgeIndicesB = InlineArray<132, Int32>(repeating: 0)
     var nb: Int32 = 0
 
     let maxFaceSeparation = maxFloat(res.faceA.separation, res.faceB.separation)
@@ -472,17 +505,17 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
     let centerBinA = mulMV(R, hullB.center) + xfB.p
     let centerAinB = mulMV(invR, hullA.center - xfB.p)
 
-    planeDotA.withUnsafeMutableBufferPointer {
+    withInlineBuffer(&planeDotA) {
         getFacePlaneSeparations(hullA, centerBinA, $0.baseAddress!)
     }
-    planeDotB.withUnsafeMutableBufferPointer {
+    withInlineBuffer(&planeDotB) {
         getFacePlaneSeparations(hullB, centerAinB, $0.baseAddress!)
     }
 
     let cosinesA = hullA.edgeCosines!
     let cosinesB = hullB.edgeCosines!
 
-    edgeIndicesA.withUnsafeMutableBufferPointer { edgeIndicesA in
+    withInlineBuffer(&edgeIndicesA) { edgeIndicesA in
         for i in stride(from: 0, to: Int(halfEdgeCountA), by: 2) {
             let i1 = Int32(halfEdgesA[i].face)
             let i2 = Int32(halfEdgesA[i + 1].face)
@@ -494,7 +527,7 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
         }
     }
 
-    edgeIndicesB.withUnsafeMutableBufferPointer { edgeIndicesB in
+    withInlineBuffer(&edgeIndicesB) { edgeIndicesB in
         for i in stride(from: 0, to: Int(halfEdgeCountB), by: 2) {
             let i1 = Int32(halfEdgesB[i].face)
             let i2 = Int32(halfEdgesB[i + 1].face)
@@ -512,22 +545,22 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
 
         let vertexB = res.faceA.indexB != B3.nullIndex ? res.faceA.indexB : seedVertexB
         let probeB = Vec3(vxB[Int(vertexB)], vyB[Int(vertexB)], vzB[Int(vertexB)])
-        planeDotA.withUnsafeMutableBufferPointer {
+        withInlineBuffer(&planeDotA) {
             getFacePlaneSeparations(hullA, mulMV(R, probeB) + xfB.p, $0.baseAddress!)
         }
-        planeDotA.withUnsafeBufferPointer { planeDotA in
-            edgeIndicesA.withUnsafeMutableBufferPointer {
+        withInlineReadBuffer(planeDotA) { planeDotA in
+            withInlineBuffer(&edgeIndicesA) {
                 na = filterEdgeCandidates(hullA, planeDotA.baseAddress!, probeBound, $0.baseAddress!, na)
             }
         }
 
         let vertexA = res.faceB.indexA != B3.nullIndex ? res.faceB.indexA : seedVertexA
         let probeA = Vec3(vxA[Int(vertexA)], vyA[Int(vertexA)], vzA[Int(vertexA)])
-        planeDotB.withUnsafeMutableBufferPointer {
+        withInlineBuffer(&planeDotB) {
             getFacePlaneSeparations(hullB, mulMV(invR, probeA - xfB.p), $0.baseAddress!)
         }
-        planeDotB.withUnsafeBufferPointer { planeDotB in
-            edgeIndicesB.withUnsafeMutableBufferPointer {
+        withInlineReadBuffer(planeDotB) { planeDotB in
+            withInlineBuffer(&edgeIndicesB) {
                 nb = filterEdgeCandidates(hullB, planeDotB.baseAddress!, probeBound, $0.baseAddress!, nb)
             }
         }
@@ -539,10 +572,10 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
     }
 
     // B face normals in A space, negated. B vertices in A space, negated.
-    var bFNx = [Float](repeating: 0, count: Int(maxHullFaces) + 4)
+    var bFNx = InlineArray<132, Float>(repeating: 0)
     var bFNy = bFNx
     var bFNz = bFNx
-    var bWx = [Float](repeating: 0, count: Int(maxHullVertices) + 4)
+    var bWx = InlineArray<132, Float>(repeating: 0)
     var bWy = bWx
     var bWz = bWx
 
@@ -552,9 +585,9 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
     let nzB = nyB + Int(faceStrideB)
 
     let wideFaceCountB = roundUpToSIMDWidth(faceCountB)
-    bFNx.withUnsafeMutableBufferPointer { bFNx in
-        bFNy.withUnsafeMutableBufferPointer { bFNy in
-            bFNz.withUnsafeMutableBufferPointer { bFNz in
+    withInlineBuffer(&bFNx) { bFNx in
+        withInlineBuffer(&bFNy) { bFNy in
+            withInlineBuffer(&bFNz) { bFNz in
                 negativeTransformFromSoA(
                     R, xfB.p, nxB, nyB, nzB, wideFaceCountB,
                     bFNx.baseAddress!, bFNy.baseAddress!, bFNz.baseAddress!, false
@@ -562,9 +595,9 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
             }
         }
     }
-    bWx.withUnsafeMutableBufferPointer { bWx in
-        bWy.withUnsafeMutableBufferPointer { bWy in
-            bWz.withUnsafeMutableBufferPointer { bWz in
+    withInlineBuffer(&bWx) { bWx in
+        withInlineBuffer(&bWy) { bWy in
+            withInlineBuffer(&bWz) { bWz in
                 negativeTransformFromSoA(
                     R, xfB.p, vxB, vyB, vzB, wideVertexCountB,
                     bWx.baseAddress!, bWy.baseAddress!, bWz.baseAddress!, true
@@ -575,8 +608,7 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
 
     // Per A edge data. n0 and n1 are the two face normals, d the edge vector, v0 the first vertex.
     // tol is the parallel edge tolerance, scaled by the edge length.
-    let ne = Int(maxHullEdges) + 4
-    var aN0x = [Float](repeating: 0, count: ne)
+    var aN0x = InlineArray<132, Float>(repeating: 0)
     var aN0y = aN0x
     var aN0z = aN0x
     var aN1x = aN0x
