@@ -1,0 +1,216 @@
+#if canImport(Darwin)
+internal import Darwin
+#elseif canImport(Glibc)
+internal import Glibc
+#elseif canImport(Musl)
+internal import Musl
+#endif
+internal import Dispatch
+import Synchronization
+
+// MARK: - Timer
+
+/// Get the absolute number of system ticks. The value is platform specific.
+public func getTicks() -> UInt64 {
+    #if canImport(Darwin)
+    return mach_absolute_time()
+    #else
+    var ts = timespec()
+    clock_gettime(CLOCK_MONOTONIC, &ts)
+    return UInt64(ts.tv_sec) * 1_000_000_000 + UInt64(ts.tv_nsec)
+    #endif
+}
+
+private let millisecondsPerTick: Double = {
+    #if canImport(Darwin)
+    var timebase = mach_timebase_info_data_t()
+    mach_timebase_info(&timebase)
+    // convert to ns then to ms
+    return 1e-6 * Double(timebase.numer) / Double(timebase.denom)
+    #else
+    return 1e-6
+    #endif
+}()
+
+/// Get the milliseconds passed from an initial tick value.
+public func getMilliseconds(_ ticks: UInt64) -> Float {
+    let ticksNow = getTicks()
+    return Float(millisecondsPerTick * Double(ticksNow &- ticks))
+}
+
+/// Get the milliseconds passed from an initial tick value and reset the tick value.
+public func getMillisecondsAndReset(_ ticks: inout UInt64) -> Float {
+    let ticksNow = getTicks()
+    let ms = Float(millisecondsPerTick * Double(ticksNow &- ticks))
+    ticks = ticksNow
+    return ms
+}
+
+/// Yield to be used in a busy loop.
+public func yieldThread() {
+    sched_yield()
+}
+
+/// Sleep the current thread for a number of milliseconds.
+public func sleepThread(_ milliseconds: Int32) {
+    var ts = timespec()
+    ts.tv_sec = Int(milliseconds / 1000)
+    ts.tv_nsec = Int(milliseconds % 1000) * 1_000_000
+    nanosleep(&ts, nil)
+}
+
+// MARK: - Threading primitives
+
+final class B3Mutex: @unchecked Sendable {
+    private let mutex: UnsafeMutablePointer<pthread_mutex_t>
+
+    init() {
+        mutex = .allocate(capacity: 1)
+        mutex.initialize(to: pthread_mutex_t())
+        pthread_mutex_init(mutex, nil)
+    }
+
+    deinit {
+        pthread_mutex_destroy(mutex)
+        mutex.deallocate()
+    }
+
+    func lock() {
+        pthread_mutex_lock(mutex)
+    }
+
+    func unlock() {
+        pthread_mutex_unlock(mutex)
+    }
+}
+
+final class B3Semaphore: @unchecked Sendable {
+    private let semaphore: DispatchSemaphore
+    private let initialCount: Int32
+
+    init(_ initCount: Int32) {
+        semaphore = DispatchSemaphore(value: Int(initCount))
+        initialCount = initCount
+    }
+
+    deinit {
+        // libdispatch aborts if the current count is less than the initial count at release time.
+        // Pad with signals so the invariant always holds; no one is waiting at this point.
+        for _ in 0..<initialCount {
+            semaphore.signal()
+        }
+    }
+
+    func wait() {
+        semaphore.wait()
+    }
+
+    func signal() {
+        semaphore.signal()
+    }
+}
+
+final class B3Thread: @unchecked Sendable {
+    private final class Start {
+        let function: () -> Void
+        let name: String?
+
+        init(function: @escaping () -> Void, name: String?) {
+            self.function = function
+            self.name = name
+        }
+    }
+
+    #if canImport(Darwin)
+    private var thread: pthread_t?
+    #else
+    private var thread = pthread_t()
+    #endif
+
+    /// Name may be nil, otherwise it is copied.
+    init(name: String?, _ function: @escaping () -> Void) {
+        let start = Unmanaged.passRetained(Start(function: function, name: name)).toOpaque()
+        pthread_create(&thread, nil, { param in
+            let start = Unmanaged<Start>.fromOpaque(param).takeRetainedValue()
+            if let name = start.name, !name.isEmpty {
+                #if canImport(Darwin)
+                pthread_setname_np(String(name.prefix(15)))
+                #else
+                pthread_setname_np(pthread_self(), String(name.prefix(15)))
+                #endif
+            }
+            start.function()
+            return nil
+        }, start)
+    }
+
+    func join() {
+        #if canImport(Darwin)
+        if let thread {
+            pthread_join(thread, nil)
+        }
+        #else
+        pthread_join(thread, nil)
+        #endif
+    }
+}
+
+// MARK: - Atomics on plain memory
+
+/// Plain storage for an atomic integer. Operations go through `UnsafeMutablePointer`
+/// so the containing structs stay bitwise copyable like their C counterparts.
+struct AtomicInt: BitwiseCopyable {
+    var value: Int32 = 0
+}
+
+struct AtomicU32: BitwiseCopyable {
+    var value: UInt32 = 0
+}
+
+@inline(__always)
+private func atomicCell<T: AtomicRepresentable>(_ p: UnsafeMutableRawPointer, _: T.Type) -> UnsafeMutablePointer<Atomic<T>> {
+    p.assumingMemoryBound(to: Atomic<T>.self)
+}
+
+@inline(__always)
+func atomicStoreInt(_ a: UnsafeMutablePointer<AtomicInt>, _ value: Int32) {
+    atomicCell(UnsafeMutableRawPointer(a), Int32.self).pointee.store(value, ordering: .sequentiallyConsistent)
+}
+
+@inline(__always)
+func atomicLoadInt(_ a: UnsafeMutablePointer<AtomicInt>) -> Int32 {
+    atomicCell(UnsafeMutableRawPointer(a), Int32.self).pointee.load(ordering: .sequentiallyConsistent)
+}
+
+@inline(__always)
+func atomicFetchAddInt(_ a: UnsafeMutablePointer<AtomicInt>, _ increment: Int32) -> Int32 {
+    atomicCell(UnsafeMutableRawPointer(a), Int32.self).pointee.add(increment, ordering: .sequentiallyConsistent).oldValue
+}
+
+@inline(__always)
+func atomicCompareExchangeInt(_ a: UnsafeMutablePointer<AtomicInt>, _ expected: Int32, _ desired: Int32) -> Bool {
+    atomicCell(UnsafeMutableRawPointer(a), Int32.self).pointee.compareExchange(
+        expected: expected, desired: desired, ordering: .sequentiallyConsistent
+    ).exchanged
+}
+
+@inline(__always)
+func atomicStoreU32(_ a: UnsafeMutablePointer<AtomicU32>, _ value: UInt32) {
+    atomicCell(UnsafeMutableRawPointer(a), UInt32.self).pointee.store(value, ordering: .sequentiallyConsistent)
+}
+
+@inline(__always)
+func atomicLoadU32(_ a: UnsafeMutablePointer<AtomicU32>) -> UInt32 {
+    atomicCell(UnsafeMutableRawPointer(a), UInt32.self).pointee.load(ordering: .sequentiallyConsistent)
+}
+
+/// Relaxed load on a plain word. Lets a racing reader peek before paying for a read modify write.
+@inline(__always)
+func atomicLoadU32Raw(_ a: UnsafeMutablePointer<UInt32>) -> UInt32 {
+    atomicCell(UnsafeMutableRawPointer(a), UInt32.self).pointee.load(ordering: .relaxed)
+}
+
+@inline(__always)
+func atomicFetchOrU32(_ a: UnsafeMutablePointer<UInt32>, _ mask: UInt32) -> UInt32 {
+    atomicCell(UnsafeMutableRawPointer(a), UInt32.self).pointee.bitwiseOr(mask, ordering: .sequentiallyConsistent).oldValue
+}
