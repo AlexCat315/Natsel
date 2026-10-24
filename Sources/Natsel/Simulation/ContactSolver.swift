@@ -167,6 +167,8 @@ extension World {
         var wideConstraints: [[ContactConstraintW]] = Array(repeating: [], count: Int(B3.graphColorCount))
         var wideManifolds: [ManifoldConstraintW] = []
         var wideConvexCounts: [Int] = Array(repeating: 0, count: Int(B3.graphColorCount))
+        var wideConvex = [Bool](repeating: false, count: Int(B3.graphColorCount))
+        var wideMesh = [Bool](repeating: false, count: Int(B3.graphColorCount))
 
         /// The index range of the convex or mesh constraints for a color.
         func range(_ colorIndex: Int32, _ mesh: Bool) -> Range<Int> {
@@ -253,6 +255,11 @@ extension World {
         guard totalCount > 0 else {
             return
         }
+        let colorWide = enableWideSolver && colorIndex != overflowIndex
+        let wideConvex = colorWide && convexContactIds.count >= 4
+        let wideMesh = colorWide && meshContactIds.count >= 4
+        solverContacts.wideConvex[Int(colorIndex)] = wideConvex
+        solverContacts.wideMesh[Int(colorIndex)] = wideMesh
 
         let warmStartScale: Float = enableWarmStarting ? 1 : 0
         let invTau = 1 / B3.speculativeDistance
@@ -263,13 +270,16 @@ extension World {
         let colorIndexInt = Int(colorIndex)
         solverContacts.constraints[colorIndexInt].removeAll(keepingCapacity: true)
         solverContacts.constraints[colorIndexInt].reserveCapacity(totalCount)
-        solverContacts.convexCounts[colorIndexInt] = convexContactIds.count
+        let scalarConvex = !wideConvex || prepareScalarForWideColors
+        let scalarMesh = !wideMesh || prepareScalarForWideColors
+        solverContacts.convexCounts[colorIndexInt] = scalarConvex ? convexContactIds.count : 0
 
         let awakeSetIndex = Int(SetType.awakeSet.rawValue)
         solverSets[awakeSetIndex].bodySims.withUnsafeBufferPointer { bodySims in
             solverSets[awakeSetIndex].bodyStates.withUnsafeBufferPointer { bodyStates in
               contacts.withUnsafeBufferPointer { contactStore in
                 for pass in 0..<2 {
+                    if pass == 0 ? !scalarConvex : !scalarMesh { continue }
                     let contactIds = pass == 0 ? convexContactIds : meshContactIds
                     for contactId in contactIds {
             let contact = contactStore.baseAddress! + Int(contactId)
@@ -455,6 +465,14 @@ extension World {
               }
             }
         }
+
+        if wideConvex {
+            prepareWideRange(colorIndexInt, convexContactIds, softness, staticSoftness, warmStartScale)
+        }
+        solverContacts.wideConvexCounts[colorIndexInt] = solverContacts.wideConstraints[colorIndexInt].count
+        if wideMesh {
+            prepareWideRange(colorIndexInt, meshContactIds, softness, staticSoftness, warmStartScale)
+        }
     }
 
     /// Prepare all constraint data for this step.
@@ -464,7 +482,12 @@ extension World {
         }
         for i in solverContacts.convexCounts.indices {
             solverContacts.convexCounts[i] = 0
+            solverContacts.wideConvex[i] = false
+            solverContacts.wideMesh[i] = false
+            solverContacts.wideConvexCounts[i] = 0
+            solverContacts.wideConstraints[i].removeAll(keepingCapacity: true)
         }
+        solverContacts.wideManifolds.removeAll(keepingCapacity: true)
         solveAnyRestitution = false
 
         prepareAllJoints(context)
@@ -477,16 +500,19 @@ extension World {
         solverContacts.manifoldPool.removeAll(keepingCapacity: true)
 
         // Overflow first, then colors in order.
-        prepareContacts(overflowIndex, contactSoftness, staticSoftness, context)
+        prepareOverflowContacts(contactSoftness, staticSoftness)
         for i in 0..<Int(overflowIndex) {
             prepareContacts(Int32(i), contactSoftness, staticSoftness, context)
         }
-        prepareWideContacts()
     }
 
     // MARK: Warm start
 
     func warmStartContacts(_ colorIndex: Int32, _ mesh: Bool) {
+        if colorIndex == overflowIndex {
+            if mesh { warmStartOverflowContacts() }
+            return
+        }
         if usesWideContacts(colorIndex, mesh) {
             warmStartContactsWide(colorIndex, mesh)
             return
@@ -561,6 +587,10 @@ extension World {
     // MARK: Push (non-penetration with soft bias)
 
     func pushContacts(_ colorIndex: Int32, _ context: StepContext, _ mesh: Bool) {
+        if colorIndex == overflowIndex {
+            if mesh { pushOverflowContacts(context) }
+            return
+        }
         if usesWideContacts(colorIndex, mesh) {
             pushContactsWide(colorIndex, context, mesh)
             return
@@ -663,6 +693,10 @@ extension World {
     // MARK: Solve (relax)
 
     func solveContacts(_ colorIndex: Int32, _ context: StepContext, _ mesh: Bool) {
+        if colorIndex == overflowIndex {
+            if mesh { solveOverflowContacts(context) }
+            return
+        }
         if usesWideContacts(colorIndex, mesh) {
             solveContactsWide(colorIndex, context, mesh)
             return
@@ -835,6 +869,10 @@ extension World {
     // MARK: Restitution
 
     func applyRestitution(_ colorIndex: Int32, _ context: StepContext, _ mesh: Bool) {
+        if colorIndex == overflowIndex {
+            if mesh { applyOverflowRestitution(context) }
+            return
+        }
         if usesWideContacts(colorIndex, mesh) {
             applyRestitutionWide(colorIndex, context, mesh)
             return
@@ -928,6 +966,10 @@ extension World {
     // MARK: Store
 
     func storeImpulses(_ colorIndex: Int32, _ mesh: Bool) {
+        if colorIndex == overflowIndex {
+            if mesh { storeOverflowImpulses() }
+            return
+        }
         if usesWideContacts(colorIndex, mesh) {
             storeImpulsesWide(colorIndex, mesh)
             return

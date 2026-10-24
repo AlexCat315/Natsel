@@ -37,7 +37,7 @@ func aabbOffset(_ localBox: AABB, _ origin: Pos) -> AABB {
 extension World {
     /// Is this shape moving fast enough to need continuous collision?
     func isShapeFast(
-        _ shape: Shape, _ centroid1: Vec3, _ centroid2: Vec3, _ rotationChord: Float,
+        _ shape: borrowing Shape, _ centroid1: Vec3, _ centroid2: Vec3, _ rotationChord: Float,
         _ safetyFactor: Float
     ) -> Bool {
         let radius: Float
@@ -60,7 +60,7 @@ extension World {
 
     /// Time of impact between convex shapes or a mesh and a convex shape.
     func shapeTimeOfImpact(
-        _ shapeA: Shape, _ shapeB: Shape, _ sweepA: Sweep, _ sweepB: Sweep, _ maxFraction: Float
+        _ shapeA: borrowing Shape, _ shapeB: borrowing Shape, _ sweepA: Sweep, _ sweepB: Sweep, _ maxFraction: Float
     ) -> TOIOutput {
 
         if case .compound(let compound) = shapeA.geometry {
@@ -92,58 +92,67 @@ extension World {
 
     /// Process one proxy during a swept query.
     private func continuousQueryCallback(_ shapeId: Int32, _ context: ContinuousContext) -> Bool {
-        let fastShape = shapes[Int(context.fastShapeId)]
+        shapes.withUnsafeBufferPointer { shapeBuffer in
+            continuousQueryCallback(
+                shapeId, context, shapeBuffer.baseAddress! + Int(context.fastShapeId), shapeBuffer.baseAddress! + Int(shapeId))
+        }
+    }
+
+    /// The callback on borrowed shapes; copying a `Shape` retains its geometry and materials.
+    private func continuousQueryCallback(
+        _ shapeId: Int32, _ context: ContinuousContext, _ fastShapePointer: UnsafePointer<Shape>,
+        _ shapePointer: UnsafePointer<Shape>
+    ) -> Bool {
         let fastBodyId = context.fastBodyId
+        let fastShapeIdValue = fastShapePointer.pointee.id
 
         // Skip same shape
-        if shapeId == fastShape.id {
+        if shapeId == fastShapeIdValue {
             return true
         }
 
-        let shape = shapes[Int(shapeId)]
+        let bodyId = shapePointer.pointee.bodyId
 
         // Skip same body
-        if shape.bodyId == fastShape.bodyId {
+        if bodyId == fastShapePointer.pointee.bodyId {
             return true
         }
 
         // Skip sensors unless both shapes want sensor events
-        let isSensor = shape.sensorIndex != B3.nullIndex
+        let isSensor = shapePointer.pointee.sensorIndex != B3.nullIndex
         if isSensor
-            && ((shape.flags & ShapeFlags.enableSensorEvents.rawValue) == 0
-                || (fastShape.flags & ShapeFlags.enableSensorEvents.rawValue) == 0)
+            && ((shapePointer.pointee.flags & ShapeFlags.enableSensorEvents.rawValue) == 0
+                || (fastShapePointer.pointee.flags & ShapeFlags.enableSensorEvents.rawValue) == 0)
         {
             return true
         }
 
         // Skip filtered shapes
-        if shouldShapesCollide(fastShape.filter, shape.filter) == false {
+        if shouldShapesCollide(fastShapePointer.pointee.filter, shapePointer.pointee.filter) == false {
             return true
         }
 
-        let body = bodies[Int(shape.bodyId)]
-
         // Skip bullets
-        if (body.flags & BodyFlags.isBullet.rawValue) != 0 {
+        if (bodies[Int(bodyId)].flags & BodyFlags.isBullet.rawValue) != 0 {
             return true
         }
 
         // Skip filtered bodies
-        let fastBody = bodies[Int(fastBodyId)]
-        if shouldBodiesCollide(fastBody, body) == false {
+        if shouldBodiesCollide(bodies[Int(fastBodyId)], bodies[Int(bodyId)]) == false {
             return true
         }
 
-        let bodySim = jointBodySim(shape.bodyId)
-
         // Time of impact versus shape. Supports all convex shape types.
-        let sweepA = makeRelativeSweep(bodySim, context.base)
-        let output = shapeTimeOfImpact(shape, fastShape, sweepA, context.sweep, context.fraction)
+        let setIndex = Int(bodies[Int(bodyId)].setIndex)
+        let localIndex = Int(bodies[Int(bodyId)].localIndex)
+        let sweepA = makeRelativeSweep(solverSets[setIndex].bodySims[localIndex], context.base)
+        let output = shapeTimeOfImpact(
+            shapePointer.pointee, fastShapePointer.pointee, sweepA, context.sweep, context.fraction)
 
         if isSensor {
             // Only accept a sensor hit that is sooner than the current solid hit.
             if output.fraction <= context.fraction && context.sensorHits.count < 8 {
-                context.sensorHits.append((sensorId: shape.id, visitorId: fastShape.id, fraction: output.fraction))
+                context.sensorHits.append((sensorId: shapeId, visitorId: fastShapeIdValue, fraction: output.fraction))
             }
         } else if 0 < output.fraction && output.fraction < context.fraction {
             context.fraction = output.fraction
@@ -190,7 +199,7 @@ extension World {
         let staticTree = broadPhase.trees[Int(BodyType.staticBody.rawValue)]
         let kinematicTree = broadPhase.trees[Int(BodyType.kinematicBody.rawValue)]
         let dynamicTree = broadPhase.trees[Int(BodyType.dynamicBody.rawValue)]
-        let fastBody = bodies[Int(fastBodySim.bodyId)]
+        let fastHeadShapeId = bodies[Int(fastBodySim.bodyId)].headShapeId
 
         let context = continuousContext
         context.world = self
@@ -204,39 +213,40 @@ extension World {
         context.rootIterations = 0
 
         let isBullet = (fastBodySim.flags & BodyFlags.isBullet.rawValue) != 0
-        let safetyFactor = fastBody.safetyFactor
+        let safetyFactor = bodies[Int(fastBodySim.bodyId)].safetyFactor
         let rotationChord = 2 * length(invMulQuat(sweep.q1, sweep.q2).v)
 
-        var shapeId = fastBody.headShapeId
+        var shapeId = fastHeadShapeId
         while shapeId != B3.nullIndex {
-            var fastShape = shapes[Int(shapeId)]
-            shapeId = fastShape.nextShapeId
+            let fastIndex = Int(shapeId)
+            shapeId = shapes[fastIndex].nextShapeId
 
-            context.fastShapeId = fastShape.id
-            let centroid1 = transformPoint(xf1, fastShape.localCentroid)
-            let centroid2 = transformPoint(xf2, fastShape.localCentroid)
+            context.fastShapeId = Int32(fastIndex)
+            let localCentroid = shapes[fastIndex].localCentroid
+            let centroid1 = transformPoint(xf1, localCentroid)
+            let centroid2 = transformPoint(xf2, localCentroid)
 
-            let box1 = fastShape.aabb
+            let box1 = shapes[fastIndex].aabb
             // xf2 is relative to the base, so translate the box back to world space, rounding outward
-            let box2 = aabbOffset(computeShapeAABB(fastShape, xf2), base)
+            let box2 = aabbOffset(computeShapeAABB(shapes[fastIndex], xf2), base)
 
             // Store this to avoid double computation in the case there is no impact event
-            fastShape.aabb = box2
-            shapes[Int(fastShape.id)] = fastShape
+            shapes[fastIndex].aabb = box2
 
             // No continuous collision for meshes
-            if fastShape.type == .meshShape || fastShape.type == .heightShape {
+            let shapeType = shapes[fastIndex].type
+            if shapeType == .meshShape || shapeType == .heightShape {
                 continue
             }
 
             // No continuous collision for sensors
-            if fastShape.sensorIndex != B3.nullIndex {
+            if shapes[fastIndex].sensorIndex != B3.nullIndex {
                 continue
             }
 
             if isBullet == false {
                 let isShapeFast = isShapeFast(
-                    fastShape, centroid1, centroid2, rotationChord, safetyFactor
+                    shapes[fastIndex], centroid1, centroid2, rotationChord, safetyFactor
                 )
                 if isShapeFast == false {
                     continue
@@ -264,8 +274,6 @@ extension World {
         }
 
         let speculativeScalar = B3.speculativeDistance
-
-        var taskContext = taskContexts[0]
 
         if context.fraction < 1 {
             // Handle time of impact event. The sweep is relative to the base, so re-add the base
@@ -304,30 +312,29 @@ extension World {
 
             // Prepare AABBs for broad-phase.
             // Even though a body is fast, it may not move much. So the AABB may not need enlargement.
-            shapeId = fastBody.headShapeId
+            shapeId = fastHeadShapeId
             while shapeId != B3.nullIndex {
-                var shape = shapes[Int(shapeId)]
+                let index = Int(shapeId)
 
                 // Must recompute aabb at the interpolated transform
-                let aabb = computeFatShapeAABB(shape, transform, speculativeScalar)
-                shape.aabb = aabb
+                let aabb = computeFatShapeAABB(shapes[index], transform, speculativeScalar)
+                shapes[index].aabb = aabb
 
                 let fatAABB = fatAABBs[Int(shapeId)]
                 if aabbContains(fatAABB, aabb) == false {
-                    let inflated = aabbInflate(aabb, shape.aabbMargin)
+                    let inflated = aabbInflate(aabb, shapes[index].aabbMargin)
                     fatAABBs[Int(shapeId)] = inflated
 
                     // Regular bodies mark the hierarchy as moved using atomic operations.
                     // Bullets are handled separately at a later stage.
                     if isBullet == false {
-                        broadPhase.markProxyMoved(shape.proxyKey, inflated)
+                        broadPhase.markProxyMoved(shapes[index].proxyKey, inflated)
                     } else {
                         fastBodySim.flags |= BodyFlags.enlargeBulletBounds.rawValue
                     }
                 }
 
-                shapes[Int(shapeId)] = shape
-                shapeId = shape.nextShapeId
+                shapeId = shapes[index].nextShapeId
             }
         } else {
             // No time of impact event
@@ -337,24 +344,24 @@ extension World {
             fastBodySim.center0 = fastBodySim.center
 
             // Prepare AABBs for broad-phase
-            shapeId = fastBody.headShapeId
+            shapeId = fastHeadShapeId
             while shapeId != B3.nullIndex {
-                let shape = shapes[Int(shapeId)]
+                let index = Int(shapeId)
 
                 // shape.aabb is still valid from above
-                let fatAABB = fatAABBs[Int(shapeId)]
-                if aabbContains(fatAABB, shape.aabb) == false {
-                    let inflated = aabbInflate(shape.aabb, shape.aabbMargin)
+                let fatAABB = fatAABBs[index]
+                if aabbContains(fatAABB, shapes[index].aabb) == false {
+                    let inflated = aabbInflate(shapes[index].aabb, shapes[index].aabbMargin)
                     fatAABBs[Int(shapeId)] = inflated
 
                     if isBullet == false {
-                        broadPhase.markProxyMoved(shape.proxyKey, inflated)
+                        broadPhase.markProxyMoved(shapes[index].proxyKey, inflated)
                     } else {
                         fastBodySim.flags |= BodyFlags.enlargeBulletBounds.rawValue
                     }
                 }
 
-                shapeId = shape.nextShapeId
+                shapeId = shapes[index].nextShapeId
             }
         }
 
@@ -362,16 +369,15 @@ extension World {
         for hit in context.sensorHits {
             // Skip any sensor hits that occurred after a solid hit
             if hit.fraction < context.fraction {
-                taskContext.sensorHits.append((sensorId: hit.sensorId, visitorId: hit.visitorId))
+                taskContexts[0].sensorHits.append((sensorId: hit.sensorId, visitorId: hit.visitorId))
             }
         }
 
-        taskContext.distanceIterations = maxInt(taskContext.distanceIterations, context.distanceIterations)
-        taskContext.pushBackIterations = maxInt(
-            taskContext.pushBackIterations, context.pushBackIterations
+        taskContexts[0].distanceIterations = maxInt(taskContexts[0].distanceIterations, context.distanceIterations)
+        taskContexts[0].pushBackIterations = maxInt(
+            taskContexts[0].pushBackIterations, context.pushBackIterations
         )
-        taskContext.rootIterations = maxInt(taskContext.rootIterations, context.rootIterations)
-        taskContexts[0] = taskContext
+        taskContexts[0].rootIterations = maxInt(taskContexts[0].rootIterations, context.rootIterations)
 
         awakeSet.bodySims[Int(bodySimIndex)] = fastBodySim
     }

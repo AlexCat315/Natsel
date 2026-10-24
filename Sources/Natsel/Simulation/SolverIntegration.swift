@@ -221,7 +221,10 @@ extension World {
 
     /// Update the body transforms from the state deltas.
     func finalizeBodies(_ context: inout StepContext) {
-        var awakeSet = solverSets[Int(SetType.awakeSet.rawValue)]
+        // Move the awake set out so its arrays are uniquely referenced; a copy would make the first
+        // write duplicate every body sim and state.
+        var awakeSet = SolverSet()
+        swap(&awakeSet, &solverSets[Int(SetType.awakeSet.rawValue)])
         let count = awakeSet.bodySims.count
 
         let enableSleep = enableSleep
@@ -232,7 +235,8 @@ extension World {
 
         let speculativeScalar = B3.speculativeDistance
 
-        bodyMoveEvents = Array(repeating: BodyMoveEvent(), count: count)
+        bodyMoveEvents.removeAll(keepingCapacity: true)
+        bodyMoveEvents.append(contentsOf: repeatElement(BodyMoveEvent(), count: count))
 
         for simIndex in 0..<count {
             var state = awakeSet.bodyStates[simIndex]
@@ -337,15 +341,15 @@ extension World {
             sim.invInertiaWorld = mulMM(mulMM(rotationMatrix, sim.invInertiaLocal), transpose(rotationMatrix))
 
             // Any single body in an island can keep it awake
-            let island = islands[Int(body.islandId)]
+            // Read the two scalars directly; copying an `Island` retains its three arrays.
             if body.sleepTime < B3.timeToSleep {
                 // keep island awake
-                let islandIndex = island.localIndex
+                let islandIndex = islands[Int(body.islandId)].localIndex
                 b3Assert(islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count)
                 if islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count {
                     taskContexts[0].awakeIslandBitSet.setBitGrow(UInt32(islandIndex))
                 }
-            } else if island.constraintRemoveCount > 0 {
+            } else if islands[Int(body.islandId)].constraintRemoveCount > 0 {
                 var taskContext = taskContexts[0]
                 if body.sleepTime > taskContext.splitSleepTime
                     || (body.sleepTime == taskContext.splitSleepTime && body.islandId > taskContext.splitIslandId)
@@ -393,7 +397,7 @@ extension World {
             awakeSet.bodySims[simIndex] = sim
         }
 
-        solverSets[Int(SetType.awakeSet.rawValue)] = awakeSet
+        swap(&awakeSet, &solverSets[Int(SetType.awakeSet.rawValue)])
     }
 
     // MARK: Step context
@@ -417,13 +421,17 @@ extension World {
     /// broad-phase pair updates, integration, and body finalization.
     public func step(_ timeStep: Float, subStepCount: Int32 = 4) {
         b3Assert(timeStep >= 0)
+        profile = Profile()
+        let stepTicks = getTicks()
+        var ticks = stepTicks
 
-        bodyMoveEvents.removeAll()
+        bodyMoveEvents.removeAll(keepingCapacity: true)
         sensorBeginEvents.removeAll()
         contactBeginEvents.removeAll()
         contactHitEvents.removeAll()
 
         updateBroadPhasePairs()
+        profile.pairs = getMillisecondsAndReset(&ticks)
         var context = StepContext()
         context.dt = timeStep
         context.subStepCount = maxInt(1, subStepCount)
@@ -457,6 +465,7 @@ extension World {
             #endif
             collide(&context)
         }
+        profile.collide = getMillisecondsAndReset(&ticks)
 
         if timeStep > 0 {
             stepIndex += 1
@@ -479,21 +488,27 @@ extension World {
             }
 
             prepareAllContacts(context)
+            profile.prepareConstraints = getMillisecondsAndReset(&ticks)
 
             for _ in 0..<Int(context.subStepCount) {
                 integrateVelocities(context.h)
+                profile.integrateVelocities += getMillisecondsAndReset(&ticks)
 
                 warmStartAll(context)
+                profile.warmStart += getMillisecondsAndReset(&ticks)
 
                 for _ in 0..<1 {
                     pushAll(context)
                 }
+                profile.solveImpulses += getMillisecondsAndReset(&ticks)
 
                 integratePositions(context.h, context.inv_dt)
+                profile.integratePositions += getMillisecondsAndReset(&ticks)
 
                 for _ in 0..<1 {
                     solveAll(context)
                 }
+                profile.relaxImpulses += getMillisecondsAndReset(&ticks)
 
             }
 
@@ -502,8 +517,10 @@ extension World {
                     applyRestitutionAll(context)
                 }
             }
+            profile.restitution = getMillisecondsAndReset(&ticks)
 
             storeAllImpulses()
+            profile.storeImpulses = getMillisecondsAndReset(&ticks)
             emitContactHitEvents()
 
             // Prepare the island bit set used in body finalization.
@@ -517,10 +534,12 @@ extension World {
             emitJointEvents(context.inv_h)
 
             finalizeBodies(&context)
+            profile.transforms = getMillisecondsAndReset(&ticks)
 
             // Refit the kinematic and dynamic trees after body finalization, matching b3Solve.
             broadPhase.trees[Int(BodyType.kinematicBody.rawValue)].refit()
             broadPhase.trees[Int(BodyType.dynamicBody.rawValue)].refit()
+            profile.refit = getMillisecondsAndReset(&ticks)
 
             // Fast bullet bodies: run the swept pass, then enlarge their broad-phase proxies.
             if context.bulletBodies.isEmpty == false {
@@ -559,14 +578,17 @@ extension World {
                 solverSets[Int(SetType.awakeSet.rawValue)] = awakeSet
             }
 
+            profile.bullets = getMillisecondsAndReset(&ticks)
             if enableSleep {
                 processSleep()
             }
+            profile.sleepIslands = getMillisecondsAndReset(&ticks)
 
             acceptSensorHits()
             overlapSensors()
         }
 
+        profile.step = getMilliseconds(stepTicks)
         sensorEndEvents.publish()
         contactEndEvents.publish()
     }

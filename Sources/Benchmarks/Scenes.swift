@@ -173,7 +173,7 @@ func createWasher(_ world: World) {
         var bodyDef = BodyDef()
         bodyDef.position = Pos(0, 21, 0)
         bodyDef.type = .kinematicBody
-        bodyDef.angularVelocity = Vec3(0, 0, (Float.pi / 180) * motorSpeed)
+        bodyDef.angularVelocity = Vec3(0, 0, (scenePi / 180) * motorSpeed)
         bodyDef.linearVelocity = Vec3(0.001, -0.002, 0)
 
         let bodyId = world.createBody(bodyDef)
@@ -185,7 +185,7 @@ func createWasher(_ world: World) {
         let nd = Vec3(0, 0, -10)
         let pd = Vec3(0, 0, 10)
 
-        let angle = Float.pi / 18
+        let angle = scenePi / 18
         let q = makeQuatFromAxisAngle(Vec3(0, 0, 1), angle)
         let qo = makeQuatFromAxisAngle(Vec3(0, 0, 1), 0.1 * angle)
         var u1 = Vec3(1, 0, 0)
@@ -307,7 +307,7 @@ private func createInwardCylinderMesh(radius: Float, halfDepth: Float, yCenter: 
     var indices = Array(repeating: Int32(0), count: 3 * triangleCount)
 
     for i in 0..<segmentCount {
-        let angle = 2 * Float.pi * Float(i) / Float(segmentCount)
+        let angle = 2 * scenePi * Float(i) / Float(segmentCount)
         let cs = computeCosSin(angle)
         let x = radius * cs.cosine
         let y = radius * cs.sine + yCenter
@@ -350,6 +350,8 @@ private func createInwardCylinderMesh(radius: Float, halfDepth: Float, yCenter: 
     return TriangleMesh(vertices: vertices, indices: indices, options: options)!
 }
 
+nonisolated(unsafe) var spinnerProbeBodies: [BodyID] = []
+
 func createSpinner(_ world: World) {
     let radius: Float = 12
     let halfDepth: Float = 1
@@ -377,6 +379,7 @@ func createSpinner(_ world: World) {
         bodyDef.enableSleep = false
 
         let spinnerId = world.createBody(bodyDef)
+        spinnerProbeBodies = [groundId, spinnerId]
 
         let paddle = makeBoxHull(0.3, halfLength + 0.1, halfDepth + 0.1)
         var shapeDef = ShapeDef()
@@ -598,3 +601,27 @@ func createTrees100(_ world: World) { createTrees(world, scale: 1) }
 func destroyTrees() {
     treeMesh = nil
 }
+
+/// Divergence probe: the spinner paddle and its revolute motor alone.
+func createPaddle(_ world: World) {
+    let groundId = world.createBody(BodyDef())
+    var bodyDef = BodyDef()
+    bodyDef.type = .dynamicBody
+    bodyDef.position = Pos(0, 6, 0)
+    bodyDef.enableSleep = false
+    let spinnerId = world.createBody(bodyDef)
+    var shapeDef = ShapeDef()
+    shapeDef.baseMaterial.friction = 0
+    _ = world.createHullShape(spinnerId, shapeDef, makeBoxHull(0.3, 6.1, 1.1))
+    var jointDef = RevoluteJointDef()
+    jointDef.base.bodyIdA = groundId
+    jointDef.base.bodyIdB = spinnerId
+    jointDef.base.localFrameA.p = Vec3(0, 6, 0)
+    jointDef.enableMotor = true
+    jointDef.motorSpeed = 8
+    jointDef.maxMotorTorque = .greatestFiniteMagnitude
+    _ = world.createRevoluteJoint(jointDef)
+}
+
+/// B3_PI. `Float.pi` rounds toward zero; the C literal rounds to nearest.
+let scenePi: Float = 3.14159265359

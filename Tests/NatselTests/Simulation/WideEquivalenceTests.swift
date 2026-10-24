@@ -106,7 +106,7 @@ struct WideRestitutionEquivalenceTests {
             wide.step(1 / 60, subStepCount: 4)
             for color in wide.solverContacts.wideConstraints {
                 sawWide = sawWide || !color.isEmpty
-                sawPartialBatch = sawPartialBatch || color.contains { $0.scalarIndices[3] < 0 }
+                sawPartialBatch = sawPartialBatch || color.contains { $0.contactIds[3] < 0 }
             }
             try #require(scalar.worldStateHash() == wide.worldStateHash(), "step \(step)")
             for id in scalar.contacts.indices {

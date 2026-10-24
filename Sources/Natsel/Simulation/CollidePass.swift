@@ -304,12 +304,27 @@ extension World {
         _ awakeSims: UnsafeBufferPointer<BodySim>, _ staticSims: UnsafeBufferPointer<BodySim>,
         _ fatAABBs: UnsafeBufferPointer<AABB>
     ) {
-        var store = ContactStore(&contacts)
-        withUnsafeMutablePointer(to: &meshContactScratch) { scratch in
-            for contactId in contactIds {
-                collideOneContact(
-                    contactId, &stateBits, store: &store, nil, scratch,
-                    awakeSims, staticSims, fatAABBs)
+        // Collide never resizes the contact array, so one stable buffer serves the whole pass and
+        // each contact access skips the array uniqueness check.
+        contacts.withUnsafeMutableBufferPointer { buffer in
+            var store = ContactStore(buffer)
+            withUnsafeMutablePointer(to: &meshContactScratch) { scratch in
+                // Prefetch the contact four iterations ahead, as b3CollideTask does.
+                let prefetchDistance = 4
+                let base = UnsafeRawPointer(buffer.baseAddress!)
+                let stride = MemoryLayout<Contact>.stride
+                for i in contactIds.indices {
+                    if i + prefetchDistance < contactIds.count {
+                        let p = base + Int(contactIds[i + prefetchDistance]) * stride
+                        b3Prefetch(p)
+                        b3Prefetch(p + 64)
+                        b3Prefetch(p + 128)
+                        b3Prefetch(p + 192)
+                    }
+                    collideOneContact(
+                        contactIds[i], &stateBits, store: &store, nil, scratch,
+                        awakeSims, staticSims, fatAABBs)
+                }
             }
         }
     }
@@ -396,25 +411,21 @@ extension World {
                         // Minimize round-off
                         let dc = subPos(bodySimB.center, bodySimA.center)
 
-                        let manifoldCount = contact.manifoldCount
-                        for manifoldIndex in 0..<Int(manifoldCount) {
-                            var manifold = contact.manifolds[manifoldIndex]
-                            let normal = manifold.normal
-                            let pointCount = manifold.pointCount
-
-                            for pointIndex in 0..<Int(pointCount) {
-                                // Keep anchors but update separation, same as sub-stepping.
-                                var mp = manifold.points[pointIndex]
-                                let rA = mulMV(matrixA, mp.anchorA)
-                                let rB = mulMV(matrixB, mp.anchorB)
-                                let dp = dc + (rB - rA)
-                                mp.separation = mp.baseSeparation + dot(dp, normal)
-                                mp.normalVelocity = 0
-                                mp.persisted = true
-                                manifold.points[pointIndex] = mp
+                        contact.manifolds.withUnsafeMutableBufferPointer { manifolds in
+                            for manifoldIndex in 0..<manifolds.count {
+                                let manifold = manifolds.baseAddress! + manifoldIndex
+                                let normal = manifold.pointee.normal
+                                for pointIndex in 0..<Int(manifold.pointee.pointCount) {
+                                    // Keep anchors but update separation, same as sub-stepping.
+                                    let rA = mulMV(matrixA, manifold.pointee.points[pointIndex].anchorA)
+                                    let rB = mulMV(matrixB, manifold.pointee.points[pointIndex].anchorB)
+                                    let dp = dc + (rB - rA)
+                                    manifold.pointee.points[pointIndex].separation =
+                                        manifold.pointee.points[pointIndex].baseSeparation + dot(dp, normal)
+                                    manifold.pointee.points[pointIndex].normalVelocity = 0
+                                    manifold.pointee.points[pointIndex].persisted = true
+                                }
                             }
-
-                            contact.manifolds[manifoldIndex] = manifold
                         }
 
                         // Contact is recycled. This also skips updating other aspects of the contact
@@ -461,17 +472,15 @@ extension World {
             }
 
             if touching {
-                let manifoldCount = contact.manifoldCount
-                for manifoldIndex in 0..<Int(manifoldCount) {
-                    var manifold = contact.manifolds[manifoldIndex]
-                    let pointCount = manifold.pointCount
-                    for pointIndex in 0..<Int(pointCount) {
-                        // Cache separation
-                        var mp = manifold.points[pointIndex]
-                        mp.baseSeparation = mp.separation
-                        manifold.points[pointIndex] = mp
+                contact.manifolds.withUnsafeMutableBufferPointer { manifolds in
+                    for manifoldIndex in 0..<manifolds.count {
+                        let manifold = manifolds.baseAddress! + manifoldIndex
+                        for pointIndex in 0..<Int(manifold.pointee.pointCount) {
+                            // Cache separation
+                            manifold.pointee.points[pointIndex].baseSeparation =
+                                manifold.pointee.points[pointIndex].separation
+                        }
                     }
-                    contact.manifolds[manifoldIndex] = manifold
                 }
             }
         }

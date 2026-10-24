@@ -1,3 +1,5 @@
+nonisolated(unsafe) public var meshTraceEnabled = false
+
 extension World {
     func computeMeshManifolds(_ contactId: Int32, shapeA: Shape, transformA: WorldTransform,
                               shapeB: Shape, transformB: WorldTransform, isFast: Bool,
@@ -9,6 +11,12 @@ extension World {
         let triangles = collideMeshTriangles(&contact, surface: surface, transformA: transformA,
                                              shapeB: shapeB, transformB: transformB, isFast: isFast, scratch)
         let accepted = selectMeshManifolds(triangles, sphere: shapeB.type == .sphereShape)
+        if meshTraceEnabled && contact.shapeIdA == 0 && contact.shapeIdB == 2 {
+            func h(_ f: Float) -> String { String(f.bitPattern, radix: 16) }
+            print("T count=\(contact.meshContact.triangles.count) ids=\(contact.meshContact.triangles.map { $0.triangleIndex })")
+            for m in triangles { print("T tri \(m.triangleIndex) f=\(m.feature.rawValue) d=\(h(m.squaredDistance)) n=\(h(m.normal.x)) \(h(m.normal.y)) \(h(m.normal.z)) p=\(m.points.map { h($0.point.x) + "," + h($0.separation) })") }
+            for m in accepted { print("T acc \(m.triangleIndex)") }
+        }
         if accepted.isEmpty {
             contact.manifolds.removeAll()
             contact.manifoldCount = 0

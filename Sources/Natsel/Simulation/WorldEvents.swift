@@ -114,7 +114,7 @@ extension World {
 extension World {
     /// Resolve the user material id at a hit point. Mesh and height-field shapes use the manifold
     /// point's triangle index; compound shapes resolve through the participating child.
-    func shapeUserMaterialId(_ shape: Shape, _ childIndex: Int32, _ triangleIndex: Int32) -> UInt64 {
+    func shapeUserMaterialId(_ shape: borrowing Shape, _ childIndex: Int32, _ triangleIndex: Int32) -> UInt64 {
         if shape.materialCount == 0 {
             return 0
         }
@@ -152,71 +152,76 @@ extension World {
     func emitContactHitEvents() {
         let threshold = hitEventThreshold
 
-        // Iterate contacts in id order so events are deterministic.
-        for contactId in 0..<Int32(contacts.count) {
-            // Filter on the cheap scalar fields before copying the contact: the copy retains three
-            // arrays, and almost every slot fails this test.
-            let flags = contacts[Int(contactId)].flags
-            guard (flags & ContactFlags.simEnableHitEvent.rawValue) != 0 else {
-                continue
-            }
-            let contact = contacts[Int(contactId)]
-            guard contact.contactId != B3.nullIndex,
-                contact.setIndex == SetType.awakeSet.rawValue,
-                contact.colorIndex != B3.nullIndex
-            else {
-                continue
-            }
+        // Iterate contacts in id order so events are deterministic. Contacts are read in place: a copy
+        // retains three arrays.
+        contacts.withUnsafeBufferPointer { contactBuffer in
+            for contactId in 0..<Int32(contactBuffer.count) {
+                let contact = contactBuffer.baseAddress! + Int(contactId)
+                guard (contact.pointee.flags & ContactFlags.simEnableHitEvent.rawValue) != 0 else {
+                    continue
+                }
+                guard contact.pointee.contactId != B3.nullIndex,
+                    contact.pointee.setIndex == SetType.awakeSet.rawValue,
+                    contact.pointee.colorIndex != B3.nullIndex
+                else {
+                    continue
+                }
 
-            let shapeA = shapes[Int(contact.shapeIdA)]
-            let shapeB = shapes[Int(contact.shapeIdB)]
-            let simA = jointBodySim(shapeA.bodyId)
-            let simB = jointBodySim(shapeB.bodyId)
-            let midCenter = lerpPosition(simA.center, simB.center, 0.5)
+                let shapeIndexA = Int(contact.pointee.shapeIdA)
+                let shapeIndexB = Int(contact.pointee.shapeIdB)
+                let midCenter = lerpPosition(
+                    bodyCenter(shapes[shapeIndexA].bodyId), bodyCenter(shapes[shapeIndexB].bodyId), 0.5)
 
-            var event = ContactHitEvent()
-            event.approachSpeed = threshold
+                var event = ContactHitEvent()
+                event.approachSpeed = threshold
 
-            var found = false
-            var triangleIndex: Int32 = 0
+                var found = false
+                var triangleIndex: Int32 = 0
 
-            for manifoldIndex in 0..<Int(contact.manifoldCount) {
-                let manifold = contact.manifolds[manifoldIndex]
-                for pointIndex in 0..<Int(manifold.pointCount) {
-                    let mp = manifold.points[pointIndex]
-                    let approachSpeed = -mp.normalVelocity
+                for manifoldIndex in 0..<Int(contact.pointee.manifoldCount) {
+                    let manifold = contact.pointee.manifolds[manifoldIndex]
+                    for pointIndex in 0..<Int(manifold.pointCount) {
+                        let mp = manifold.points[pointIndex]
+                        let approachSpeed = -mp.normalVelocity
 
-                    // Check the total impulse because the point may be speculative and not colliding.
-                    if approachSpeed > event.approachSpeed && mp.totalNormalImpulse > 0 {
-                        event.approachSpeed = approachSpeed
-                        event.point = offsetPos(midCenter, lerp(mp.anchorA, mp.anchorB, 0.5))
-                        event.normal = manifold.normal
-                        triangleIndex = mp.triangleIndex
-                        found = true
+                        // Check the total impulse because the point may be speculative and not colliding.
+                        if approachSpeed > event.approachSpeed && mp.totalNormalImpulse > 0 {
+                            event.approachSpeed = approachSpeed
+                            event.point = offsetPos(midCenter, lerp(mp.anchorA, mp.anchorB, 0.5))
+                            event.normal = manifold.normal
+                            triangleIndex = mp.triangleIndex
+                            found = true
+                        }
                     }
                 }
+
+                guard found else {
+                    continue
+                }
+
+                event.shapeIdA = ShapeID(
+                    index1: Int32(shapeIndexA) + 1, world0: worldId, generation: shapes[shapeIndexA].generation
+                )
+                event.shapeIdB = ShapeID(
+                    index1: Int32(shapeIndexB) + 1, world0: worldId, generation: shapes[shapeIndexB].generation
+                )
+                event.contactId = ContactID(
+                    index1: contact.pointee.contactId + 1, world0: worldId, generation: contact.pointee.generation
+                )
+
+                // shapeB is never a compound today, so the child index is irrelevant for it.
+                event.userMaterialIdA = shapeUserMaterialId(shapes[shapeIndexA], contact.pointee.childIndex, triangleIndex)
+                event.userMaterialIdB = shapeUserMaterialId(shapes[shapeIndexB], 0, triangleIndex)
+
+                contactHitEvents.append(event)
             }
-
-            guard found else {
-                continue
-            }
-
-            event.shapeIdA = ShapeID(
-                index1: shapeA.id + 1, world0: worldId, generation: shapeA.generation
-            )
-            event.shapeIdB = ShapeID(
-                index1: shapeB.id + 1, world0: worldId, generation: shapeB.generation
-            )
-            event.contactId = ContactID(
-                index1: contact.contactId + 1, world0: worldId, generation: contact.generation
-            )
-
-            // shapeB is never a compound today, so the child index is irrelevant for it.
-            event.userMaterialIdA = shapeUserMaterialId(shapeA, contact.childIndex, triangleIndex)
-            event.userMaterialIdB = shapeUserMaterialId(shapeB, 0, triangleIndex)
-
-            contactHitEvents.append(event)
         }
+    }
+
+    private func bodyCenter(_ bodyId: Int32) -> Pos {
+        let setIndex = Int(bodies[Int(bodyId)].setIndex)
+        let localIndex = Int(bodies[Int(bodyId)].localIndex)
+        return solverSets[setIndex].bodySims[localIndex].center
     }
 }
 

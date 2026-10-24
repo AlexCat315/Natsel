@@ -307,6 +307,44 @@ extension World {
 extension World {
     /// FNV-1a hash over every live body's transform and, when awake, its velocities. This mirrors
     /// `b3HashWorldState` and is used to gate determinism across runs.
+    /// Per-body state digests for divergence debugging: bit patterns of position, rotation,
+    /// and awake velocities.
+    /// Contact manifold digests for divergence debugging.
+    public func contactDump() -> [String] {
+        var out: [String] = []
+        for i in contacts.indices where contacts[i].contactId == Int32(i) {
+            let c = contacts[i]
+            guard c.payload != nil, c.manifoldCount > 0 else { continue }
+            for m in c.manifolds {
+                var parts: [Float] = [m.normal.x, m.normal.y, m.normal.z, m.twistImpulse, m.frictionImpulse.x, m.frictionImpulse.y, m.frictionImpulse.z, m.rollingImpulse.x, m.rollingImpulse.y, m.rollingImpulse.z]
+                for pi in 0..<Int(m.pointCount) {
+                    let p = m.points[pi]
+                    parts += [p.anchorA.x, p.anchorA.y, p.anchorA.z, p.anchorB.x, p.anchorB.y, p.anchorB.z,
+                              p.separation, p.normalImpulse, p.totalNormalImpulse]
+                }
+                out.append("C \(c.shapeIdA) \(c.shapeIdB) " + parts.map { String($0.bitPattern, radix: 16) }.joined(separator: " "))
+            }
+        }
+        return out
+    }
+
+    public func bodyStateDump() -> [String] {
+        var out: [String] = []
+        for i in 0..<bodies.count where bodies[i].id == Int32(i) {
+            let body = bodies[i]
+            let sim = solverSets[Int(body.setIndex)].bodySims[Int(body.localIndex)]
+            var parts = [sim.transform.p.x, sim.transform.p.y, sim.transform.p.z, sim.transform.q.v.x,
+                         sim.transform.q.v.y, sim.transform.q.v.z, sim.transform.q.s]
+            if body.setIndex == SetType.awakeSet.rawValue {
+                let s = solverSets[Int(SetType.awakeSet.rawValue)].bodyStates[Int(body.localIndex)]
+                parts += [s.linearVelocity.x, s.linearVelocity.y, s.linearVelocity.z,
+                          s.angularVelocity.x, s.angularVelocity.y, s.angularVelocity.z]
+            }
+            out.append("\(i) " + parts.map { String($0.bitPattern, radix: 16) }.joined(separator: " "))
+        }
+        return out
+    }
+
     public func worldStateHash() -> UInt64 {
         let hashInit: UInt64 = 14_695_981_039_346_656_037
         let prime: UInt64 = 1_099_511_628_211

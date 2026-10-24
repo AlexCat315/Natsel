@@ -241,7 +241,7 @@ func getSupportWide(
         let value = bias4 - (nx * x + ny * y + nz * z)
         let bits = unsafeBitCast(value, to: SIMD4<UInt32>.self)
         let augmented = unsafeBitCast((bits & clearMask) | (indices & indexMask), to: SIMD4<Float>.self)
-        minimum = minimum.replacing(with: augmented, where: augmented .< minimum)
+        minimum = selectW(augmented .< minimum, augmented, minimum)
         indices = indices &+ SIMD4<UInt32>(repeating: 4)
         i += 4
     }

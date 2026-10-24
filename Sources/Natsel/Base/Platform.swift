@@ -214,3 +214,16 @@ func atomicLoadU32Raw(_ a: UnsafeMutablePointer<UInt32>) -> UInt32 {
 func atomicFetchOrU32(_ a: UnsafeMutablePointer<UInt32>, _ mask: UInt32) -> UInt32 {
     atomicCell(UnsafeMutableRawPointer(a), UInt32.self).pointee.bitwiseOr(mask, ordering: .sequentiallyConsistent).oldValue
 }
+
+// MARK: - Prefetch
+
+/// LLVM's prefetch intrinsic. The swift-level declaration lowers to `prfm` on arm64 and
+/// `prefetcht0` on x86; it never faults on invalid addresses.
+@_silgen_name("llvm.prefetch.p0")
+private func llvmPrefetch(_ address: UnsafeRawPointer, _ rw: Int32, _ locality: Int32, _ cacheType: Int32)
+
+/// Read prefetch with high temporal locality (b3Prefetch / __builtin_prefetch(p, 0, 3)).
+@inline(__always)
+func b3Prefetch(_ address: UnsafeRawPointer) {
+    llvmPrefetch(address, 0, 3, 1)
+}

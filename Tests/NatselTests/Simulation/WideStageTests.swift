@@ -7,6 +7,7 @@ struct WideStageTests {
     @Test("mesh stages preserve every body velocity and impulse")
     func stages() throws {
         let (w, _) = ImpulseDeterminismTests().makeMeshMix(false)
+        w.prepareScalarForWideColors = true
         for _ in 0..<69 { w.step(1 / 60, subStepCount: 4) }
         w.enableWideSolver = true
         w.updateBroadPhasePairs()

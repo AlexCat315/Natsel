@@ -90,11 +90,11 @@ extension World {
 
                 b3Assert(0 < geomManifold.pointCount && geomManifold.pointCount <= B3.maxManifoldPoints)
 
-                var manifold = contact.manifolds[0]
-                manifold.pointCount = geomManifold.pointCount
+                let manifold = UnsafeMutablePointer(mutating: contact.manifolds.buffer.baseAddress!)
+                manifold.pointee.pointCount = geomManifold.pointCount
 
                 let matrixA = makeMatrixFromQuat(xfA.q)
-                manifold.normal = mulMV(matrixA, geomManifold.normal)
+                manifold.pointee.normal = mulMV(matrixA, geomManifold.normal)
 
                 // Store point data in contact
                 for i in 0..<Int(geomManifold.pointCount) {
@@ -109,12 +109,12 @@ extension World {
                     target.triangleIndex = B3.nullIndex
                     target.normalVelocity = 0
 
-                    manifold.points[i] = target
+                    manifold.pointee.points[i] = target
                 }
 
                 // Copy impulses from old points
                 for i in 0..<Int(geomManifold.pointCount) {
-                    var pt2 = manifold.points[i]
+                    var pt2 = manifold.pointee.points[i]
                     pt2.totalNormalImpulse = 0
                     pt2.persisted = false
 
@@ -137,10 +137,8 @@ extension World {
                         pt2.normalImpulse = 0
                     }
 
-                    manifold.points[i] = pt2
+                    manifold.pointee.points[i] = pt2
                 }
-
-                contact.manifolds[0] = manifold
 
                 return true
             }
@@ -286,9 +284,7 @@ extension World {
         _ scratch: UnsafeMutablePointer<MeshContactScratch>,
         _ cs: inout ContactStore
     ) -> Bool {
-        let contact = cs.get(contactId)
-        let shapeIndexA = Int(contact.shapeIdA)
-        let shapeIndexB = Int(contact.shapeIdB)
+        let (shapeIndexA, shapeIndexB) = cs.withContact(contactId) { (Int($0.shapeIdA), Int($0.shapeIdB)) }
 
         return shapes.withUnsafeBufferPointer { shapeBuffer in
             let shapeA = shapeBuffer.baseAddress! + shapeIndexA

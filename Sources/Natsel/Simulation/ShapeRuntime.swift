@@ -296,7 +296,7 @@ func computeHullProjectedArea(_ hull: Hull, _ direction: Vec3) -> Float {
 // MARK: - Shape queries
 
 /// Compute the local-space AABB of a shape under a transform.
-func computeShapeAABB(_ shape: Shape, _ transform: Transform) -> AABB {
+func computeShapeAABB(_ shape: borrowing Shape, _ transform: Transform) -> AABB {
     switch shape.geometry {
     case .capsule(let capsule):
         return computeCapsuleAABB(capsule, transform)
@@ -320,7 +320,7 @@ func computeShapeAABB(_ shape: Shape, _ transform: Transform) -> AABB {
 }
 
 /// Compute a world AABB for a shape inflated by an extra margin.
-func computeFatShapeAABB(_ shape: Shape, _ transform: WorldTransform, _ extra: Float) -> AABB {
+func computeFatShapeAABB(_ shape: borrowing Shape, _ transform: WorldTransform, _ extra: Float) -> AABB {
     let r = Vec3(extra, extra, extra)
     var aabb = computeShapeAABB(shape, transform)
     aabb.lowerBound = aabb.lowerBound - r
@@ -567,7 +567,7 @@ func overlapShape(_ shape: Shape, _ transform: Transform, _ proxy: ShapeProxy) -
 // MARK: - Proxies
 
 /// Build a shape proxy.
-func makeShapeProxy(_ shape: Shape) -> ShapeProxyBuffer {
+func makeShapeProxy(_ shape: borrowing Shape) -> ShapeProxyBuffer {
     switch shape.geometry {
     case .capsule(let capsule):
         return ShapeProxyBuffer(capsule.center1, capsule.center2, radius: capsule.radius)

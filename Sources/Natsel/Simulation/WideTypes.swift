@@ -1,4 +1,4 @@
-
+private import simd
 
 // 4-wide solver types (simd_wide.h, contact_solver_wide.inl).
 //
@@ -8,6 +8,15 @@
 
 /// Four floats, one per contact lane.
 typealias FloatW = SIMD4<Float>
+
+/// Transpose four rows into four lane columns with NEON zips. Building the columns from scalar
+/// lanes makes LLVM split the downstream SIMD math into partial vectors.
+@inline(__always) func transpose4(
+    _ a: FloatW, _ b: FloatW, _ c: FloatW, _ d: FloatW
+) -> (FloatW, FloatW, FloatW, FloatW) {
+    let t = simd_transpose(simd_float4x4(a, b, c, d))
+    return (t.columns.0, t.columns.1, t.columns.2, t.columns.3)
+}
 
 /// Four 3-vectors, one per lane. `x`, `y`, and `z` each hold four lanes.
 struct Vec3W {
@@ -200,9 +209,13 @@ extension World {
     }
 }
 
-/// Selection preserves the scalar operand order, including signed zeros and NaNs.
+/// Selection preserves the scalar operand order, including signed zeros and NaNs. A bitwise blend
+/// (NEON `bsl`): the generic `replacing(with:where:)` is lowered lane by lane.
 @inline(__always) func selectW(_ mask: SIMDMask<SIMD4<Int32>>, _ a: FloatW, _ b: FloatW) -> FloatW {
-    b.replacing(with: a, where: mask)
+    let m = unsafeBitCast(mask, to: SIMD4<UInt32>.self)
+    let bitsA = unsafeBitCast(a, to: SIMD4<UInt32>.self)
+    let bitsB = unsafeBitCast(b, to: SIMD4<UInt32>.self)
+    return unsafeBitCast((bitsA & m) | (bitsB & ~m), to: FloatW.self)
 }
 
 @inline(__always) func selectW(_ mask: SIMDMask<SIMD4<Int32>>, _ a: Vec3W, _ b: Vec3W) -> Vec3W {

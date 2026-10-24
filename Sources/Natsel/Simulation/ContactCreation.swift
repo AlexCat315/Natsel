@@ -55,8 +55,10 @@ private let contactRegisters: [[ContactRegister]] = {
 
 extension World {
     /// Do a body pair's joints allow collision?
-    func shouldBodiesCollide(_ bodyA: Body, _ bodyB: Body) -> Bool {
-        if bodyA.type != .dynamicBody && bodyB.type != .dynamicBody {
+    func shouldBodiesCollide(_ bodyA: borrowing Body, _ bodyB: borrowing Body) -> Bool {
+        let typeA = bodyA.type
+        let typeB = bodyB.type
+        if typeA != .dynamicBody && typeB != .dynamicBody {
             return false
         }
 
@@ -89,11 +91,18 @@ extension World {
 
     /// The shape pair gauntlet.
     func shouldCreatePair(_ shapeIdA: Int32, _ shapeIdB: Int32) -> Bool {
-        let shapeA = shapes[Int(shapeIdA)]
-        let shapeB = shapes[Int(shapeIdB)]
+        shapes.withUnsafeBufferPointer { shapeBuffer in
+            shouldCreatePair(shapeIdA, shapeIdB, shapeBuffer.baseAddress! + Int(shapeIdA), shapeBuffer.baseAddress! + Int(shapeIdB))
+        }
+    }
 
-        let bodyIdA = shapeA.bodyId
-        let bodyIdB = shapeB.bodyId
+    /// The gauntlet on borrowed shapes; copying a `Shape` retains its geometry and materials.
+    func shouldCreatePair(
+        _ shapeIdA: Int32, _ shapeIdB: Int32, _ shapeA: UnsafePointer<Shape>, _ shapeB: UnsafePointer<Shape>
+    ) -> Bool {
+
+        let bodyIdA = shapeA.pointee.bodyId
+        let bodyIdB = shapeB.pointee.bodyId
 
         // Are the shapes on the same body?
         if bodyIdA == bodyIdB {
@@ -101,11 +110,11 @@ extension World {
         }
 
         // Sensors are handled elsewhere
-        if shapeA.sensorIndex != B3.nullIndex || shapeB.sensorIndex != B3.nullIndex {
+        if shapeA.pointee.sensorIndex != B3.nullIndex || shapeB.pointee.sensorIndex != B3.nullIndex {
             return false
         }
 
-        if shouldShapesCollide(shapeA.filter, shapeB.filter) == false {
+        if shouldShapesCollide(shapeA.pointee.filter, shapeB.pointee.filter) == false {
             return false
         }
 
@@ -117,15 +126,15 @@ extension World {
         }
 
         // Custom user filter
-        if (shapeA.flags & ShapeFlags.enableCustomFiltering.rawValue) != 0
-            || (shapeB.flags & ShapeFlags.enableCustomFiltering.rawValue) != 0
+        if (shapeA.pointee.flags & ShapeFlags.enableCustomFiltering.rawValue) != 0
+            || (shapeB.pointee.flags & ShapeFlags.enableCustomFiltering.rawValue) != 0
         {
             if let customFilter {
                 let idA = ShapeID(
-                    index1: shapeIdA + 1, world0: worldId, generation: shapeA.generation
+                    index1: shapeIdA + 1, world0: worldId, generation: shapeA.pointee.generation
                 )
                 let idB = ShapeID(
-                    index1: shapeIdB + 1, world0: worldId, generation: shapeB.generation
+                    index1: shapeIdB + 1, world0: worldId, generation: shapeB.pointee.generation
                 )
                 if customFilter(idA, idB) == false {
                     return false
@@ -139,11 +148,8 @@ extension World {
     /// Create the persistent contact for a shape pair. Returns the new contact id.
     @discardableResult
     func createContact(_ shapeIdA: Int32, _ shapeIdB: Int32, _ childIndex: Int32) -> Int32? {
-        let shapeA = shapes[Int(shapeIdA)]
-        let shapeB = shapes[Int(shapeIdB)]
-
-        let typeA = shapeA.type
-        let typeB = shapeB.type
+        let typeA = shapes[Int(shapeIdA)].type
+        let typeB = shapes[Int(shapeIdB)].type
 
         let register = contactRegisters[Int(typeA.rawValue)][Int(typeB.rawValue)]
         if register.supported == false {
@@ -156,14 +162,25 @@ extension World {
             return createContact(shapeIdB, shapeIdA, childIndex)
         }
 
-        var bodyA = bodies[Int(shapeA.bodyId)]
-        var bodyB = bodies[Int(shapeB.bodyId)]
+        return shapes.withUnsafeBufferPointer { shapeBuffer in
+            createContact(shapeBuffer.baseAddress! + Int(shapeIdA), shapeBuffer.baseAddress! + Int(shapeIdB), childIndex)
+        }
+    }
 
-        b3Assert(bodyA.setIndex != SetType.disabledSet.rawValue && bodyB.setIndex != SetType.disabledSet.rawValue)
-        b3Assert(bodyA.setIndex != SetType.staticSet.rawValue || bodyB.setIndex != SetType.staticSet.rawValue)
+    /// Contact creation on borrowed shapes; copying a `Shape` retains its geometry and materials.
+    private func createContact(
+        _ shapeA: UnsafePointer<Shape>, _ shapeB: UnsafePointer<Shape>, _ childIndex: Int32
+    ) -> Int32 {
+        let typeA = shapeA.pointee.type
+        let typeB = shapeB.pointee.type
+        let bodyIdA = Int(shapeA.pointee.bodyId)
+        let bodyIdB = Int(shapeB.pointee.bodyId)
+
+        b3Assert(bodies[bodyIdA].setIndex != SetType.disabledSet.rawValue && bodies[bodyIdB].setIndex != SetType.disabledSet.rawValue)
+        b3Assert(bodies[bodyIdA].setIndex != SetType.staticSet.rawValue || bodies[bodyIdB].setIndex != SetType.staticSet.rawValue)
 
         let setIndex: Int32
-        if bodyA.setIndex == SetType.awakeSet.rawValue || bodyB.setIndex == SetType.awakeSet.rawValue {
+        if bodies[bodyIdA].setIndex == SetType.awakeSet.rawValue || bodies[bodyIdB].setIndex == SetType.awakeSet.rawValue {
             setIndex = SetType.awakeSet.rawValue
         } else {
             // sleeping and non-touching contacts live in the disabled set
@@ -187,83 +204,76 @@ extension World {
         contact.localIndex = Int32(solverSets[setId].contactIndices.count)
         contact.islandId = B3.nullIndex
         contact.islandIndex = B3.nullIndex
-        contact.shapeIdA = shapeA.id
-        contact.shapeIdB = shapeB.id
+        contact.shapeIdA = shapeA.pointee.id
+        contact.shapeIdB = shapeB.pointee.id
         contact.childIndex = childIndex
-        contact.encodedBodySimA = encodeBodySimIndex(bodyA)
-        contact.encodedBodySimB = encodeBodySimIndex(bodyB)
+        contact.encodedBodySimA = encodeBodySimIndex(bodies[bodyIdA])
+        contact.encodedBodySimB = encodeBodySimIndex(bodies[bodyIdB])
 
-        if shapeA.type == .meshShape || shapeA.type == .heightShape {
+        if shapeA.pointee.type == .meshShape || shapeA.pointee.type == .heightShape {
             contact.flags |= ContactFlags.simMeshContact.rawValue
         }
 
-        if case .compound(let compound) = shapeA.geometry,
+        if case .compound(let compound) = shapeA.pointee.geometry,
             case .mesh = compound.child(at: Int(childIndex)).geometry
         {
             contact.flags |= ContactFlags.simMeshContact.rawValue
         }
 
-        if bodyA.type == .staticBody || bodyB.type == .staticBody {
+        if bodies[bodyIdA].type == .staticBody || bodies[bodyIdB].type == .staticBody {
             contact.flags |= ContactFlags.staticFlag.rawValue
         }
 
-        b3Assert(shapeA.sensorIndex == B3.nullIndex && shapeB.sensorIndex == B3.nullIndex)
+        b3Assert(shapeA.pointee.sensorIndex == B3.nullIndex && shapeB.pointee.sensorIndex == B3.nullIndex)
 
-        if (shapeA.flags & ShapeFlags.enableContactEvents.rawValue) != 0
-            || (shapeB.flags & ShapeFlags.enableContactEvents.rawValue) != 0
+        if (shapeA.pointee.flags & ShapeFlags.enableContactEvents.rawValue) != 0
+            || (shapeB.pointee.flags & ShapeFlags.enableContactEvents.rawValue) != 0
         {
             contact.flags |= ContactFlags.enableContactEvents.rawValue
         }
 
-        if (shapeA.flags & ShapeFlags.enableSpeculative.rawValue) != 0
-            && (shapeB.flags & ShapeFlags.enableSpeculative.rawValue) != 0
+        if (shapeA.pointee.flags & ShapeFlags.enableSpeculative.rawValue) != 0
+            && (shapeB.pointee.flags & ShapeFlags.enableSpeculative.rawValue) != 0
         {
             contact.flags |= ContactFlags.enableSpeculativePoints.rawValue
         }
 
         // Disabling speculative collision also disables recycling.
-        if (bodyA.flags & BodyFlags.enableContactRecycling.rawValue) != 0
-            && (bodyB.flags & BodyFlags.enableContactRecycling.rawValue) != 0
+        if (bodies[bodyIdA].flags & BodyFlags.enableContactRecycling.rawValue) != 0
+            && (bodies[bodyIdB].flags & BodyFlags.enableContactRecycling.rawValue) != 0
             && (contact.flags & ContactFlags.enableSpeculativePoints.rawValue) != 0
         {
             contact.flags |= ContactFlags.recycle.rawValue
         }
 
         // Connect to body A
-        contact.edges[0].bodyId = shapeA.bodyId
+        contact.edges[0].bodyId = shapeA.pointee.bodyId
         contact.edges[0].prevKey = B3.nullIndex
-        contact.edges[0].nextKey = bodyA.headContactKey
+        contact.edges[0].nextKey = bodies[bodyIdA].headContactKey
 
         let keyA = (contactId << 1) | 0
-        let headContactKeyA = bodyA.headContactKey
+        let headContactKeyA = bodies[bodyIdA].headContactKey
         if headContactKeyA != B3.nullIndex {
-            var headContact = contacts[Int(headContactKeyA >> 1)]
-            headContact.edges[Int(headContactKeyA & 1)].prevKey = keyA
-            contacts[Int(headContactKeyA >> 1)] = headContact
+            contacts[Int(headContactKeyA >> 1)].edges[Int(headContactKeyA & 1)].prevKey = keyA
         }
-        bodyA.headContactKey = keyA
-        bodyA.contactCount += 1
+        bodies[bodyIdA].headContactKey = keyA
+        bodies[bodyIdA].contactCount += 1
 
         // Connect to body B
-        contact.edges[1].bodyId = shapeB.bodyId
+        contact.edges[1].bodyId = shapeB.pointee.bodyId
         contact.edges[1].prevKey = B3.nullIndex
-        contact.edges[1].nextKey = bodyB.headContactKey
+        contact.edges[1].nextKey = bodies[bodyIdB].headContactKey
 
         let keyB = (contactId << 1) | 1
-        let headContactKeyB = bodyB.headContactKey
+        let headContactKeyB = bodies[bodyIdB].headContactKey
         if headContactKeyB != B3.nullIndex {
-            var headContact = contacts[Int(headContactKeyB >> 1)]
-            headContact.edges[Int(headContactKeyB & 1)].prevKey = keyB
-            contacts[Int(headContactKeyB >> 1)] = headContact
+            contacts[Int(headContactKeyB >> 1)].edges[Int(headContactKeyB & 1)].prevKey = keyB
         }
-        bodyB.headContactKey = keyB
-        bodyB.contactCount += 1
-
-        bodies[Int(shapeA.bodyId)] = bodyA
-        bodies[Int(shapeB.bodyId)] = bodyB
+        bodies[bodyIdB].headContactKey = keyB
+        bodies[bodyIdB].contactCount += 1
 
         // Add to pair set for fast lookup
-        let pairKey = shapePairKey(shapeA.id, shapeB.id, childIndex)
+        let pairKey = shapePairKey(shapeA.pointee.id, shapeB.pointee.id, childIndex)
         _ = broadPhase.pairSet.addKey(pairKey)
 
         // Contacts are created as non-touching.
@@ -271,26 +281,26 @@ extension World {
 
         var radiusA: Float = 0
         if typeA == .sphereShape {
-            radiusA = shapeA.sphere.radius
+            radiusA = shapeA.pointee.sphere.radius
         } else if typeA == .capsuleShape {
-            radiusA = shapeA.capsule.radius
+            radiusA = shapeA.pointee.capsule.radius
         }
 
         var radiusB: Float = 0
         if typeB == .sphereShape {
-            radiusB = shapeB.sphere.radius
+            radiusB = shapeB.pointee.sphere.radius
         } else if typeB == .capsuleShape {
-            radiusB = shapeB.capsule.radius
+            radiusB = shapeB.pointee.capsule.radius
         }
 
         let maxRadius = maxFloat(radiusA, radiusB)
 
         // Assuming the rolling resistance doesn't change
         contact.rollingResistance =
-            maxFloat(shapeA.material(0).rollingResistance, shapeB.material(0).rollingResistance) * maxRadius
+            maxFloat(shapeA.pointee.material(0).rollingResistance, shapeB.pointee.material(0).rollingResistance) * maxRadius
 
-        if (shapeA.flags & ShapeFlags.enablePreSolveEvents.rawValue) != 0
-            || (shapeB.flags & ShapeFlags.enablePreSolveEvents.rawValue) != 0
+        if (shapeA.pointee.flags & ShapeFlags.enablePreSolveEvents.rawValue) != 0
+            || (shapeB.pointee.flags & ShapeFlags.enablePreSolveEvents.rawValue) != 0
         {
             contact.flags |= ContactFlags.simEnablePreSolveEvents.rawValue
         }
@@ -471,26 +481,72 @@ extension World {
         return aabbOverlaps(a.aabb, b.aabb)
     }
 
+    /// Queue a candidate and run the gauntlet in batches so the pair-set and shape loads can be
+    /// prefetched (b3AddCandidatePair). The pair keys are sorted afterwards, so batching does not
+    /// change the result.
+    @inline(__always)
     func addCandidatePair(_ shapeIdA: Int32, _ shapeIdB: Int32, _ pairKeys: inout [UInt64]) {
-        // Follow shape index order.
-        let a = minInt(shapeIdA, shapeIdB)
-        let b = maxInt(shapeIdA, shapeIdB)
+        candidateBatch[candidateBatchCount] = SIMD2(minInt(shapeIdA, shapeIdB), maxInt(shapeIdA, shapeIdB))
+        candidateBatchCount += 1
+        if candidateBatchCount == candidateBatchSize {
+            flushCandidatePairs(&pairKeys)
+        }
+    }
 
-        // Metadata rejects same-body pairs before touching reference-counted geometry or
-        // probing the pair table. The filter has the same early rejection in shouldCreatePair.
-        if shapes[Int(a)].bodyId == shapes[Int(b)].bodyId { return }
-        if shapes[Int(a)].type == .compoundShape, case .compound(let compound) = shapes[Int(a)].geometry {
-            emitCompoundPairs(a, b, compound, &pairKeys)
-            return
-        }
-        if shapes[Int(b)].type == .compoundShape, case .compound(let compound) = shapes[Int(b)].geometry {
-            emitCompoundPairs(b, a, compound, &pairKeys)
-            return
-        }
-        let key = shapePairKey(a, b, 0)
-        if broadPhase.pairSet.containsKey(key) == false {
-            if shouldCreatePair(a, b) {
-                pairKeys.append(key)
+    func flushCandidatePairs(_ pairKeys: inout [UInt64]) {
+        let count = candidateBatchCount
+        candidateBatchCount = 0
+        guard count > 0 else { return }
+        var plain = InlineArray<32, SIMD2<Int32>>(repeating: .zero)
+        var keys = InlineArray<32, UInt64>(repeating: 0)
+        var hashes = InlineArray<32, UInt32>(repeating: 0)
+        var plainCount = 0
+        shapes.withUnsafeBufferPointer { shapeBuffer in
+            let shapeBase = shapeBuffer.baseAddress!
+            for i in 0..<count {
+                let a = candidateBatch[i].x
+                let b = candidateBatch[i].y
+                let shapeA = shapeBase + Int(a)
+                let shapeB = shapeBase + Int(b)
+                // Metadata rejects same-body pairs before touching reference-counted geometry.
+                if shapeA.pointee.bodyId == shapeB.pointee.bodyId { continue }
+                if shapeA.pointee.type == .compoundShape, case .compound(let compound) = shapeA.pointee.geometry {
+                    emitCompoundPairs(a, b, compound, &pairKeys)
+                    continue
+                }
+                if shapeB.pointee.type == .compoundShape, case .compound(let compound) = shapeB.pointee.geometry {
+                    emitCompoundPairs(b, a, compound, &pairKeys)
+                    continue
+                }
+                plain[plainCount] = SIMD2(a, b)
+                plainCount += 1
+            }
+
+            // Prefetch hash set entries.
+            let pairSet = broadPhase.pairSet
+            for i in 0..<plainCount {
+                keys[i] = shapePairKey(plain[i].x, plain[i].y, 0)
+                hashes[i] = keyHash(keys[i])
+                b3Prefetch(UnsafeRawPointer(pairSet.items! + Int(hashes[i] & (pairSet.capacity - 1))))
+            }
+
+            // Cull existing pairs.
+            var count2 = 0
+            for i in 0..<plainCount where pairSet.containsHashedKey(keys[i], hashes[i]) == false {
+                plain[count2] = plain[i]
+                keys[count2] = keys[i]
+                count2 += 1
+            }
+
+            // Prefetch shapes.
+            for i in 0..<count2 {
+                b3Prefetch(UnsafeRawPointer(shapeBase + Int(plain[i].x)))
+                b3Prefetch(UnsafeRawPointer(shapeBase + Int(plain[i].y)))
+            }
+
+            for i in 0..<count2
+            where shouldCreatePair(plain[i].x, plain[i].y, shapeBase + Int(plain[i].x), shapeBase + Int(plain[i].y)) {
+                pairKeys.append(keys[i])
             }
         }
     }
@@ -500,7 +556,7 @@ extension World {
         _ nodes: UnsafeBufferPointer<TreeNode>,
         _ pairStart: Int32,
         _ pairKeys: inout [UInt64],
-        _ stack: inout [Int32]
+        _ stack: UnsafeMutablePointer<Int32>
     ) {
         let proxyMark = proxy.flagIndex & movedNodeFlag
         let shapeId = proxy.shapeIndex
@@ -542,10 +598,10 @@ extension World {
         _ arrayB: UnsafeBufferPointer<TreeNode>,
         _ nodeA: TreeNode,
         _ nodeB: TreeNode,
-        _ stack: inout [TraversalPair],
+        _ stack: UnsafeMutablePointer<TraversalPair>,
         _ stackCount: inout Int,
         _ pairKeys: inout [UInt64],
-        _ proxyStack: inout [Int32]
+        _ proxyStack: UnsafeMutablePointer<Int32>
     ) {
         if testPair(nodeA, nodeB) == false {
             return
@@ -556,9 +612,9 @@ extension World {
         if leafA && leafB {
             addCandidatePair(nodeA.shapeIndex, nodeB.shapeIndex, &pairKeys)
         } else if leafA {
-            collideProxyAndSubtree(nodeA, arrayB, leftChild(nodeB), &pairKeys, &proxyStack)
+            collideProxyAndSubtree(nodeA, arrayB, leftChild(nodeB), &pairKeys, proxyStack)
         } else if leafB {
-            collideProxyAndSubtree(nodeB, arrayA, leftChild(nodeA), &pairKeys, &proxyStack)
+            collideProxyAndSubtree(nodeB, arrayA, leftChild(nodeA), &pairKeys, proxyStack)
         } else {
             if stackCount < treeStackSize {
                 stack[stackCount] = TraversalPair(a: leftChild(nodeA), b: leftChild(nodeB))
@@ -580,8 +636,8 @@ extension World {
 
         // Seed the stack.
         visitPair(
-            arrayA, arrayB, subtreeA, subtreeB, &broadPhasePairStack, &stackCount, &pairKeys,
-            &broadPhaseProxyStack)
+            arrayA, arrayB, subtreeA, subtreeB, broadPhasePairStack, &stackCount, &pairKeys,
+            broadPhaseProxyStack)
 
         while stackCount > 0 {
             stackCount -= 1
@@ -590,7 +646,7 @@ extension World {
                 for j in 0..<2 {
                     visitPair(
                         arrayA, arrayB, arrayA[Int(pair.a) + i], arrayB[Int(pair.b) + j],
-                        &broadPhasePairStack, &stackCount, &pairKeys, &broadPhaseProxyStack
+                        broadPhasePairStack, &stackCount, &pairKeys, broadPhaseProxyStack
                     )
                 }
             }
@@ -672,12 +728,6 @@ extension World {
         if pairKeyScratch.capacity < 64 {
             pairKeyScratch.reserveCapacity(64)
         }
-        if broadPhasePairStack.count < treeStackSize {
-            broadPhasePairStack = Array(repeating: TraversalPair(), count: treeStackSize)
-        }
-        if broadPhaseProxyStack.count < treeStackSize {
-            broadPhaseProxyStack = Array(repeating: 0, count: treeStackSize)
-        }
 
         // Get the sibling pairs of the dynamic body tree that have moved. Size the buffer from the
         // actual pair count so a rebuild that leaves an odd nodeEnd cannot overflow it.
@@ -720,6 +770,8 @@ extension World {
                 }
             }
         }
+
+        flushCandidatePairs(&pairKeyScratch)
 
         staticTree.clearMoved()
 

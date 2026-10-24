@@ -22,11 +22,13 @@ var benchmarks: [Benchmark] = [
     Benchmark(name: "trees100", create: createTrees100, step: nil, destroy: destroyTrees, totalStepCount: 500),
     Benchmark(name: "washer", create: createWasher, step: nil, destroy: nil, totalStepCount: 1000),
     Benchmark(name: "convex_pile", create: createConvexPile, step: nil, destroy: nil, totalStepCount: 500),
+    Benchmark(name: "paddle", create: createPaddle, step: nil, destroy: nil, totalStepCount: 50),
 ]
 
 var singleBenchmark: Int = -1
 var runCount = 4
 var recordSteps = false
+let traceSteps = ProcessInfo.processInfo.environment["NATSEL_TRACE"] == "1"
 
 var args = CommandLine.arguments
 var i = 1
@@ -77,6 +79,10 @@ for (index, benchmark) in benchmarks.enumerated() {
             world.enableContinuous = false
         }
         benchmark.create(world)
+        if let probe = ProcessInfo.processInfo.environment["NATSEL_PROBE"], benchmark.name == "spinner" {
+            world.disableBody(spinnerProbeBodies[probe == "nomesh" ? 0 : 1])
+        }
+        if traceSteps { print("create \(String(world.worldStateHash(), radix: 16)) bodies \(world.bodyCount)") }
 
         if benchmark.step != nil {
             benchmark.step!(world, 0)
@@ -91,6 +97,12 @@ for (index, benchmark) in benchmarks.enumerated() {
                 benchmark.step!(world, stepIndex)
             }
             world.step(1.0 / 60.0, subStepCount: 4)
+            meshTraceEnabled = ProcessInfo.processInfo.environment["NATSEL_MESHTRACE"].flatMap { Int($0) } == stepIndex + 1
+            if traceSteps { print("step \(stepIndex) \(String(world.worldStateHash(), radix: 16))") }
+            if let dump = ProcessInfo.processInfo.environment["NATSEL_DUMP"], Int(dump) == stepIndex {
+                for line in world.bodyStateDump() { print("B " + line) }
+                for line in world.contactDump() { print(line) }
+            }
             let pr = world.profile
             acc.pairs += pr.pairs; acc.collide += pr.collide
             acc.prepareConstraints += pr.prepareConstraints; acc.warmStart += pr.warmStart
@@ -98,16 +110,16 @@ for (index, benchmark) in benchmarks.enumerated() {
             acc.storeImpulses += pr.storeImpulses
             acc.integrateVelocities += pr.integrateVelocities; acc.integratePositions += pr.integratePositions
             acc.transforms += pr.transforms; acc.hitEvents += pr.hitEvents
-            acc.sleepIslands += pr.sleepIslands; acc.constraints += pr.constraints
+            acc.sleepIslands += pr.sleepIslands; acc.constraints += pr.constraints; acc.restitution += pr.restitution; acc.refit += pr.refit; acc.bullets += pr.bullets; acc.step += pr.step
         }
         let end = DispatchTime.now().uptimeNanoseconds
         let n = Float(stepCount - 1)
         if ProcessInfo.processInfo.environment["NATSEL_PHASE"] == "1" {
-            print(String(format: "AVG %@ pairs=%.2f collide=%.2f prepare=%.2f warm=%.2f push=%.2f solve=%.2f store=%.2f intV=%.2f intP=%.2f finalize=%.2f hit=%.2f sleep=%.2f substeps=%.2f",
-                benchmark.name, acc.pairs/n, acc.collide/n, acc.prepareConstraints/n, acc.warmStart/n,
+            print(String(format: "AVG %@ step=%.3f pairs=%.3f collide=%.3f prepare=%.3f warm=%.3f push=%.3f solve=%.3f store=%.3f intV=%.3f intP=%.3f finalize=%.2f hit=%.2f sleep=%.2f restit=%.2f refit=%.2f bullets=%.2f",
+                benchmark.name, acc.step/n, acc.pairs/n, acc.collide/n, acc.prepareConstraints/n, acc.warmStart/n,
                 acc.solveImpulses/n, acc.relaxImpulses/n, acc.storeImpulses/n,
                 acc.integrateVelocities/n, acc.integratePositions/n, acc.transforms/n,
-                acc.hitEvents/n, acc.sleepIslands/n, acc.constraints/n))
+                acc.hitEvents/n, acc.sleepIslands/n, acc.restitution/n, acc.refit/n, acc.bullets/n))
         }
 
         let ms = Double(end - start) / 1_000_000.0

@@ -450,7 +450,7 @@ struct JointSim: BitwiseCopyable {
 // MARK: - Body helpers
 
 @inline(__always)
-func encodeBodySimIndex(_ body: Body) -> Int32 {
+func encodeBodySimIndex(_ body: borrowing Body) -> Int32 {
     if body.setIndex == SetType.awakeSet.rawValue {
         return body.localIndex
     }
@@ -479,7 +479,7 @@ func sleepBodySimIndex(_ encoded: Int32) -> Int32 {
 
 /// Make a sweep relative to a base position to keep TOI in float precision far from the origin.
 @inline(__always)
-func makeRelativeSweep(_ bodySim: BodySim, _ base: Pos) -> Sweep {
+func makeRelativeSweep(_ bodySim: borrowing BodySim, _ base: Pos) -> Sweep {
     var s = Sweep()
     s.c1 = subPos(bodySim.center0, base)
     s.c2 = subPos(bodySim.center, base)
@@ -506,9 +506,14 @@ public final class World {
     var crossSeedQueue: [NodePair] = []
     var staticSeedScratch: [NodePair] = []
     var kinematicSeedScratch: [NodePair] = []
-    var broadPhasePairStack: [TraversalPair] = []
-    var broadPhaseProxyStack: [Int32] = []
+    /// Fixed traversal stacks. Raw storage avoids a uniqueness check on every push.
+    let broadPhasePairStack = UnsafeMutablePointer<TraversalPair>.allocate(capacity: treeStackSize)
+    let broadPhaseProxyStack = UnsafeMutablePointer<Int32>.allocate(capacity: treeStackSize)
     var contactIndexScratch: [Int32] = []
+    /// Broad-phase candidates awaiting the batched pair gauntlet.
+    var candidateBatch = InlineArray<32, SIMD2<Int32>>(repeating: .zero)
+    var candidateBatchCount = 0
+    let candidateBatchSize = 32
 
     var bodies: [Body] = []
     var bodyIdPool = IDPool()
@@ -569,6 +574,14 @@ public final class World {
     /// Solve independent contact batches with four SIMD lanes. Disable to use the equivalent
     /// scalar path. Overflow constraints always remain sequential.
     public var enableWideSolver = true
+
+    /// Also prepare scalar constraints for wide colors so tests can compare both paths on the
+    /// same prepared state.
+    var prepareScalarForWideColors = false
+
+    /// Per-step overflow contact constraints, solved with the C scalar solver.
+    var overflowContacts: [OverflowContactConstraint] = []
+    var overflowManifolds: [ManifoldConstraint] = []
 
     /// Per-step solver constraint data.
     var solverContacts = SolverContactData()
@@ -638,6 +651,11 @@ public final class World {
 
     var locked = false
     var inUse = true
+
+    deinit {
+        broadPhasePairStack.deallocate()
+        broadPhaseProxyStack.deallocate()
+    }
 
     public init(capacity: Capacity = Capacity()) {
         broadPhase = BroadPhase(capacity: capacity)
