@@ -308,8 +308,8 @@ momentum conservation, a 16-sample impact phase sweep, support-column height ind
 four-point flat landings, spin about a horizontal axis, drop impulse accounting against the
 momentum change, sampled normal velocity gated on hit events, elastic overshoot bounds, a
 13-scene peak-energy check, multi-bounce apex monotonicity, and resting-stack stability.
-`WorkerParityTest` does not apply: Natsel solves on one thread, so `workerCount` is always 1 and
-determinism is inherent rather than depending on work partitioning.
+`WorkerParityTest` is covered by `ParallelSolverTests`: the world state hash after every step is
+identical for 1, 4, and 8 workers across seven scenes (see "Multithreaded constraint solver").
 
 Separating-axis verification mirrors `test/test_sat.c`. A brute-force projection oracle over every
 hull face and edge pair supplies the true maximum separation, and 4000 randomized samples — thin
@@ -391,6 +391,49 @@ characters, buoyancy, and joints, including finite-difference checks of the dihe
 serial/parallel equivalence for soft bodies and wheel casts). The unsigned arm64 iOS 26 device
 build succeeds. Benchmarks for the new systems are in `PERFORMANCE.md`, section 9.
 
-Remaining Jolt features not covered here: a multithreaded constraint solver (the solver is still
-serial by color), path constraints, skeletal ragdoll/animation utilities, state save/restore, soft
+Remaining Jolt features not covered here (the multithreaded constraint solver has since been
+added, see below): path constraints, skeletal ragdoll/animation utilities, state save/restore, soft
 body self collision and soft–soft contact, and double precision large worlds.
+
+## Multithreaded constraint solver — 2026-10-24
+
+The solver follows `b3SolverStage` from the C library. With `workerCount > 1` a step wakes a
+persistent `WorkerPool` (`Base/WorkerPool.swift`) for contact and joint preparation, the substeps,
+restitution, impulse storage, and body finalization; the workers spin on a stage epoch between
+stages and sleep on a semaphore outside the solver.
+
+- **Stages** (`Simulation/SolverStages.swift`): body velocity and position integration, then per
+  graph color warm start, push, relax, restitution, and store. A color stage covers the color's
+  joint units, convex contacts, and mesh contacts as one index space, scalar or 4-wide as the serial
+  solver chooses. Blocks are claimed with a per-block epoch word on its own cache line, so a late
+  worker can never run a block of a newer stage.
+- **Determinism**: constraints in one color share no dynamic body, so a color gives the same bits
+  in any partition. Overflow constraints and vehicles touch arbitrary bodies and run on the calling
+  thread between colors in serial order. Results are bit-identical to `workerCount = 1` for every
+  worker count, and changing `workerCount` between steps is safe.
+- **Preparation** (`Simulation/SolverPrepare.swift`): a serial plan assigns each contact its
+  constraint slot and manifold offset (prefix sums), then a parallel pass fills them. Joints are
+  flattened across colors and prepared in parallel, then packed into wide batches in parallel.
+  Joint prepare functions read bodies through raw pointers (`jointPrepareBody`) instead of the
+  arrays, to avoid retain traffic and exclusivity checks across threads.
+- **Finalization**: the per-body transform, sleep velocity, move event, inertia, and shape bounds
+  run in parallel. Island keep-awake bits and the split candidate go to per-thread data merged with
+  the serial tie-break rule. The continuous pass of fast bodies, the bullet list, and
+  `markProxyMoved` run afterwards in body order, so the broad-phase move buffer is unchanged.
+- **Thread count**: stages are separated by barriers, so the solver uses at most
+  `performanceCoreCount` threads (`hw.perflevel0.physicalcpu`); on an M1 a thread on an
+  efficiency core made 8 threads slower than 4. `begin` waits until every worker checked in, so the
+  first stage is shared instead of mostly run by the caller.
+- **Swift rules for stage code**: never borrow a class-property array with
+  `withUnsafeMutableBufferPointer` on a worker thread (dynamic exclusivity conflicts); take raw
+  views on the calling thread before the stage and keep per-thread results behind pointers.
+- The collide pass still uses its own `concurrentPerform` dispatch and is not part of the pool.
+  A pre-existing exclusivity bug there (reading `contacts.count` while the buffer was borrowed)
+  was fixed.
+
+Verification: debug and release, 454 tests in 122 suites pass. `ParallelSolverTests` compares
+hashes for 1/4/8 workers over 90 steps on a pyramid, a joint grid, mixed mesh/convex contacts,
+restitution, mixed joint types (revolute, six-DOF, weld, distance), ragdolls, and a scene with
+640 sleeping boxes plus fast bodies and bullets fired into static walls; it also checks changing
+the worker count between steps and vehicles plus soft bodies with workers. Timings are in
+`PERFORMANCE.md`, section 10.

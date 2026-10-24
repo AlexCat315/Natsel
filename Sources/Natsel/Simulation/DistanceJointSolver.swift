@@ -108,13 +108,6 @@ extension World {
 
     // MARK: Pipeline
 
-    func prepareAllJoints(_ context: StepContext) {
-        for ci in 0..<Int(B3.graphColorCount) {
-            prepareJoints(Int32(ci), context)
-        }
-        prepareWideJoints()
-    }
-
     func warmStartAllJoints(_ context: StepContext) {
         for ci in 0..<Int(B3.graphColorCount) {
             warmStartJoints(Int32(ci), context)
@@ -141,26 +134,83 @@ extension World {
         }
     }
 
+    /// Pointers to one color's joints and wide batches, valid while the arrays are not resized.
+    struct JointColorView {
+        var joints: UnsafeMutablePointer<JointSim>?
+        var jointCount = 0
+        var starts: UnsafePointer<Int>?
+        var batches: UnsafeMutablePointer<SphericalConstraintW>?
+        var units: UnsafePointer<Int32>?
+        /// Units to solve: wide batches count once.
+        var unitCount = 0
+    }
+
+    /// Lend one color's joints with fresh pointers (the serial path).
+    func withJointColor<R>(_ ci: Int, _ body: (JointColorView) -> R) -> R {
+        // Local copies of the read-only arrays: reading `solverJoints` while its batches are
+        // borrowed for writing would be an overlapping access.
+        let startList = solverJoints.starts[ci]
+        let unitList = solverJoints.units[ci]
+        let wide = enableWideSolver && startList.isEmpty == false
+        return constraintGraph.colors[ci].jointSims.withUnsafeMutableBufferPointer { list in
+            startList.withUnsafeBufferPointer { starts in
+                solverJoints.batches[ci].withUnsafeMutableBufferPointer { batches in
+                    unitList.withUnsafeBufferPointer { units in
+                        var view = JointColorView()
+                        view.joints = list.baseAddress
+                        view.jointCount = list.count
+                        if wide {
+                            view.starts = starts.baseAddress
+                            view.batches = batches.baseAddress
+                            view.units = units.baseAddress
+                            view.unitCount = units.count
+                        } else {
+                            view.unitCount = list.count
+                        }
+                        return body(view)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Warm start joint units of one color. A unit is a scalar joint or a wide spherical batch.
+    func warmStartJointsRange(
+        _ view: JointColorView, _ range: Range<Int>, _ context: StepContext,
+        _ states: UnsafeMutableBufferPointer<BodyState>
+    ) {
+        guard let joints = view.joints else { return }
+        for u in range {
+            let i = view.units.map { Int($0[u]) } ?? u
+            if let starts = view.starts, let batches = view.batches, starts[i] >= 0 {
+                warmStartSphericalW(batches[starts[i]], states)
+            } else {
+                warmStartJoint(&joints[i], context, states)
+            }
+        }
+    }
+
+    func solveJointsRange(
+        _ view: JointColorView, _ range: Range<Int>, _ context: StepContext, _ useBias: Bool,
+        _ states: UnsafeMutableBufferPointer<BodyState>
+    ) {
+        guard let joints = view.joints else { return }
+        for u in range {
+            let i = view.units.map { Int($0[u]) } ?? u
+            if let starts = view.starts, let batches = view.batches, starts[i] >= 0 {
+                solveSphericalW(&batches[starts[i]], states, useBias)
+            } else {
+                solveJoint(&joints[i], context, useBias, states)
+            }
+        }
+    }
+
     /// Warm start the joints of a single graph color.
     func warmStartJoints(_ colorIndex: Int32, _ context: StepContext) {
         guard !constraintGraph.colors[Int(colorIndex)].jointSims.isEmpty else { return }
-        let ci = Int(colorIndex)
-        let starts = solverJoints.starts[ci]
         withSolverStates { states in
-            constraintGraph.colors[Int(colorIndex)].jointSims.withUnsafeMutableBufferPointer { list in
-                solverJoints.batches[ci].withUnsafeMutableBufferPointer { batches in
-                    var i = 0
-                    while i < list.count {
-                        if enableWideSolver, !starts.isEmpty, starts[i] >= 0 {
-                            let batch = starts[i]
-                            warmStartSphericalW(batches[batch], states)
-                            i += batches[batch].laneCount
-                        } else {
-                            warmStartJoint(&list[i], context, states)
-                            i += 1
-                        }
-                    }
-                }
+            withJointColor(Int(colorIndex)) { view in
+                warmStartJointsRange(view, 0..<view.unitCount, context, states)
             }
         }
     }
@@ -168,23 +218,9 @@ extension World {
     /// Solve the joints of a single graph color.
     func solveJoints(_ colorIndex: Int32, _ context: StepContext, _ useBias: Bool) {
         guard !constraintGraph.colors[Int(colorIndex)].jointSims.isEmpty else { return }
-        let ci = Int(colorIndex)
-        let starts = solverJoints.starts[ci]
         withSolverStates { states in
-            constraintGraph.colors[Int(colorIndex)].jointSims.withUnsafeMutableBufferPointer { list in
-                solverJoints.batches[ci].withUnsafeMutableBufferPointer { batches in
-                    var i = 0
-                    while i < list.count {
-                        if enableWideSolver, !starts.isEmpty, starts[i] >= 0 {
-                            let batch = starts[i]
-                            solveSphericalW(&batches[batch], states, useBias)
-                            i += batches[batch].laneCount
-                        } else {
-                            solveJoint(&list[i], context, useBias, states)
-                            i += 1
-                        }
-                    }
-                }
+            withJointColor(Int(colorIndex)) { view in
+                solveJointsRange(view, 0..<view.unitCount, context, useBias, states)
             }
         }
     }
@@ -194,15 +230,15 @@ extension World {
     func prepareDistanceJoint(_ base: inout JointSim, _ context: StepContext) {
         b3Assert(base.type == .distanceJoint)
 
-        let bodyA = bodies[Int(base.bodyIdA)]
-        let bodyB = bodies[Int(base.bodyIdB)]
+        let bodyA = jointPrepareBody(base.bodyIdA)
+        let bodyB = jointPrepareBody(base.bodyIdB)
 
         b3Assert(
             bodyA.setIndex == SetType.awakeSet.rawValue || bodyB.setIndex == SetType.awakeSet.rawValue
         )
 
-        let simA = solverSets[Int(bodyA.setIndex)].bodySims[Int(bodyA.localIndex)]
-        let simB = solverSets[Int(bodyB.setIndex)].bodySims[Int(bodyB.localIndex)]
+        let simA = jointPrepareSim(bodyA)
+        let simB = jointPrepareSim(bodyB)
 
         let mA = simA.invMass
         let iA = simA.invInertiaWorld

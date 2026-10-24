@@ -689,8 +689,27 @@ public final class World {
     var vehicles: [VehicleRecord] = []
     var vehicleIdPool = IDPool()
 
+    /// Persistent solver threads, created when `workerCount` exceeds one.
+    var workerPool: WorkerPool?
+    /// Solver array pointers and the step context while the staged solver runs.
+    var solverViews = SolverViews()
+    var stageContext = StepContext()
+    /// The pool while a solver session runs (preparation through impulse storage).
+    var activePool: WorkerPool?
+    /// Contact preparation plan and pointers, rebuilt every step.
+    var prepareItems: [ContactPrepareItem] = []
+    var prepareIds: [Int32] = []
+    var wideJointItems: [WideJointPrepareItem] = []
+    var prepareViews = ContactPrepareViews()
+    /// Body finalization scratch: deferred work per awake body, enlarged proxies per shape, and
+    /// island results per thread.
+    var finalizeFlags: [UInt8] = []
+    var shapeMoveFlags: [UInt8] = []
+    var finalizeThreads: [FinalizeThreadData] = []
+    var finalizeViews = FinalizeViews()
+
     /// Six DOF joint state, kept out of `JointSim` so other joints stay small.
-    var sixDOFStore: [SixDOFJointData] = []
+    let sixDOFStore = StableStorage<SixDOFJointData>()
     var sixDOFPool = IDPool()
 
     /// Position based soft bodies. Simulated after rigid body finalization (SoftBody/).

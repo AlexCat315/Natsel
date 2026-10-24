@@ -126,6 +126,9 @@ extension World {
                                         let satCallsBase = satCallsBuffer.baseAddress!
                                         let satHitsBase = satHitsBuffer.baseAddress!
                                         let contactBase = contactBuffer.baseAddress!
+                                        // Read the count here: inside the workers `contacts` is
+                                        // still borrowed for writing by this closure.
+                                        let contactCount = contactBuffer.count
                                         let indexBase = indexBuffer.baseAddress!
                                         let indexCount = indexBuffer.count
                                         DispatchQueue.concurrentPerform(iterations: Int(workers)) { w in
@@ -135,7 +138,7 @@ extension World {
                                             var recycledCount: Int32 = 0
                                             var localStore = ContactStore(
                                                 UnsafeMutableBufferPointer(
-                                                    start: contactBase, count: contacts.count))
+                                                    start: contactBase, count: contactCount))
                                             var localScratch = MeshContactScratch()
                                             withUnsafeMutablePointer(to: &localScratch) { scratch in
                                                 for i in start..<end {

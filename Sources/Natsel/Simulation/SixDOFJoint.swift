@@ -207,10 +207,10 @@ extension World {
     // MARK: Prepare
 
     func prepareSixDOFJoint(_ base: inout JointSim, _ context: StepContext) {
-        let bodyA = bodies[Int(base.bodyIdA)]
-        let bodyB = bodies[Int(base.bodyIdB)]
-        let simA = solverSets[Int(bodyA.setIndex)].bodySims[Int(bodyA.localIndex)]
-        let simB = solverSets[Int(bodyB.setIndex)].bodySims[Int(bodyB.localIndex)]
+        let bodyA = jointPrepareBody(base.bodyIdA)
+        let bodyB = jointPrepareBody(base.bodyIdB)
+        let simA = jointPrepareSim(bodyA)
+        let simB = jointPrepareSim(bodyB)
         base.invMassA = simA.invMass
         base.invMassB = simB.invMass
         base.invIA = simA.invInertiaWorld

@@ -2,10 +2,14 @@
 // from the contacts, so wide colors no longer build scalar constraints only to repack them.
 
 extension World {
-    /// Contacts of one color range prepared into four-lane batches.
-    func prepareWideRange(
-        _ colorIndex: Int, _ contactIds: [Int32], _ softness: Softness, _ staticSoftness: Softness,
-        _ warmStartScale: Float
+    /// Prepare one batch of up to four contacts into its preassigned slots. Its manifolds go to
+    /// `manifoldOut`, uninitialized memory with room for the largest lane manifold count.
+    func prepareWideBatch(
+        _ ids: UnsafePointer<Int32>, _ laneCount: Int, _ out: UnsafeMutablePointer<ContactConstraintW>,
+        _ manifoldOut: UnsafeMutablePointer<ManifoldConstraintW>, _ manifoldStart: Int,
+        _ contactBase: UnsafePointer<Contact>, _ sims: UnsafePointer<BodySim>,
+        _ states: UnsafeMutableBufferPointer<BodyState>,
+        _ softness: Softness, _ staticSoftness: Softness, _ warmStartScale: Float
     ) {
         let invTau = FloatW(repeating: 1 / B3.speculativeDistance)
         let minFrictionWeight = FloatW(repeating: B3.minFrictionWeight)
@@ -17,221 +21,202 @@ extension World {
         let staticBias = staticSoftness.massScale * staticSoftness.biasRate
         let hitFlag = ContactFlags.simEnableHitEvent.rawValue
         let staticFlag = ContactFlags.staticFlag.rawValue
-        let dynamicFlag = BodyFlags.dynamicFlag.rawValue
-        _ = dynamicFlag
 
-        let awake = Int(SetType.awakeSet.rawValue)
-        solverSets[awake].bodySims.withUnsafeBufferPointer { simBuffer in
-            solverSets[awake].bodyStates.withUnsafeMutableBufferPointer { states in
-                contacts.withUnsafeBufferPointer { contactBuffer in
-                    let sims = simBuffer.baseAddress!
-                    let contactBase = contactBuffer.baseAddress!
-                    contactIds.withUnsafeBufferPointer { ids in
-                        let count = ids.count
-                        var start = 0
-                        while start < count {
-                            var c = ContactConstraintW()
-                            var manifolds = InlineArray<4, UnsafePointer<Manifold>?>(repeating: nil)
-                            var manifoldCounts = SIMD4<Int32>.zero
-                            var needVelocity = SIMDMask<SIMD4<Int32>>(repeating: false)
-                            var tangentVelocity = Vec3W()
-                            var simLanesA = InlineArray<4, UnsafeRawPointer?>(repeating: nil)
-                            var simLanesB = InlineArray<4, UnsafeRawPointer?>(repeating: nil)
-                            // Constant lane indices let the compiler insert each scalar directly
-                            // into its vector instead of spilling through a dynamic SIMD subscript.
-                            @inline(__always) func gatherLane(_ lane: Int) {
-                                guard lane < count - start else { return }
-                                let id = ids[start + lane]
-                                let contact = contactBase + Int(id)
-                                let indexA = decodeAwakeIndex(contact.pointee.encodedBodySimA)
-                                let indexB = decodeAwakeIndex(contact.pointee.encodedBodySimB)
-                                c.contactIds[lane] = id
-                                c.indexA[lane] = indexA
-                                c.indexB[lane] = indexB
-                                if indexA >= 0 {
-                                    let sim = sims + Int(indexA)
-                                    c.invMassA[lane] = sim.pointee.invMass
-                                    simLanesA[lane] = UnsafeRawPointer(sim)
-                                }
-                                if indexB >= 0 {
-                                    let sim = sims + Int(indexB)
-                                    c.invMassB[lane] = sim.pointee.invMass
-                                    simLanesB[lane] = UnsafeRawPointer(sim)
-                                }
-                                let isStatic = (contact.pointee.flags & staticFlag) != 0
-                                let soft = isStatic ? staticSoftness : softness
-                                c.biasRate[lane] = isStatic ? staticBias : dynamicBias
-                                c.massScale[lane] = soft.massScale
-                                c.impulseScale[lane] = soft.impulseScale
-                                let restitution = contact.pointee.restitution
-                                let rolling = contact.pointee.rollingResistance
-                                c.friction[lane] = contact.pointee.friction
-                                c.restitution[lane] = restitution
-                                c.rollingResistance[lane] = rolling
-                                c.anyRolling = c.anyRolling || rolling > 0
-                                c.anyRestitution = c.anyRestitution || restitution > 0
-                                needVelocity[lane] =
-                                    restitution > 0 || (contact.pointee.flags & hitFlag) != 0
-                                tangentVelocity[lane] = contact.pointee.tangentVelocity
-                                let mc = contact.pointee.manifoldCount
-                                manifoldCounts[lane] = mc
-                                c.manifoldCount = max(c.manifoldCount, Int(mc))
-                                if mc > 0 {
-                                    manifolds[lane] = UnsafePointer(contact.pointee.manifolds.buffer.baseAddress!)
-                                }
-                            }
-                            gatherLane(0)
-                            gatherLane(1)
-                            gatherLane(2)
-                            gatherLane(3)
-                            c.invIA = gatherInvInertiaW(simLanesA)
-                            c.invIB = gatherInvInertiaW(simLanesB)
-                            if c.anyRestitution { solveAnyRestitution = true }
-                            c.laneManifoldCounts = manifoldCounts
-
-                            let mA = c.invMassA
-                            let mB = c.invMassB
-                            let iA = c.invIA
-                            let iB = c.invIB
-                            let invIAB = addSymW(iA, iB)
-                            let rollingMask = c.rollingResistance .> .zero
-                            if c.anyRolling {
-                                let inv = invertSymW(invIAB)
-                                c.rollingMass.xx = selectW(rollingMask, inv.xx, .zero)
-                                c.rollingMass.yy = selectW(rollingMask, inv.yy, .zero)
-                                c.rollingMass.zz = selectW(rollingMask, inv.zz, .zero)
-                                c.rollingMass.xy = selectW(rollingMask, inv.xy, .zero)
-                                c.rollingMass.xz = selectW(rollingMask, inv.xz, .zero)
-                                c.rollingMass.yz = selectW(rollingMask, inv.yz, .zero)
-                            }
-
-                            var stateA = BodyStateW()
-                            var stateB = BodyStateW()
-                            let anyVelocity = any(needVelocity)
-                            if anyVelocity {
-                                stateA = Self.gatherStatesW(states, c.indexA)
-                                stateB = Self.gatherStatesW(states, c.indexB)
-                            }
-
-                            c.manifoldStart = solverContacts.wideManifolds.count
-                            for offset in 0..<c.manifoldCount {
-                                var m = ManifoldConstraintW()
-                                var lanes = InlineArray<4, UnsafePointer<Manifold>?>(repeating: nil)
-                                for lane in 0..<4 where offset < Int(manifoldCounts[lane]) {
-                                    let sm = manifolds[lane]! + offset
-                                    lanes[lane] = sm
-                                    m.exists[lane] = 1
-                                    let pc = sm.pointee.pointCount
-                                    m.pointCounts[lane] = pc
-                                    m.pointCount = max(m.pointCount, Int(pc))
-                                }
-                                let header = gatherManifoldHeaderW(lanes)
-                                let normal = header.normal
-                                let twistImpulse = header.twistImpulse
-                                let frictionImpulse = header.frictionImpulse
-                                let rollingImpulse = header.rollingImpulse
-
-                                let tangent1 = perpW(normal)
-                                let tangent2 = crossW(tangent1, normal)
-                                m.normal = normal
-                                m.tangent1 = tangent1
-                                m.tangent2 = tangent2
-                                m.tangentVelocity1 = dotW(tangentVelocity, tangent1)
-                                m.tangentVelocity2 = dotW(tangentVelocity, tangent2)
-                                m.twistImpulse = ws * twistImpulse
-                                let rollingKeep = rollingMask .& (m.exists .> .zero)
-                                m.rollingImpulse = selectW(rollingKeep, mulW(ws, rollingImpulse), Vec3W())
-                                m.frictionImpulse = Vec2W(
-                                    x: ws * dotW(frictionImpulse, tangent1), y: ws * dotW(frictionImpulse, tangent2))
-
-                                var centerA = Vec3W()
-                                var centerB = Vec3W()
-                                var totalWeight = FloatW.zero
-                                for pi in 0..<m.pointCount {
-                                    let point = gatherManifoldPointW(lanes, pi)
-                                    let rA = point.rA
-                                    let rB = point.rB
-                                    let separation = point.separation
-                                    let normalImpulse = point.normalImpulse
-                                    let pointMask = m.pointCounts .> SIMD4<Int32>(repeating: Int32(pi))
-                                    var weight = minW(maxW(two - separation * invTau, minFrictionWeight), one)
-                                    weight = selectW(pointMask, weight, .zero)
-                                    centerA = mulAddW(centerA, weight, rA)
-                                    centerB = mulAddW(centerB, weight, rB)
-                                    totalWeight += weight
-
-                                    var cp = ConstraintPointW()
-                                    cp.rA = rA
-                                    cp.rB = rB
-                                    cp.baseSeparation = separation - dotW(subW(rB, rA), normal)
-                                    cp.normalImpulse = ws * normalImpulse
-
-                                    let rnA = crossW(rA, normal)
-                                    let rnB = crossW(rB, normal)
-                                    var kNormal = mA + mB
-                                    kNormal += dotW(rnA, mulMVW(iA, rnA))
-                                    kNormal += dotW(rnB, mulMVW(iB, rnB))
-                                    cp.normalMass = selectW((kNormal .> .zero) .& pointMask, one / kNormal, .zero)
-                                    m.points[pi] = cp
-                                }
-
-                                let frictionValid = totalWeight .> .zero
-                                let invWeight = selectW(frictionValid, one / totalWeight, .zero)
-                                centerA = mulW(invWeight, centerA)
-                                centerB = mulW(invWeight, centerB)
-                                m.centerA = centerA
-                                m.centerB = centerB
-
-                                for pi in 0..<m.pointCount {
-                                    let pointMask = m.pointCounts .> SIMD4<Int32>(repeating: Int32(pi))
-                                    let d = subW(m.points[pi].rA, centerA)
-                                    m.points[pi].leverArm = selectW(pointMask, dotW(d, d).squareRoot(), .zero)
-                                }
-
-                                do {
-                                    let rtA1 = crossW(centerA, tangent1)
-                                    let rtA2 = crossW(centerA, tangent2)
-                                    let rtB1 = crossW(centerB, tangent1)
-                                    let rtB2 = crossW(centerB, tangent2)
-                                    let iArtA1 = mulMVW(iA, rtA1)
-                                    let iArtA2 = mulMVW(iA, rtA2)
-                                    let iBrtB1 = mulMVW(iB, rtB1)
-                                    let iBrtB2 = mulMVW(iB, rtB2)
-                                    let mSum = mA + mB
-                                    let kxx = (mSum + dotW(rtA1, iArtA1)) + dotW(rtB1, iBrtB1)
-                                    let kyy = (mSum + dotW(rtA2, iArtA2)) + dotW(rtB2, iBrtB2)
-                                    let kxy = dotW(rtA1, iArtA2) + dotW(rtB1, iBrtB2)
-                                    let det = kxx * kyy - kxy * kxy
-                                    let valid = (absW(det) .> minDet) .& frictionValid
-                                    let invDet = selectW(valid, one / det, .zero)
-                                    m.tangentMass.xx = invDet * kyy
-                                    m.tangentMass.xy = negW(invDet * kxy)
-                                    m.tangentMass.yy = invDet * kxx
-                                }
-
-                                let kTwist = dotW(normal, mulMVW(invIAB, normal))
-                                m.twistMass = selectW(kTwist .> .zero, one / kTwist, .zero)
-
-                                if anyVelocity {
-                                    for pi in 0..<m.pointCount {
-                                        let rA = m.points[pi].rA
-                                        let rB = m.points[pi].rB
-                                        let vrA = addW(stateA.v, crossW(stateA.w, rA))
-                                        let vrB = addW(stateB.v, crossW(stateB.w, rB))
-                                        let vn = dotW(normal, subW(vrB, vrA))
-                                        let pointMask = m.pointCounts .> SIMD4<Int32>(repeating: Int32(pi))
-                                        m.points[pi].relativeVelocity = selectW(needVelocity .& pointMask, vn, .zero)
-                                    }
-                                }
-                                solverContacts.wideManifolds.append(m)
-                            }
-                            solverContacts.wideConstraints[colorIndex].append(c)
-                            start += 4
-                        }
-                    }
-                }
+        var c = ContactConstraintW()
+        var manifolds = InlineArray<4, UnsafePointer<Manifold>?>(repeating: nil)
+        var manifoldCounts = SIMD4<Int32>.zero
+        var needVelocity = SIMDMask<SIMD4<Int32>>(repeating: false)
+        var tangentVelocity = Vec3W()
+        var simLanesA = InlineArray<4, UnsafeRawPointer?>(repeating: nil)
+        var simLanesB = InlineArray<4, UnsafeRawPointer?>(repeating: nil)
+        // Constant lane indices let the compiler insert each scalar directly
+        // into its vector instead of spilling through a dynamic SIMD subscript.
+        @inline(__always) func gatherLane(_ lane: Int) {
+            guard lane < laneCount else { return }
+            let id = ids[lane]
+            let contact = contactBase + Int(id)
+            let indexA = decodeAwakeIndex(contact.pointee.encodedBodySimA)
+            let indexB = decodeAwakeIndex(contact.pointee.encodedBodySimB)
+            c.contactIds[lane] = id
+            c.indexA[lane] = indexA
+            c.indexB[lane] = indexB
+            if indexA >= 0 {
+                let sim = sims + Int(indexA)
+                c.invMassA[lane] = sim.pointee.invMass
+                simLanesA[lane] = UnsafeRawPointer(sim)
+            }
+            if indexB >= 0 {
+                let sim = sims + Int(indexB)
+                c.invMassB[lane] = sim.pointee.invMass
+                simLanesB[lane] = UnsafeRawPointer(sim)
+            }
+            let isStatic = (contact.pointee.flags & staticFlag) != 0
+            let soft = isStatic ? staticSoftness : softness
+            c.biasRate[lane] = isStatic ? staticBias : dynamicBias
+            c.massScale[lane] = soft.massScale
+            c.impulseScale[lane] = soft.impulseScale
+            let restitution = contact.pointee.restitution
+            let rolling = contact.pointee.rollingResistance
+            c.friction[lane] = contact.pointee.friction
+            c.restitution[lane] = restitution
+            c.rollingResistance[lane] = rolling
+            c.anyRolling = c.anyRolling || rolling > 0
+            c.anyRestitution = c.anyRestitution || restitution > 0
+            needVelocity[lane] =
+                restitution > 0 || (contact.pointee.flags & hitFlag) != 0
+            tangentVelocity[lane] = contact.pointee.tangentVelocity
+            let mc = contact.pointee.manifoldCount
+            manifoldCounts[lane] = mc
+            c.manifoldCount = max(c.manifoldCount, Int(mc))
+            if mc > 0 {
+                manifolds[lane] = UnsafePointer(contact.pointee.manifolds.buffer.baseAddress!)
             }
         }
+        gatherLane(0)
+        gatherLane(1)
+        gatherLane(2)
+        gatherLane(3)
+        c.invIA = gatherInvInertiaW(simLanesA)
+        c.invIB = gatherInvInertiaW(simLanesB)
+        c.laneManifoldCounts = manifoldCounts
+
+        let mA = c.invMassA
+        let mB = c.invMassB
+        let iA = c.invIA
+        let iB = c.invIB
+        let invIAB = addSymW(iA, iB)
+        let rollingMask = c.rollingResistance .> .zero
+        if c.anyRolling {
+            let inv = invertSymW(invIAB)
+            c.rollingMass.xx = selectW(rollingMask, inv.xx, .zero)
+            c.rollingMass.yy = selectW(rollingMask, inv.yy, .zero)
+            c.rollingMass.zz = selectW(rollingMask, inv.zz, .zero)
+            c.rollingMass.xy = selectW(rollingMask, inv.xy, .zero)
+            c.rollingMass.xz = selectW(rollingMask, inv.xz, .zero)
+            c.rollingMass.yz = selectW(rollingMask, inv.yz, .zero)
+        }
+
+        var stateA = BodyStateW()
+        var stateB = BodyStateW()
+        let anyVelocity = any(needVelocity)
+        if anyVelocity {
+            stateA = Self.gatherStatesW(states, c.indexA)
+            stateB = Self.gatherStatesW(states, c.indexB)
+        }
+
+        c.manifoldStart = manifoldStart
+        for offset in 0..<c.manifoldCount {
+            var m = ManifoldConstraintW()
+            var lanes = InlineArray<4, UnsafePointer<Manifold>?>(repeating: nil)
+            for lane in 0..<4 where offset < Int(manifoldCounts[lane]) {
+                let sm = manifolds[lane]! + offset
+                lanes[lane] = sm
+                m.exists[lane] = 1
+                let pc = sm.pointee.pointCount
+                m.pointCounts[lane] = pc
+                m.pointCount = max(m.pointCount, Int(pc))
+            }
+            let header = gatherManifoldHeaderW(lanes)
+            let normal = header.normal
+            let twistImpulse = header.twistImpulse
+            let frictionImpulse = header.frictionImpulse
+            let rollingImpulse = header.rollingImpulse
+
+            let tangent1 = perpW(normal)
+            let tangent2 = crossW(tangent1, normal)
+            m.normal = normal
+            m.tangent1 = tangent1
+            m.tangent2 = tangent2
+            m.tangentVelocity1 = dotW(tangentVelocity, tangent1)
+            m.tangentVelocity2 = dotW(tangentVelocity, tangent2)
+            m.twistImpulse = ws * twistImpulse
+            let rollingKeep = rollingMask .& (m.exists .> .zero)
+            m.rollingImpulse = selectW(rollingKeep, mulW(ws, rollingImpulse), Vec3W())
+            m.frictionImpulse = Vec2W(
+                x: ws * dotW(frictionImpulse, tangent1), y: ws * dotW(frictionImpulse, tangent2))
+
+            var centerA = Vec3W()
+            var centerB = Vec3W()
+            var totalWeight = FloatW.zero
+            for pi in 0..<m.pointCount {
+                let point = gatherManifoldPointW(lanes, pi)
+                let rA = point.rA
+                let rB = point.rB
+                let separation = point.separation
+                let normalImpulse = point.normalImpulse
+                let pointMask = m.pointCounts .> SIMD4<Int32>(repeating: Int32(pi))
+                var weight = minW(maxW(two - separation * invTau, minFrictionWeight), one)
+                weight = selectW(pointMask, weight, .zero)
+                centerA = mulAddW(centerA, weight, rA)
+                centerB = mulAddW(centerB, weight, rB)
+                totalWeight += weight
+
+                var cp = ConstraintPointW()
+                cp.rA = rA
+                cp.rB = rB
+                cp.baseSeparation = separation - dotW(subW(rB, rA), normal)
+                cp.normalImpulse = ws * normalImpulse
+
+                let rnA = crossW(rA, normal)
+                let rnB = crossW(rB, normal)
+                var kNormal = mA + mB
+                kNormal += dotW(rnA, mulMVW(iA, rnA))
+                kNormal += dotW(rnB, mulMVW(iB, rnB))
+                cp.normalMass = selectW((kNormal .> .zero) .& pointMask, one / kNormal, .zero)
+                m.points[pi] = cp
+            }
+
+            let frictionValid = totalWeight .> .zero
+            let invWeight = selectW(frictionValid, one / totalWeight, .zero)
+            centerA = mulW(invWeight, centerA)
+            centerB = mulW(invWeight, centerB)
+            m.centerA = centerA
+            m.centerB = centerB
+
+            for pi in 0..<m.pointCount {
+                let pointMask = m.pointCounts .> SIMD4<Int32>(repeating: Int32(pi))
+                let d = subW(m.points[pi].rA, centerA)
+                m.points[pi].leverArm = selectW(pointMask, dotW(d, d).squareRoot(), .zero)
+            }
+
+            do {
+                let rtA1 = crossW(centerA, tangent1)
+                let rtA2 = crossW(centerA, tangent2)
+                let rtB1 = crossW(centerB, tangent1)
+                let rtB2 = crossW(centerB, tangent2)
+                let iArtA1 = mulMVW(iA, rtA1)
+                let iArtA2 = mulMVW(iA, rtA2)
+                let iBrtB1 = mulMVW(iB, rtB1)
+                let iBrtB2 = mulMVW(iB, rtB2)
+                let mSum = mA + mB
+                let kxx = (mSum + dotW(rtA1, iArtA1)) + dotW(rtB1, iBrtB1)
+                let kyy = (mSum + dotW(rtA2, iArtA2)) + dotW(rtB2, iBrtB2)
+                let kxy = dotW(rtA1, iArtA2) + dotW(rtB1, iBrtB2)
+                let det = kxx * kyy - kxy * kxy
+                let valid = (absW(det) .> minDet) .& frictionValid
+                let invDet = selectW(valid, one / det, .zero)
+                m.tangentMass.xx = invDet * kyy
+                m.tangentMass.xy = negW(invDet * kxy)
+                m.tangentMass.yy = invDet * kxx
+            }
+
+            let kTwist = dotW(normal, mulMVW(invIAB, normal))
+            m.twistMass = selectW(kTwist .> .zero, one / kTwist, .zero)
+
+            if anyVelocity {
+                for pi in 0..<m.pointCount {
+                    let rA = m.points[pi].rA
+                    let rB = m.points[pi].rB
+                    let vrA = addW(stateA.v, crossW(stateA.w, rA))
+                    let vrB = addW(stateB.v, crossW(stateB.w, rB))
+                    let vn = dotW(normal, subW(vrB, vrA))
+                    let pointMask = m.pointCounts .> SIMD4<Int32>(repeating: Int32(pi))
+                    m.points[pi].relativeVelocity = selectW(needVelocity .& pointMask, vn, .zero)
+                }
+            }
+            (manifoldOut + offset).initialize(to: m)
+        }
+        out.initialize(to: c)
     }
 }
 

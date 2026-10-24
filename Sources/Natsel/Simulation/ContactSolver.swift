@@ -246,264 +246,189 @@ extension World {
         solverConvexContactIds(colorIndex) + solverMeshContactIds(colorIndex)
     }
 
-    /// Prepare the constraint data for one color.
-    func prepareContacts(_ colorIndex: Int32, _ softness: Softness, _ staticSoftness: Softness, _ context: StepContext) {
-        let color = constraintGraph.colors[Int(colorIndex)]
-        let convexContactIds = color.convexContacts
-        let meshContactIds = color.contacts.isEmpty ? [] : solverMeshContactIds(colorIndex)
-        let totalCount = convexContactIds.count + meshContactIds.count
-        guard totalCount > 0 else {
-            return
-        }
-        let colorWide = enableWideSolver && colorIndex != overflowIndex
-        let wideConvex = colorWide && convexContactIds.count >= 4
-        let wideMesh = colorWide && meshContactIds.count >= 4
-        solverContacts.wideConvex[Int(colorIndex)] = wideConvex
-        solverContacts.wideMesh[Int(colorIndex)] = wideMesh
-
-        let warmStartScale: Float = enableWarmStarting ? 1 : 0
+    /// Prepare one scalar contact constraint into its preassigned slots. Its manifolds go to
+    /// `manifoldOut`, which is uninitialized memory with room for the contact's manifold count.
+    func prepareContactConstraint(
+        _ contactId: Int32, _ out: UnsafeMutablePointer<ContactConstraint>,
+        _ manifoldOut: UnsafeMutablePointer<ManifoldConstraint>, _ manifoldStart: Int32,
+        _ contactStore: UnsafePointer<Contact>, _ bodySims: UnsafeBufferPointer<BodySim>,
+        _ bodyStates: UnsafeMutableBufferPointer<BodyState>,
+        _ softness: Softness, _ staticSoftness: Softness, _ warmStartScale: Float
+    ) {
         let invTau = 1 / B3.speculativeDistance
         let minFrictionWeight = B3.minFrictionWeight
+        let contact = contactStore + Int(contactId)
+        let tangentVelocity = contact.pointee.tangentVelocity
 
-        // Reuse this color's storage. The previous local array allocated and then replaced the
-        // stored one every step, so the solver prepared a fresh allocation per color per step.
-        let colorIndexInt = Int(colorIndex)
-        solverContacts.constraints[colorIndexInt].removeAll(keepingCapacity: true)
-        solverContacts.constraints[colorIndexInt].reserveCapacity(totalCount)
-        let scalarConvex = !wideConvex || prepareScalarForWideColors
-        let scalarMesh = !wideMesh || prepareScalarForWideColors
-        solverContacts.convexCounts[colorIndexInt] = scalarConvex ? convexContactIds.count : 0
+        var constraint = ContactConstraint()
+        constraint.contactId = contactId
+        constraint.manifoldStart = manifoldStart
 
-        let awakeSetIndex = Int(SetType.awakeSet.rawValue)
-        solverSets[awakeSetIndex].bodySims.withUnsafeBufferPointer { bodySims in
-            solverSets[awakeSetIndex].bodyStates.withUnsafeBufferPointer { bodyStates in
-              contacts.withUnsafeBufferPointer { contactStore in
-                for pass in 0..<2 {
-                    if pass == 0 ? !scalarConvex : !scalarMesh { continue }
-                    let contactIds = pass == 0 ? convexContactIds : meshContactIds
-                    for contactId in contactIds {
-            let contact = contactStore.baseAddress! + Int(contactId)
-            let tangentVelocity = contact.pointee.tangentVelocity
+        let indexA = decodeAwakeIndex(contact.pointee.encodedBodySimA)
+        let indexB = decodeAwakeIndex(contact.pointee.encodedBodySimB)
+        constraint.indexA = indexA
+        constraint.indexB = indexB
 
-            var constraint = ContactConstraint()
-            constraint.contactId = contactId
+        // Read the few scalar fields directly from the borrowed body-sim buffer. Taking a
+        // BodySim by value here copied several hundred bytes for every contact.
+        if indexA >= 0 {
+            let sim = bodySims.baseAddress! + Int(indexA)
+            constraint.invMassA = sim.pointee.invMass
+            constraint.invIA = SymMatrix3(sim.pointee.invInertiaWorld)
+        } else {
+            constraint.invMassA = 0
+            constraint.invIA = SymMatrix3()
+        }
+        if indexB >= 0 {
+            let sim = bodySims.baseAddress! + Int(indexB)
+            constraint.invMassB = sim.pointee.invMass
+            constraint.invIB = SymMatrix3(sim.pointee.invInertiaWorld)
+        } else {
+            constraint.invMassB = 0
+            constraint.invIB = SymMatrix3()
+        }
+        constraint.friction = contact.pointee.friction
+        constraint.restitution = contact.pointee.restitution
+        constraint.rollingResistance = contact.pointee.rollingResistance
+        constraint.isStatic = (contact.pointee.flags & ContactFlags.staticFlag.rawValue) != 0
+        constraint.softness = constraint.isStatic ? staticSoftness : softness
 
-            let indexA = decodeAwakeIndex(contact.pointee.encodedBodySimA)
-            let indexB = decodeAwakeIndex(contact.pointee.encodedBodySimB)
-            constraint.indexA = indexA
-            constraint.indexB = indexB
+        let invIAB = addSym(constraint.invIA, constraint.invIB)
+        if constraint.rollingResistance > 0 {
+            constraint.rollingMass = invertSym(invIAB)
+        } else {
+            constraint.rollingMass = SymMatrix3()
+        }
 
-            // Read the few scalar fields directly from the borrowed body-sim buffer. Taking a
-            // BodySim by value here copied several hundred bytes for every contact.
-            if indexA >= 0 {
-                let sim = bodySims.baseAddress! + Int(indexA)
-                constraint.invMassA = sim.pointee.invMass
-                constraint.invIA = SymMatrix3(sim.pointee.invInertiaWorld)
-            } else {
-                constraint.invMassA = 0
-                constraint.invIA = SymMatrix3()
-            }
-            if indexB >= 0 {
-                let sim = bodySims.baseAddress! + Int(indexB)
-                constraint.invMassB = sim.pointee.invMass
-                constraint.invIB = SymMatrix3(sim.pointee.invInertiaWorld)
-            } else {
-                constraint.invMassB = 0
-                constraint.invIB = SymMatrix3()
-            }
-            constraint.friction = contact.pointee.friction
-            constraint.restitution = contact.pointee.restitution
-            constraint.rollingResistance = contact.pointee.rollingResistance
-            constraint.isStatic = (contact.pointee.flags & ContactFlags.staticFlag.rawValue) != 0
-            constraint.softness = constraint.isStatic ? staticSoftness : softness
+        for manifold in contact.pointee.manifolds {
 
-            let invIAB = addSym(constraint.invIA, constraint.invIB)
+            var manifoldConstraint = ManifoldConstraint()
+            let pointCount = manifold.pointCount
+            manifoldConstraint.pointCount = pointCount
+            manifoldConstraint.normal = manifold.normal
+            manifoldConstraint.tangent1 = perp(manifold.normal)
+            manifoldConstraint.tangent2 = cross(manifoldConstraint.tangent1, manifold.normal)
+
+            manifoldConstraint.tangentVelocity1 = dot(tangentVelocity, manifoldConstraint.tangent1)
+            manifoldConstraint.tangentVelocity2 = dot(tangentVelocity, manifoldConstraint.tangent2)
+
+            manifoldConstraint.twistImpulse = warmStartScale * manifold.twistImpulse
             if constraint.rollingResistance > 0 {
-                constraint.rollingMass = invertSym(invIAB)
+                manifoldConstraint.rollingImpulse = warmStartScale * manifold.rollingImpulse
             } else {
-                constraint.rollingMass = SymMatrix3()
+                manifoldConstraint.rollingImpulse = Vec3()
             }
 
-            for manifold in contact.pointee.manifolds {
+            manifoldConstraint.frictionImpulse = Vec2(
+                warmStartScale * dot(manifold.frictionImpulse, manifoldConstraint.tangent1),
+                warmStartScale * dot(manifold.frictionImpulse, manifoldConstraint.tangent2)
+            )
 
-                var manifoldConstraint = ManifoldConstraint()
-                let pointCount = manifold.pointCount
-                manifoldConstraint.pointCount = pointCount
-                manifoldConstraint.normal = manifold.normal
-                manifoldConstraint.tangent1 = perp(manifold.normal)
-                manifoldConstraint.tangent2 = cross(manifoldConstraint.tangent1, manifold.normal)
+            let normal = manifoldConstraint.normal
+            let tangent1 = manifoldConstraint.tangent1
+            let tangent2 = manifoldConstraint.tangent2
 
-                manifoldConstraint.tangentVelocity1 = dot(tangentVelocity, manifoldConstraint.tangent1)
-                manifoldConstraint.tangentVelocity2 = dot(tangentVelocity, manifoldConstraint.tangent2)
+            var centerA = Vec3()
+            var centerB = Vec3()
+            var totalWeight: Float = 0
 
-                manifoldConstraint.twistImpulse = warmStartScale * manifold.twistImpulse
-                if constraint.rollingResistance > 0 {
-                    manifoldConstraint.rollingImpulse = warmStartScale * manifold.rollingImpulse
-                } else {
-                    manifoldConstraint.rollingImpulse = Vec3()
-                }
+            for pointIndex in 0..<Int(pointCount) {
+                let mp = manifold.points[pointIndex]
+                var cp = ConstraintPoint()
 
-                manifoldConstraint.frictionImpulse = Vec2(
-                    warmStartScale * dot(manifold.frictionImpulse, manifoldConstraint.tangent1),
-                    warmStartScale * dot(manifold.frictionImpulse, manifoldConstraint.tangent2)
-                )
+                cp.rA = mp.anchorA
+                cp.rB = mp.anchorB
+                cp.baseSeparation = mp.separation - dot(cp.rB - cp.rA, normal)
+                cp.normalImpulse = warmStartScale * mp.normalImpulse
+                cp.totalNormalImpulse = 0
+                cp.relativeVelocity = 0
+                cp.restitutionImpulse = 0
 
-                let normal = manifoldConstraint.normal
-                let tangent1 = manifoldConstraint.tangent1
-                let tangent2 = manifoldConstraint.tangent2
+                let weight = clampFloat(2.0 - mp.separation * invTau, minFrictionWeight, 1)
+                centerA = centerA + weight * cp.rA
+                centerB = centerB + weight * cp.rB
+                totalWeight += weight
 
-                var centerA = Vec3()
-                var centerB = Vec3()
-                var totalWeight: Float = 0
+                let rnA = cross(cp.rA, normal)
+                let rnB = cross(cp.rB, normal)
 
-                for pointIndex in 0..<Int(pointCount) {
-                    let mp = manifold.points[pointIndex]
-                    var cp = ConstraintPoint()
+                var kNormal = constraint.invMassA + constraint.invMassB
+                kNormal += dot(rnA, constraint.invIA.mulMV(rnA))
+                kNormal += dot(rnB, constraint.invIB.mulMV(rnB))
+                cp.normalMass = kNormal > 0 ? 1 / kNormal : 0
 
-                    cp.rA = mp.anchorA
-                    cp.rB = mp.anchorB
-                    cp.baseSeparation = mp.separation - dot(cp.rB - cp.rA, normal)
-                    cp.normalImpulse = warmStartScale * mp.normalImpulse
-                    cp.totalNormalImpulse = 0
-                    cp.relativeVelocity = 0
-                    cp.restitutionImpulse = 0
+                manifoldConstraint.points[pointIndex] = cp
+            }
 
-                    let weight = clampFloat(2.0 - mp.separation * invTau, minFrictionWeight, 1)
-                    centerA = centerA + weight * cp.rA
-                    centerB = centerB + weight * cp.rB
-                    totalWeight += weight
+            if totalWeight > 0 {
+                centerA = (1 / totalWeight) * centerA
+                centerB = (1 / totalWeight) * centerB
+                manifoldConstraint.centerA = centerA
+                manifoldConstraint.centerB = centerB
+            } else {
+                manifoldConstraint.centerA = Vec3()
+                manifoldConstraint.centerB = Vec3()
+            }
 
-                    let rnA = cross(cp.rA, normal)
-                    let rnB = cross(cp.rB, normal)
+            // Lever arms use the friction center.
+            for pointIndex in 0..<Int(pointCount) {
+                var cp = manifoldConstraint.points[pointIndex]
+                let d = cp.rA - manifoldConstraint.centerA
+                cp.leverArm = dot(d, d).squareRoot()
+                manifoldConstraint.points[pointIndex] = cp
+            }
 
-                    var kNormal = constraint.invMassA + constraint.invMassB
-                    kNormal += dot(rnA, constraint.invIA.mulMV(rnA))
-                    kNormal += dot(rnB, constraint.invIB.mulMV(rnB))
-                    cp.normalMass = kNormal > 0 ? 1 / kNormal : 0
+            // Compute effective mass for the tangential friction. The C wide solver evaluates this
+            // once per manifold, not per point.
+            do {
+                let rtA1 = cross(manifoldConstraint.centerA, tangent1)
+                let rtA2 = cross(manifoldConstraint.centerA, tangent2)
+                let rtB1 = cross(manifoldConstraint.centerB, tangent1)
+                let rtB2 = cross(manifoldConstraint.centerB, tangent2)
 
-                    manifoldConstraint.points[pointIndex] = cp
-                }
+                let iArtA1 = constraint.invIA.mulMV(rtA1)
+                let iArtA2 = constraint.invIA.mulMV(rtA2)
+                let iBrtB1 = constraint.invIB.mulMV(rtB1)
+                let iBrtB2 = constraint.invIB.mulMV(rtB2)
 
-                if totalWeight > 0 {
-                    centerA = (1 / totalWeight) * centerA
-                    centerB = (1 / totalWeight) * centerB
-                    manifoldConstraint.centerA = centerA
-                    manifoldConstraint.centerB = centerB
-                } else {
-                    manifoldConstraint.centerA = Vec3()
-                    manifoldConstraint.centerB = Vec3()
-                }
+                let mSum = constraint.invMassA + constraint.invMassB
+                let kxx = (mSum + dot(rtA1, iArtA1)) + dot(rtB1, iBrtB1)
+                let kyy = (mSum + dot(rtA2, iArtA2)) + dot(rtB2, iBrtB2)
+                let kxy = dot(rtA1, iArtA2) + dot(rtB1, iBrtB2)
 
-                // Lever arms use the friction center.
+                let det = kxx * kyy - kxy * kxy
+                let valid = absFloat(det) > 1000 * Float.leastNormalMagnitude && totalWeight > 0
+                let invDet: Float = valid ? 1 / det : 0
+
+                var tangentMass = Matrix2()
+                tangentMass.cx = Vec2(invDet * kyy, -(invDet * kxy))
+                tangentMass.cy = Vec2(-(invDet * kxy), invDet * kxx)
+                manifoldConstraint.tangentMass = tangentMass
+            }
+
+            let kTwist = dot(normal, invIAB.mulMV(normal))
+            manifoldConstraint.twistMass = kTwist > 0 ? 1 / kTwist : 0
+
+            // Sample relative velocities if needed for restitution or hit events.
+            let haveRestitution = contact.pointee.restitution > 0
+            let hitEvents = (contact.pointee.flags & ContactFlags.simEnableHitEvent.rawValue) != 0
+            if haveRestitution || hitEvents {
+                let stateA = indexA >= 0 ? bodyStates[Int(indexA)] : BodyState.identity
+                let stateB = indexB >= 0 ? bodyStates[Int(indexB)] : BodyState.identity
+
                 for pointIndex in 0..<Int(pointCount) {
                     var cp = manifoldConstraint.points[pointIndex]
-                    let d = cp.rA - manifoldConstraint.centerA
-                    cp.leverArm = dot(d, d).squareRoot()
+                    let vrA = stateA.linearVelocity + cross(stateA.angularVelocity, cp.rA)
+                    let vrB = stateB.linearVelocity + cross(stateB.angularVelocity, cp.rB)
+                    cp.relativeVelocity = dot(normal, vrB - vrA)
                     manifoldConstraint.points[pointIndex] = cp
                 }
-
-                // Compute effective mass for the tangential friction. The C wide solver evaluates this
-                // once per manifold, not per point.
-                do {
-                    let rtA1 = cross(manifoldConstraint.centerA, tangent1)
-                    let rtA2 = cross(manifoldConstraint.centerA, tangent2)
-                    let rtB1 = cross(manifoldConstraint.centerB, tangent1)
-                    let rtB2 = cross(manifoldConstraint.centerB, tangent2)
-
-                    let iArtA1 = constraint.invIA.mulMV(rtA1)
-                    let iArtA2 = constraint.invIA.mulMV(rtA2)
-                    let iBrtB1 = constraint.invIB.mulMV(rtB1)
-                    let iBrtB2 = constraint.invIB.mulMV(rtB2)
-
-                    let mSum = constraint.invMassA + constraint.invMassB
-                    let kxx = (mSum + dot(rtA1, iArtA1)) + dot(rtB1, iBrtB1)
-                    let kyy = (mSum + dot(rtA2, iArtA2)) + dot(rtB2, iBrtB2)
-                    let kxy = dot(rtA1, iArtA2) + dot(rtB1, iBrtB2)
-
-                    let det = kxx * kyy - kxy * kxy
-                    let valid = absFloat(det) > 1000 * Float.leastNormalMagnitude && totalWeight > 0
-                    let invDet: Float = valid ? 1 / det : 0
-
-                    var tangentMass = Matrix2()
-                    tangentMass.cx = Vec2(invDet * kyy, -(invDet * kxy))
-                    tangentMass.cy = Vec2(-(invDet * kxy), invDet * kxx)
-                    manifoldConstraint.tangentMass = tangentMass
-                }
-
-                let kTwist = dot(normal, invIAB.mulMV(normal))
-                manifoldConstraint.twistMass = kTwist > 0 ? 1 / kTwist : 0
-
-                // Sample relative velocities if needed for restitution or hit events.
-                let haveRestitution = contact.pointee.restitution > 0
-                let hitEvents = (contact.pointee.flags & ContactFlags.simEnableHitEvent.rawValue) != 0
-                if haveRestitution || hitEvents {
-                    let stateA = indexA >= 0 ? bodyStates[Int(indexA)] : BodyState.identity
-                    let stateB = indexB >= 0 ? bodyStates[Int(indexB)] : BodyState.identity
-
-                    for pointIndex in 0..<Int(pointCount) {
-                        var cp = manifoldConstraint.points[pointIndex]
-                        let vrA = stateA.linearVelocity + cross(stateA.angularVelocity, cp.rA)
-                        let vrB = stateB.linearVelocity + cross(stateB.angularVelocity, cp.rB)
-                        cp.relativeVelocity = dot(normal, vrB - vrA)
-                        manifoldConstraint.points[pointIndex] = cp
-                    }
-                }
-
-                if haveRestitution {
-                    solveAnyRestitution = true
-                }
-
-                if constraint.manifoldCount == 0 {
-                    constraint.manifoldStart = Int32(solverContacts.manifoldPool.count)
-                }
-                solverContacts.manifoldPool.append(manifoldConstraint)
-                constraint.manifoldCount += 1
             }
-            solverContacts.constraints[colorIndexInt].append(constraint)
-                    }
-                }
-              }
-            }
-        }
 
-        if wideConvex {
-            prepareWideRange(colorIndexInt, convexContactIds, softness, staticSoftness, warmStartScale)
+            (manifoldOut + Int(constraint.manifoldCount)).initialize(to: manifoldConstraint)
+            constraint.manifoldCount += 1
         }
-        solverContacts.wideConvexCounts[colorIndexInt] = solverContacts.wideConstraints[colorIndexInt].count
-        if wideMesh {
-            prepareWideRange(colorIndexInt, meshContactIds, softness, staticSoftness, warmStartScale)
-        }
-    }
-
-    /// Prepare all constraint data for this step.
-    func prepareAllContacts(_ context: StepContext) {
-        for i in solverContacts.constraints.indices {
-            solverContacts.constraints[i].removeAll(keepingCapacity: true)
-        }
-        for i in solverContacts.convexCounts.indices {
-            solverContacts.convexCounts[i] = 0
-            solverContacts.wideConvex[i] = false
-            solverContacts.wideMesh[i] = false
-            solverContacts.wideConvexCounts[i] = 0
-            solverContacts.wideConstraints[i].removeAll(keepingCapacity: true)
-        }
-        solverContacts.wideManifolds.removeAll(keepingCapacity: true)
-        solveAnyRestitution = false
-
-        prepareAllJoints(context)
-
-        let contactHertz = minFloat(contactHertz, 0.125 * context.inv_h)
-        let contactSoftness = makeSoft(contactHertz, contactDampingRatio, context.h)
-        let staticSoftness = makeSoft(2.0 * contactHertz, 0.5 * contactDampingRatio, context.h)
-
-        // The flat manifold pool is rebuilt from scratch each step.
-        solverContacts.manifoldPool.removeAll(keepingCapacity: true)
-
-        // Overflow first, then colors in order.
-        prepareOverflowContacts(contactSoftness, staticSoftness)
-        for i in 0..<Int(overflowIndex) {
-            prepareContacts(Int32(i), contactSoftness, staticSoftness, context)
-        }
+        out.initialize(to: constraint)
     }
 
     // MARK: Warm start
@@ -518,16 +443,17 @@ extension World {
             return
         }
         let range = solverContacts.range(colorIndex, mesh)
+        guard range.isEmpty == false else { return }
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
             solverContacts.manifoldPool.withUnsafeMutableBufferPointer { pool in
-                warmStartContactsBody(range, list, states, pool)
+                list.withUnsafeBufferPointer { warmStartContactsBody(range, $0.baseAddress!, states, pool) }
             }
         }
     }
 
-    private func warmStartContactsBody(
-        _ range: Range<Int>, _ list: [ContactConstraint],
+    func warmStartContactsBody(
+        _ range: Range<Int>, _ list: UnsafePointer<ContactConstraint>,
         _ states: UnsafeMutableBufferPointer<BodyState>,
         _ pool: UnsafeMutableBufferPointer<ManifoldConstraint>
     ) {
@@ -596,16 +522,17 @@ extension World {
             return
         }
         let range = solverContacts.range(colorIndex, mesh)
+        guard range.isEmpty == false else { return }
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
             solverContacts.manifoldPool.withUnsafeMutableBufferPointer { pool in
-                pushContactsBody(range, list, context, states, pool)
+                list.withUnsafeBufferPointer { pushContactsBody(range, $0.baseAddress!, context, states, pool) }
             }
         }
     }
 
-    private func pushContactsBody(
-        _ range: Range<Int>, _ list: [ContactConstraint], _ context: StepContext,
+    func pushContactsBody(
+        _ range: Range<Int>, _ list: UnsafePointer<ContactConstraint>, _ context: StepContext,
         _ states: UnsafeMutableBufferPointer<BodyState>,
         _ pool: UnsafeMutableBufferPointer<ManifoldConstraint>
     ) {
@@ -702,16 +629,17 @@ extension World {
             return
         }
         let range = solverContacts.range(colorIndex, mesh)
+        guard range.isEmpty == false else { return }
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
             solverContacts.manifoldPool.withUnsafeMutableBufferPointer { pool in
-                solveContactsBody(range, list, context, states, pool)
+                list.withUnsafeBufferPointer { solveContactsBody(range, $0.baseAddress!, context, states, pool) }
             }
         }
     }
 
-    private func solveContactsBody(
-        _ range: Range<Int>, _ list: [ContactConstraint], _ context: StepContext,
+    func solveContactsBody(
+        _ range: Range<Int>, _ list: UnsafePointer<ContactConstraint>, _ context: StepContext,
         _ states: UnsafeMutableBufferPointer<BodyState>,
         _ pool: UnsafeMutableBufferPointer<ManifoldConstraint>
     ) {
@@ -878,16 +806,17 @@ extension World {
             return
         }
         let range = solverContacts.range(colorIndex, mesh)
+        guard range.isEmpty == false else { return }
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
             solverContacts.manifoldPool.withUnsafeMutableBufferPointer { pool in
-                applyRestitutionBody(range, list, context, states, pool)
+                list.withUnsafeBufferPointer { applyRestitutionBody(range, $0.baseAddress!, context, states, pool) }
             }
         }
     }
 
-    private func applyRestitutionBody(
-        _ range: Range<Int>, _ list: [ContactConstraint], _ context: StepContext,
+    func applyRestitutionBody(
+        _ range: Range<Int>, _ list: UnsafePointer<ContactConstraint>, _ context: StepContext,
         _ states: UnsafeMutableBufferPointer<BodyState>,
         _ pool: UnsafeMutableBufferPointer<ManifoldConstraint>
     ) {
@@ -979,29 +908,39 @@ extension World {
         guard !range.isEmpty else { return }
         solverContacts.manifoldPool.withUnsafeBufferPointer { pool in
             contacts.withUnsafeMutableBufferPointer { store in
-                for constraintIndex in range {
-                    let c = list[constraintIndex]
-                    let id = Int(c.contactId)
-                    guard store[id].manifoldCount > 0 else { continue }
-                    let hitEvents = (store[id].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
-                    store[id].manifolds.withUnsafeMutableBufferPointer { manifolds in
-                        for offset in 0..<Int(c.manifoldCount) {
-                            let cm = pool.baseAddress! + Int(c.manifoldStart) + offset
-                            let out = manifolds.baseAddress! + offset
-                            let count = Int(minInt(out.pointee.pointCount, cm.pointee.pointCount))
-                            for pi in 0..<count {
-                                out.pointee.points[pi].normalImpulse = cm.pointee.points[pi].normalImpulse
-                                out.pointee.points[pi].totalNormalImpulse = cm.pointee.points[pi].totalNormalImpulse
-                                if hitEvents {
-                                    out.pointee.points[pi].normalVelocity = cm.pointee.points[pi].relativeVelocity
-                                }
-                            }
-                            out.pointee.twistImpulse = cm.pointee.twistImpulse
-                            out.pointee.frictionImpulse = cm.pointee.frictionImpulse.x * cm.pointee.tangent1
-                                + cm.pointee.frictionImpulse.y * cm.pointee.tangent2
-                            out.pointee.rollingImpulse = cm.pointee.rollingImpulse
+                list.withUnsafeBufferPointer { constraints in
+                    storeImpulsesBody(range, constraints.baseAddress!, pool.baseAddress!, store.baseAddress!)
+                }
+            }
+        }
+    }
+
+    /// Persist the impulses of scalar constraints into their contacts.
+    func storeImpulsesBody(
+        _ range: Range<Int>, _ list: UnsafePointer<ContactConstraint>,
+        _ pool: UnsafePointer<ManifoldConstraint>, _ store: UnsafeMutablePointer<Contact>
+    ) {
+        for constraintIndex in range {
+            let c = list[constraintIndex]
+            let id = Int(c.contactId)
+            guard store[id].manifoldCount > 0 else { continue }
+            let hitEvents = (store[id].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
+            store[id].manifolds.withUnsafeMutableBufferPointer { manifolds in
+                for offset in 0..<Int(c.manifoldCount) {
+                    let cm = pool + Int(c.manifoldStart) + offset
+                    let out = manifolds.baseAddress! + offset
+                    let count = Int(minInt(out.pointee.pointCount, cm.pointee.pointCount))
+                    for pi in 0..<count {
+                        out.pointee.points[pi].normalImpulse = cm.pointee.points[pi].normalImpulse
+                        out.pointee.points[pi].totalNormalImpulse = cm.pointee.points[pi].totalNormalImpulse
+                        if hitEvents {
+                            out.pointee.points[pi].normalVelocity = cm.pointee.points[pi].relativeVelocity
                         }
                     }
+                    out.pointee.twistImpulse = cm.pointee.twistImpulse
+                    out.pointee.frictionImpulse = cm.pointee.frictionImpulse.x * cm.pointee.tangent1
+                        + cm.pointee.frictionImpulse.y * cm.pointee.tangent2
+                    out.pointee.rollingImpulse = cm.pointee.rollingImpulse
                 }
             }
         }

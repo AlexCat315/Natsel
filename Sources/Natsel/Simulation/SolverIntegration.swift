@@ -30,6 +30,37 @@ func makeSoft(_ hertz: Float, _ zeta: Float, _ h: Float) -> Softness {
     return softness
 }
 
+/// Work deferred from parallel body finalization to the ordered serial pass.
+enum FinalizeFlag {
+    static let continuous: UInt8 = 1
+    static let bullet: UInt8 = 2
+    static let movedProxies: UInt8 = 3
+}
+
+/// Per-thread island results of body finalization.
+struct FinalizeThreadData {
+    var islands = BitSet()
+    var splitIslandId: Int32 = B3.nullIndex
+    var splitSleepTime: Float = 0
+}
+
+/// Pointers for parallel body finalization.
+struct FinalizeViews {
+    var sims = UnsafeMutableBufferPointer<BodySim>(start: nil, count: 0)
+    var states = UnsafeMutableBufferPointer<BodyState>(start: nil, count: 0)
+    var bodies: UnsafeMutablePointer<Body>?
+    var islands: UnsafePointer<Island>?
+    var shapes: UnsafeMutablePointer<Shape>?
+    var fatAABBs: UnsafeMutablePointer<AABB>?
+    var moveEvents: UnsafeMutablePointer<BodyMoveEvent>?
+    var flags: UnsafeMutablePointer<UInt8>?
+    var shapeMoved: UnsafeMutablePointer<UInt8>?
+    var threads: UnsafeMutablePointer<FinalizeThreadData>?
+    var islandCount: Int32 = 0
+    var timeStep: Float = 0
+    var invTimeStep: Float = 0
+}
+
 /// Per-thread task storage.
 struct TaskContext {
     /// Broad-phase pairs.
@@ -75,9 +106,16 @@ extension World {
         guard let simsBase, let statesBase else { return }
         let sims = UnsafeBufferPointer(start: simsBase, count: simsCapacity)
         let states = UnsafeMutableBufferPointer(start: statesBase, count: statesCapacity)
-        let count = sims.count
+        integrateVelocitiesRange(sims, states, 0..<sims.count, h)
+    }
 
-        for i in 0..<count {
+    /// Integrate the velocities of a range of awake bodies.
+    func integrateVelocitiesRange(
+        _ sims: UnsafeBufferPointer<BodySim>, _ states: UnsafeMutableBufferPointer<BodyState>,
+        _ range: Range<Int>, _ h: Float
+    ) {
+        let gravity = gravity
+        for i in range {
             let sim = sims[i]
             var state = states[i]
 
@@ -173,14 +211,19 @@ extension World {
             .withUnsafeMutableBufferPointer { ($0.baseAddress, $0.count) }
         guard let statesBase else { return }
         let states = UnsafeMutableBufferPointer(start: statesBase, count: statesCapacity)
-        let count = states.count
+        integratePositionsRange(states, 0..<states.count, h, inv_dt)
+    }
 
+    /// Integrate the positions of a range of awake bodies.
+    func integratePositionsRange(
+        _ states: UnsafeMutableBufferPointer<BodyState>, _ range: Range<Int>, _ h: Float, _ inv_dt: Float
+    ) {
         let maxLinearSpeed = maxLinearSpeed
         let maxAngularSpeed = B3.maxRotation * inv_dt
         let maxLinearSpeedSquared = maxLinearSpeed * maxLinearSpeed
         let maxAngularSpeedSquared = maxAngularSpeed * maxAngularSpeed
 
-        for i in 0..<count {
+        for i in range {
             var state = states[i]
 
             var v = state.linearVelocity
@@ -220,188 +263,262 @@ extension World {
     // MARK: Finalize bodies
 
     /// Update the body transforms from the state deltas.
+    ///
+    /// The per-body work runs in parallel blocks. Everything that touches shared structures runs
+    /// afterwards in body order: the continuous pass of fast bodies, the bullet list, and moving
+    /// enlarged proxies in the broad phase, so the move buffer order matches a serial pass.
     func finalizeBodies(_ context: inout StepContext) {
         // Move the awake set out so its arrays are uniquely referenced; a copy would make the first
         // write duplicate every body sim and state.
         var awakeSet = SolverSet()
         swap(&awakeSet, &solverSets[Int(SetType.awakeSet.rawValue)])
+        defer { swap(&awakeSet, &solverSets[Int(SetType.awakeSet.rawValue)]) }
         let count = awakeSet.bodySims.count
-
-        let enableSleep = enableSleep
-        let enableContinuous = enableContinuous
-        let timeStep = context.dt
-        let invTimeStep = context.inv_dt
-        let worldId = worldId
-
-        let speculativeScalar = B3.speculativeDistance
 
         bodyMoveEvents.removeAll(keepingCapacity: true)
         bodyMoveEvents.append(contentsOf: repeatElement(BodyMoveEvent(), count: count))
+        finalizeFlags.removeAll(keepingCapacity: true)
+        finalizeFlags.append(contentsOf: repeatElement(0, count: count))
+        if shapeMoveFlags.count < shapes.count {
+            shapeMoveFlags.append(contentsOf: repeatElement(0, count: shapes.count - shapeMoveFlags.count))
+        }
 
-        awakeSet.bodySims.withUnsafeMutableBufferPointer { sims in
-            awakeSet.bodyStates.withUnsafeMutableBufferPointer { states in
-                for simIndex in 0..<count {
-                    var state = states[simIndex]
-                    var sim = sims[simIndex]
+        // One island bit set and split candidate per thread; thread zero uses the step's own.
+        let threads = activePool?.threadCount ?? 1
+        let islandCount = UInt32(awakeSet.islandSims.count)
+        while finalizeThreads.count < threads { finalizeThreads.append(FinalizeThreadData()) }
+        finalizeThreads[0].islands = taskContexts[0].awakeIslandBitSet
+        for t in 1..<max(threads, 1) {
+            finalizeThreads[t].islands.setBitCountAndClear(islandCount)
+        }
+        for t in 0..<threads {
+            finalizeThreads[t].splitIslandId = B3.nullIndex
+            finalizeThreads[t].splitSleepTime = 0
+        }
 
-                    let v = state.linearVelocity
-                    let w = state.angularVelocity
-                    let localOmega = invRotateVector(sim.transform.q, w)
-                    let localDeltaRotation = invRotateVector(sim.transform.q, state.deltaRotation.v)
+        var views = FinalizeViews()
+        views.sims = awakeSet.bodySims.withUnsafeMutableBufferPointer { $0 }
+        views.states = awakeSet.bodyStates.withUnsafeMutableBufferPointer { $0 }
+        views.bodies = bodies.withUnsafeMutableBufferPointer { $0.baseAddress }
+        views.islands = islands.withUnsafeBufferPointer { $0.baseAddress }
+        views.shapes = shapes.withUnsafeMutableBufferPointer { $0.baseAddress }
+        views.fatAABBs = fatAABBs.withUnsafeMutableBufferPointer { $0.baseAddress }
+        views.moveEvents = bodyMoveEvents.withUnsafeMutableBufferPointer { $0.baseAddress }
+        views.flags = finalizeFlags.withUnsafeMutableBufferPointer { $0.baseAddress }
+        views.shapeMoved = shapeMoveFlags.withUnsafeMutableBufferPointer { $0.baseAddress }
+        views.threads = finalizeThreads.withUnsafeMutableBufferPointer { $0.baseAddress }
+        views.islandCount = Int32(islandCount)
+        views.timeStep = context.dt
+        views.invTimeStep = context.inv_dt
+        finalizeViews = views
 
-                    b3Assert(isValidVec3(v))
-                    b3Assert(isValidVec3(w))
+        runStage(.finalizeBodies, 0, count, minimum: Self.parallelBodyItems)
 
-                    sim.center = offsetPos(sim.center, state.deltaPosition)
-                    sim.transform.q = normalizeQuat(mulQuat(state.deltaRotation, sim.transform.q))
-
-                    // Use the velocity of the farthest point on the body to account for rotation.
-                    let velocityArc = modifiedCross(absVec3(localOmega), sim.maxExtent)
-                    let maxVelocity = length(v) + length(velocityArc)
-
-                    // Sleep needs to observe position correction as well as true velocity.
-                    let rotationArc = modifiedCross(absVec3(localDeltaRotation), sim.maxExtent)
-                    let maxDeltaPosition = length(state.deltaPosition) + 2.0 * length(rotationArc)
-
-                    // Position correction is not as important for sleep as true velocity.
-                    let positionSleepFactor: Float = 0.5
-                    let sleepVelocity = maxFloat(maxVelocity, positionSleepFactor * invTimeStep * maxDeltaPosition)
-
-                    // reset state deltas
-                    state.deltaPosition = Vec3()
-                    state.deltaRotation = Quat.identity
-
-                    sim.transform.p = offsetPos(sim.center, -rotateVector(sim.transform.q, sim.localCenter))
-
-                    var body = bodies[Int(sim.bodyId)]
-                    body.bodyMoveIndex = Int32(simIndex)
-                    body.sleepVelocity = sleepVelocity
-
-                    var moveEvent = BodyMoveEvent()
-                    moveEvent.userData = body.userData
-                    moveEvent.transform = sim.transform
-                    moveEvent.bodyId = BodyID(index1: sim.bodyId + 1, world0: worldId, generation: body.generation)
-                    moveEvent.fellAsleep = false
-                    bodyMoveEvents[simIndex] = moveEvent
-
-                    // reset applied force and torque
-                    sim.force = Vec3()
-                    sim.torque = Vec3()
-
-                    b3Assert((body.flags & BodyFlags.dirtyMass.rawValue) == 0)
-
-                    // Clear the transient flags.
-                    body.flags &= ~BodyFlags.bodyTransientFlags.rawValue
-                    sim.flags &= ~(BodyFlags.isFast.rawValue | BodyFlags.bodyTransientFlags.rawValue)
-
-                    // The body state flag knows about speed capping.
-                    body.flags |= (state.flags & BodyFlags.isSpeedCapped.rawValue)
-                    state.flags &= ~BodyFlags.bodyTransientFlags.rawValue
-
-                    if enableSleep == false || (body.flags & BodyFlags.enableSleep.rawValue) == 0
-                        || sleepVelocity > body.sleepThreshold
-                    {
-                        // Body is not sleepy
-                        body.sleepTime = 0
-
-                        let safetyFactor = body.safetyFactor
-                        let maxMotion = maxFloat(maxDeltaPosition, maxVelocity * timeStep)
-                        if body.type == .dynamicBody && enableContinuous && maxMotion > safetyFactor * sim.minExtent {
-                            // This flag is used for debug draw and contact recycling.
-                            sim.flags |= BodyFlags.isFast.rawValue
-
-                            // Flush this body so the continuous pass sees its current sim and state.
-                            states[simIndex] = state
-                            sims[simIndex] = sim
-                            bodies[Int(sim.bodyId)] = body
-
-                            // Store in fast array for the continuous collision stage
-                            if (sim.flags & BodyFlags.isBullet.rawValue) != 0 {
-                                context.bulletBodies.append(Int32(simIndex))
-                            } else {
-                                solveContinuous(Int32(simIndex), timeStep, sims, states)
-                            }
-
-                            // The continuous pass may have advanced the body and changed its state.
-                            state = states[simIndex]
-                            sim = sims[simIndex]
-                            body = bodies[Int(sim.bodyId)]
-                        } else {
-                            // Body is safe to advance
-                            sim.center0 = sim.center
-                            sim.rotation0 = sim.transform.q
-                        }
-                    } else {
-                        // Body is safe to advance and is falling asleep
-                        sim.center0 = sim.center
-                        sim.rotation0 = sim.transform.q
-                        body.sleepTime += timeStep
-                    }
-
-                    // Update world space inverse inertia tensor.
-                    let rotationMatrix = makeMatrixFromQuat(sim.transform.q)
-                    sim.invInertiaWorld = mulMM(mulMM(rotationMatrix, sim.invInertiaLocal), transpose(rotationMatrix))
-
-                    // Any single body in an island can keep it awake
-                    // Read the two scalars directly; copying an `Island` retains its three arrays.
-                    if body.sleepTime < B3.timeToSleep {
-                        // keep island awake
-                        let islandIndex = islands[Int(body.islandId)].localIndex
-                        b3Assert(islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count)
-                        if islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count {
-                            taskContexts[0].awakeIslandBitSet.setBitGrow(UInt32(islandIndex))
-                        }
-                    } else if islands[Int(body.islandId)].constraintRemoveCount > 0 {
-                        var taskContext = taskContexts[0]
-                        if body.sleepTime > taskContext.splitSleepTime
-                            || (body.sleepTime == taskContext.splitSleepTime && body.islandId > taskContext.splitIslandId)
-                        {
-                            // pick the sleepiest candidate
-                            taskContext.splitIslandId = body.islandId
-                            taskContext.splitSleepTime = body.sleepTime
-                            taskContexts[0] = taskContext
-                        }
-                    }
-
-                    bodies[Int(sim.bodyId)] = body
-
-                    // Update shapes AABBs
-                    // For fast non-bullet bodies the AABB has already been updated in the CCD pass.
-                    if (sim.flags & BodyFlags.isFast.rawValue) == 0 {
-                        let transform = sim.transform
-                        var shapeId = body.headShapeId
-                        // Mutate the shape in place. A `var shape = shapes[...]` copy plus a store back makes
-                        // the whole world shape array multiply referenced, so the next store copies the
-                        // entire array. With thousands of bodies that copy dominated the step.
-                        shapes.withUnsafeMutableBufferPointer { shapeStore in
-                            while shapeId != B3.nullIndex {
-                                let shapeIndex = Int(shapeId)
-                                let nextShapeId = shapeStore[shapeIndex].nextShapeId
-
-                                let aabb = computeFatShapeAABB(shapeStore[shapeIndex], transform, speculativeScalar)
-                                shapeStore[shapeIndex].aabb = aabb
-
-                                let fatAABB = fatAABBs[shapeIndex]
-                                if aabbContains(fatAABB, aabb) == false {
-                                    let inflated = aabbInflate(aabb, shapeStore[shapeIndex].aabbMargin)
-                                    fatAABBs[shapeIndex] = inflated
-
-                                    // Mark the hierarchy as moved.
-                                    broadPhase.markProxyMoved(shapeStore[shapeIndex].proxyKey, inflated)
-                                }
-
-                                shapeId = nextShapeId
-                            }
-                        }
-                    }
-
-                    states[simIndex] = state
-                    sims[simIndex] = sim
-                }
+        // Merge the per-thread island data.
+        taskContexts[0].awakeIslandBitSet = finalizeThreads[0].islands
+        for t in 0..<threads {
+            if t > 0 { taskContexts[0].awakeIslandBitSet.inPlaceUnion(finalizeThreads[t].islands) }
+            let candidate = finalizeThreads[t]
+            if candidate.splitIslandId != B3.nullIndex
+                && (candidate.splitSleepTime > taskContexts[0].splitSleepTime
+                    || (candidate.splitSleepTime == taskContexts[0].splitSleepTime
+                        && candidate.splitIslandId > taskContexts[0].splitIslandId))
+            {
+                taskContexts[0].splitIslandId = candidate.splitIslandId
+                taskContexts[0].splitSleepTime = candidate.splitSleepTime
             }
         }
 
-        swap(&awakeSet, &solverSets[Int(SetType.awakeSet.rawValue)])
+        // Shared work in body order.
+        let sims = views.sims
+        let states = views.states
+        for simIndex in 0..<count {
+            let flag = views.flags![simIndex]
+            if flag == 0 { continue }
+            if flag == FinalizeFlag.bullet {
+                context.bulletBodies.append(Int32(simIndex))
+            } else if flag == FinalizeFlag.continuous {
+                solveContinuous(Int32(simIndex), context.dt, sims, states)
+                // The continuous pass may have moved the body back.
+                let rotationMatrix = makeMatrixFromQuat(sims[simIndex].transform.q)
+                sims[simIndex].invInertiaWorld = mulMM(
+                    mulMM(rotationMatrix, sims[simIndex].invInertiaLocal), transpose(rotationMatrix))
+            } else if flag == FinalizeFlag.movedProxies {
+                var shapeId = bodies[Int(sims[simIndex].bodyId)].headShapeId
+                while shapeId != B3.nullIndex {
+                    let index = Int(shapeId)
+                    if shapeMoveFlags[index] != 0 {
+                        shapeMoveFlags[index] = 0
+                        broadPhase.markProxyMoved(shapes[index].proxyKey, fatAABBs[index])
+                    }
+                    shapeId = shapes[index].nextShapeId
+                }
+            }
+        }
+        finalizeViews = FinalizeViews()
+    }
+
+    /// Finalize bodies `range` of the awake set. Called on any thread; writes only those bodies,
+    /// their shapes, and the thread's own island data.
+    func finalizeBodyRange(_ range: Range<Int>, _ thread: Int) {
+        let views = finalizeViews
+        guard let bodies = views.bodies, let islands = views.islands, let shapes = views.shapes,
+            let fatAABBs = views.fatAABBs, let moveEvents = views.moveEvents, let flags = views.flags,
+            let shapeMoved = views.shapeMoved
+        else { return }
+        let sims = views.sims
+        let states = views.states
+        let enableSleep = enableSleep
+        let enableContinuous = enableContinuous
+        let timeStep = views.timeStep
+        let invTimeStep = views.invTimeStep
+        let worldId = worldId
+        let speculativeScalar = B3.speculativeDistance
+        guard let threadData = views.threads?.advanced(by: thread) else { return }
+        let islandBits = threadData.pointee.islands
+        var splitIslandId = threadData.pointee.splitIslandId
+        var splitSleepTime = threadData.pointee.splitSleepTime
+        defer {
+            threadData.pointee.splitIslandId = splitIslandId
+            threadData.pointee.splitSleepTime = splitSleepTime
+        }
+
+        for simIndex in range {
+            var state = states[simIndex]
+            var sim = sims[simIndex]
+
+            let v = state.linearVelocity
+            let w = state.angularVelocity
+            let localOmega = invRotateVector(sim.transform.q, w)
+            let localDeltaRotation = invRotateVector(sim.transform.q, state.deltaRotation.v)
+
+            b3Assert(isValidVec3(v))
+            b3Assert(isValidVec3(w))
+
+            sim.center = offsetPos(sim.center, state.deltaPosition)
+            sim.transform.q = normalizeQuat(mulQuat(state.deltaRotation, sim.transform.q))
+
+            // Use the velocity of the farthest point on the body to account for rotation.
+            let velocityArc = modifiedCross(absVec3(localOmega), sim.maxExtent)
+            let maxVelocity = length(v) + length(velocityArc)
+
+            // Sleep needs to observe position correction as well as true velocity.
+            let rotationArc = modifiedCross(absVec3(localDeltaRotation), sim.maxExtent)
+            let maxDeltaPosition = length(state.deltaPosition) + 2.0 * length(rotationArc)
+
+            // Position correction is not as important for sleep as true velocity.
+            let positionSleepFactor: Float = 0.5
+            let sleepVelocity = maxFloat(maxVelocity, positionSleepFactor * invTimeStep * maxDeltaPosition)
+
+            // reset state deltas
+            state.deltaPosition = Vec3()
+            state.deltaRotation = Quat.identity
+
+            sim.transform.p = offsetPos(sim.center, -rotateVector(sim.transform.q, sim.localCenter))
+
+            let bodyIndex = Int(sim.bodyId)
+            var body = bodies[bodyIndex]
+            body.bodyMoveIndex = Int32(simIndex)
+            body.sleepVelocity = sleepVelocity
+
+            var moveEvent = BodyMoveEvent()
+            moveEvent.userData = body.userData
+            moveEvent.transform = sim.transform
+            moveEvent.bodyId = BodyID(index1: sim.bodyId + 1, world0: worldId, generation: body.generation)
+            moveEvent.fellAsleep = false
+            moveEvents[simIndex] = moveEvent
+
+            // reset applied force and torque
+            sim.force = Vec3()
+            sim.torque = Vec3()
+
+            b3Assert((body.flags & BodyFlags.dirtyMass.rawValue) == 0)
+
+            // Clear the transient flags.
+            body.flags &= ~BodyFlags.bodyTransientFlags.rawValue
+            sim.flags &= ~(BodyFlags.isFast.rawValue | BodyFlags.bodyTransientFlags.rawValue)
+
+            // The body state flag knows about speed capping.
+            body.flags |= (state.flags & BodyFlags.isSpeedCapped.rawValue)
+            state.flags &= ~BodyFlags.bodyTransientFlags.rawValue
+
+            if enableSleep == false || (body.flags & BodyFlags.enableSleep.rawValue) == 0
+                || sleepVelocity > body.sleepThreshold
+            {
+                // Body is not sleepy
+                body.sleepTime = 0
+
+                let safetyFactor = body.safetyFactor
+                let maxMotion = maxFloat(maxDeltaPosition, maxVelocity * timeStep)
+                if body.type == .dynamicBody && enableContinuous && maxMotion > safetyFactor * sim.minExtent {
+                    // This flag is used for debug draw and contact recycling.
+                    sim.flags |= BodyFlags.isFast.rawValue
+
+                    // Bullets run after all bodies; other fast bodies run their continuous pass in the
+                    // ordered serial phase, which also updates their shape bounds.
+                    flags[simIndex] = (sim.flags & BodyFlags.isBullet.rawValue) != 0
+                        ? FinalizeFlag.bullet : FinalizeFlag.continuous
+                } else {
+                    // Body is safe to advance
+                    sim.center0 = sim.center
+                    sim.rotation0 = sim.transform.q
+                }
+            } else {
+                // Body is safe to advance and is falling asleep
+                sim.center0 = sim.center
+                sim.rotation0 = sim.transform.q
+                body.sleepTime += timeStep
+            }
+
+            // Update world space inverse inertia tensor.
+            let rotationMatrix = makeMatrixFromQuat(sim.transform.q)
+            sim.invInertiaWorld = mulMM(mulMM(rotationMatrix, sim.invInertiaLocal), transpose(rotationMatrix))
+
+            // Any single body in an island can keep it awake.
+            if body.sleepTime < B3.timeToSleep {
+                let islandIndex = islands[Int(body.islandId)].localIndex
+                b3Assert(islandIndex >= 0 && islandIndex < views.islandCount)
+                if islandIndex >= 0 && islandIndex < views.islandCount {
+                    islandBits.setBit(UInt32(islandIndex))
+                }
+            } else if islands[Int(body.islandId)].constraintRemoveCount > 0 {
+                if body.sleepTime > splitSleepTime
+                    || (body.sleepTime == splitSleepTime && body.islandId > splitIslandId)
+                {
+                    // pick the sleepiest candidate
+                    splitIslandId = body.islandId
+                    splitSleepTime = body.sleepTime
+                }
+            }
+
+            bodies[bodyIndex] = body
+
+            // Update shape bounds. Fast bodies get theirs from the continuous pass.
+            if (sim.flags & BodyFlags.isFast.rawValue) == 0 {
+                let transform = sim.transform
+                var shapeId = body.headShapeId
+                var moved = false
+                while shapeId != B3.nullIndex {
+                    let shapeIndex = Int(shapeId)
+                    let nextShapeId = shapes[shapeIndex].nextShapeId
+
+                    let aabb = computeFatShapeAABB(shapes[shapeIndex], transform, speculativeScalar)
+                    shapes[shapeIndex].aabb = aabb
+
+                    if aabbContains(fatAABBs[shapeIndex], aabb) == false {
+                        fatAABBs[shapeIndex] = aabbInflate(aabb, shapes[shapeIndex].aabbMargin)
+                        shapeMoved[shapeIndex] = 1
+                        moved = true
+                    }
+
+                    shapeId = nextShapeId
+                }
+                if moved { flags[simIndex] = FinalizeFlag.movedProxies }
+            }
+
+            states[simIndex] = state
+            sims[simIndex] = sim
+        }
     }
 
     // MARK: Step context
@@ -496,43 +613,15 @@ extension World {
                 splitIslandId = B3.nullIndex
             }
 
+            // Workers spin from preparation through impulse storage.
+            beginSolverSession()
             prepareAllContacts(context)
             prepareVehicles(context)
             profile.prepareConstraints = getMillisecondsAndReset(&ticks)
 
-            for _ in 0..<Int(context.subStepCount) {
-                integrateVelocities(context.h)
-                profile.integrateVelocities += getMillisecondsAndReset(&ticks)
-
-                warmStartAll(context)
-                warmStartVehicles(context)
-                profile.warmStart += getMillisecondsAndReset(&ticks)
-
-                for _ in 0..<1 {
-                    pushAll(context)
-                    solveVehicles(context, true)
-                }
-                profile.solveImpulses += getMillisecondsAndReset(&ticks)
-
-                integratePositions(context.h, context.inv_dt)
-                profile.integratePositions += getMillisecondsAndReset(&ticks)
-
-                for _ in 0..<1 {
-                    solveAll(context)
-                    solveVehicles(context, false)
-                }
-                profile.relaxImpulses += getMillisecondsAndReset(&ticks)
-
-            }
-
-            if solveAnyRestitution && restitutionIterations > 0 {
-                for _ in 0..<Int(restitutionIterations) {
-                    applyRestitutionAll(context)
-                }
-            }
-            profile.restitution = getMillisecondsAndReset(&ticks)
-
-            storeAllImpulses()
+            // Substeps, restitution, and impulse storage, on the worker pool when there is one.
+            solveConstraintStages(context)
+            ticks = getTicks()
             finalizeVehicles(context)
             profile.storeImpulses = getMillisecondsAndReset(&ticks)
             emitContactHitEvents()
@@ -548,6 +637,7 @@ extension World {
             emitJointEvents(context.inv_h)
 
             finalizeBodies(&context)
+            endSolverSession()
             profile.transforms = getMillisecondsAndReset(&ticks)
 
             // Refit the kinematic and dynamic trees after body finalization, matching b3Solve.

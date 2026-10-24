@@ -291,10 +291,10 @@ extension World {
 
     @inline(__always)
     private func prepareBodies(_ base: inout JointSim) -> (simA: BodySim, simB: BodySim, indexA: Int32, indexB: Int32) {
-        let bodyA = bodies[Int(base.bodyIdA)]
-        let bodyB = bodies[Int(base.bodyIdB)]
-        let simA = solverSets[Int(bodyA.setIndex)].bodySims[Int(bodyA.localIndex)]
-        let simB = solverSets[Int(bodyB.setIndex)].bodySims[Int(bodyB.localIndex)]
+        let bodyA = jointPrepareBody(base.bodyIdA)
+        let bodyB = jointPrepareBody(base.bodyIdB)
+        let simA = jointPrepareSim(bodyA)
+        let simB = jointPrepareSim(bodyB)
         base.invMassA = simA.invMass
         base.invMassB = simB.invMass
         base.invIA = simA.invInertiaWorld

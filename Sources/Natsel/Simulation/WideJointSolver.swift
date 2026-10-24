@@ -91,63 +91,119 @@ extension World {
     struct SolverJointData {
         var batches: [[SphericalConstraintW]] = Array(repeating: [], count: Int(B3.graphColorCount))
         var starts: [[Int]] = Array(repeating: [], count: Int(B3.graphColorCount))
+        /// First joint of each solver unit (one scalar joint or one wide batch) when the color has
+        /// wide batches. Empty means every joint is its own unit.
+        var units: [[Int32]] = Array(repeating: [], count: Int(B3.graphColorCount))
     }
 
-    private static func isWideSpherical(_ base: JointSim) -> Bool {
-        guard base.type == .sphericalJoint else { return false }
-        let j = base.sphericalJoint
+    @inline(__always)
+    private static func isWideSpherical(_ base: UnsafePointer<JointSim>) -> Bool {
+        guard base.pointee.type == .sphericalJoint else { return false }
+        let j = base.pointee.sphericalJoint
         return !j.enableSpring && !j.enableMotor && !j.enableTwistLimit && !j.enableConeLimit
     }
 
+    /// Pack runs of plain spherical joints into four-wide batches. The batch boundaries are planned
+    /// on this thread; the batches are then filled in parallel. Requires `prepareViews.joints` from
+    /// `prepareAllJoints`.
     func prepareWideJoints() {
+        wideJointItems.removeAll(keepingCapacity: true)
         for ci in 0..<Int(B3.graphColorCount) {
             solverJoints.batches[ci].removeAll(keepingCapacity: true)
             solverJoints.starts[ci].removeAll(keepingCapacity: true)
+            solverJoints.units[ci].removeAll(keepingCapacity: true)
             guard enableWideSolver, ci != Int(overflowIndex) else { continue }
-            let list = constraintGraph.colors[ci].jointSims
-            guard list.count >= 4 else { continue }
-            solverJoints.starts[ci].removeAll(keepingCapacity: true)
-            solverJoints.starts[ci].append(
-                contentsOf: repeatElement(-1, count: list.count))
-            var i = 0
-            while i < list.count {
-                guard Self.isWideSpherical(list[i]) else {
-                    i += 1
-                    continue
-                }
-                let start = i
-                while i < list.count && Self.isWideSpherical(list[i]) { i += 1 }
-                guard i - start >= 4 else { continue }
-                for first in stride(from: start, to: i, by: 4) {
-                    var c = SphericalConstraintW()
-                    c.laneCount = min(4, i - first)
-                    for lane in 0..<c.laneCount {
-                        let base = list[first + lane]
-                        let joint = base.sphericalJoint
-                        c.jointIndices[lane] = Int32(first + lane)
-                        c.indexA[lane] = joint.indexA
-                        c.indexB[lane] = joint.indexB
-                        c.invMassA[lane] = base.invMassA
-                        c.invMassB[lane] = base.invMassB
-                        c.invIA.setLane(lane, base.invIA)
-                        c.invIB.setLane(lane, base.invIB)
-                        c.anchorA[lane] = joint.frameA.p
-                        c.anchorB[lane] = joint.frameB.p
-                        c.deltaCenter[lane] = joint.deltaCenter
-                        c.biasRate[lane] = base.constraintSoftness.biasRate
-                        c.massScale[lane] = base.constraintSoftness.massScale
-                        c.impulseScale[lane] = base.constraintSoftness.impulseScale
-                        c.linearImpulse[lane] = joint.linearImpulse
-                        var angular = joint.springImpulse + joint.motorImpulse
-                        angular = angular - joint.swingImpulse * joint.swingAxis
-                        angular = mulAdd(
-                            angular, joint.lowerTwistImpulse - joint.upperTwistImpulse, joint.twistJacobian)
-                        c.angularImpulse[lane] = angular
+            let count = constraintGraph.colors[ci].jointSims.count
+            guard count >= 4 else { continue }
+            solverJoints.starts[ci].append(contentsOf: repeatElement(-1, count: count))
+
+            var batches = 0
+            constraintGraph.colors[ci].jointSims.withUnsafeBufferPointer { list in
+                let base = list.baseAddress!
+                var i = 0
+                while i < count {
+                    guard Self.isWideSpherical(base + i) else {
+                        i += 1
+                        continue
                     }
-                    solverJoints.starts[ci][first] = solverJoints.batches[ci].count
-                    solverJoints.batches[ci].append(c)
+                    let start = i
+                    while i < count && Self.isWideSpherical(base + i) { i += 1 }
+                    guard i - start >= 4 else { continue }
+                    for first in stride(from: start, to: i, by: 4) {
+                        var item = WideJointPrepareItem()
+                        item.color = Int32(ci)
+                        item.first = Int32(first)
+                        item.laneCount = Int32(min(4, i - first))
+                        item.batch = Int32(batches)
+                        wideJointItems.append(item)
+                        solverJoints.starts[ci][first] = batches
+                        batches += 1
+                    }
                 }
             }
+
+            var placeholder = SphericalConstraintW()
+            solverJoints.batches[ci].reserveCapacity(batches)
+            for item in wideJointItems.suffix(batches) {
+                placeholder.laneCount = Int(item.laneCount)
+                solverJoints.batches[ci].append(placeholder)
+            }
+            buildJointUnits(ci)
+        }
+
+        guard wideJointItems.isEmpty == false else { return }
+        var views = prepareViews
+        views.wideJointItems = wideJointItems.withUnsafeBufferPointer { $0.baseAddress }
+        views.wideJointBatches.removeAll(keepingCapacity: true)
+        for ci in 0..<Int(B3.graphColorCount) {
+            views.wideJointBatches.append(solverJoints.batches[ci].withUnsafeMutableBufferPointer { $0.baseAddress })
+        }
+        prepareViews = views
+        runStage(.prepareWideJoints, 0, wideJointItems.count, minimum: Self.parallelPrepareItems)
+    }
+
+    /// Fill planned wide joint batches `range`.
+    func prepareWideJointRange(_ range: Range<Int>) {
+        guard let items = prepareViews.wideJointItems else { return }
+        for index in range {
+            let item = items[index]
+            let ci = Int(item.color)
+            guard let list = prepareViews.joints[ci], let out = prepareViews.wideJointBatches[ci] else { continue }
+            var c = SphericalConstraintW()
+            c.laneCount = Int(item.laneCount)
+            for lane in 0..<c.laneCount {
+                let base = list + Int(item.first) + lane
+                let joint = base.pointee.sphericalJoint
+                c.jointIndices[lane] = item.first + Int32(lane)
+                c.indexA[lane] = joint.indexA
+                c.indexB[lane] = joint.indexB
+                c.invMassA[lane] = base.pointee.invMassA
+                c.invMassB[lane] = base.pointee.invMassB
+                c.invIA.setLane(lane, base.pointee.invIA)
+                c.invIB.setLane(lane, base.pointee.invIB)
+                c.anchorA[lane] = joint.frameA.p
+                c.anchorB[lane] = joint.frameB.p
+                c.deltaCenter[lane] = joint.deltaCenter
+                c.biasRate[lane] = base.pointee.constraintSoftness.biasRate
+                c.massScale[lane] = base.pointee.constraintSoftness.massScale
+                c.impulseScale[lane] = base.pointee.constraintSoftness.impulseScale
+                c.linearImpulse[lane] = joint.linearImpulse
+                var angular = joint.springImpulse + joint.motorImpulse
+                angular = angular - joint.swingImpulse * joint.swingAxis
+                angular = mulAdd(angular, joint.lowerTwistImpulse - joint.upperTwistImpulse, joint.twistJacobian)
+                c.angularImpulse[lane] = angular
+            }
+            out[Int(item.batch)] = c
+        }
+    }
+
+    private func buildJointUnits(_ ci: Int) {
+        let starts = solverJoints.starts[ci]
+        guard starts.isEmpty == false else { return }
+        var i = 0
+        while i < starts.count {
+            solverJoints.units[ci].append(Int32(i))
+            i += starts[i] >= 0 ? solverJoints.batches[ci][starts[i]].laneCount : 1
         }
     }
 

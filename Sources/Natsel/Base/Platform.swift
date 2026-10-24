@@ -59,6 +59,26 @@ public func sleepThread(_ milliseconds: Int32) {
     nanosleep(&ts, nil)
 }
 
+// MARK: - Processor topology
+
+/// Number of performance cores. On a uniform CPU this is the number of active cores. Fine grained
+/// barrier stages run at the pace of their slowest thread, so they should not exceed it.
+let performanceCoreCount: Int = {
+    #if canImport(Darwin)
+    var count: Int32 = 0
+    var size = MemoryLayout<Int32>.size
+    if sysctlbyname("hw.perflevel0.physicalcpu", &count, &size, nil, 0) == 0 && count > 0 {
+        return Int(count)
+    }
+    if sysctlbyname("hw.activecpu", &count, &size, nil, 0) == 0 && count > 0 {
+        return Int(count)
+    }
+    return 1
+    #else
+    return max(1, Int(sysconf(Int32(_SC_NPROCESSORS_ONLN))))
+    #endif
+}()
+
 // MARK: - Threading primitives
 
 final class B3Mutex: @unchecked Sendable {
@@ -213,6 +233,27 @@ func atomicLoadU32Raw(_ a: UnsafeMutablePointer<UInt32>) -> UInt32 {
 @inline(__always)
 func atomicFetchOrU32(_ a: UnsafeMutablePointer<UInt32>, _ mask: UInt32) -> UInt32 {
     atomicCell(UnsafeMutableRawPointer(a), UInt32.self).pointee.bitwiseOr(mask, ordering: .sequentiallyConsistent).oldValue
+}
+
+// MARK: - Spin wait
+
+#if arch(arm64)
+@_silgen_name("llvm.aarch64.hint")
+private func llvmHint(_ hint: Int32)
+#elseif arch(x86_64)
+@_silgen_name("llvm.x86.sse2.pause")
+private func llvmPause()
+#endif
+
+/// Processor hint for a busy wait (`yield` on arm64, `pause` on x86). Unlike `sched_yield` it never
+/// gives up the core, so a spinning worker sees new work within nanoseconds.
+@inline(__always)
+func spinPause() {
+    #if arch(arm64)
+    llvmHint(1)
+    #elseif arch(x86_64)
+    llvmPause()
+    #endif
 }
 
 // MARK: - Prefetch

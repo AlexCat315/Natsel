@@ -75,11 +75,12 @@ extension World {
     }
 
 
+    /// Lend the wide constraints of one color and kind with fresh pointers (the serial path).
     @inline(__always)
     private func withWideContacts(
         _ color: Int32, _ mesh: Bool,
         _ body: (
-            UnsafePointer<ContactConstraintW>, UnsafeMutableBufferPointer<BodyState>,
+            UnsafePointer<ContactConstraintW>, Range<Int>, UnsafeMutableBufferPointer<BodyState>,
             UnsafeMutablePointer<ManifoldConstraintW>
         ) -> Void
     ) {
@@ -87,10 +88,11 @@ extension World {
         let list = solverContacts.wideConstraints[ci]
         let split = solverContacts.wideConvexCounts[ci]
         let range = mesh ? split..<list.count : 0..<split
+        guard range.isEmpty == false else { return }
         withSolverStates { states in
             solverContacts.wideManifolds.withUnsafeMutableBufferPointer { pool in
                 list.withUnsafeBufferPointer { listBuffer in
-                    for i in range { body(listBuffer.baseAddress! + i, states, pool.baseAddress!) }
+                    body(listBuffer.baseAddress!, range, states, pool.baseAddress!)
                 }
             }
         }
@@ -100,7 +102,17 @@ extension World {
     // points and absent lanes, so their updates are exact no-ops as in C.
 
     func warmStartContactsWide(_ color: Int32, _ mesh: Bool) {
-        withWideContacts(color, mesh) { c, states, pool in
+        withWideContacts(color, mesh) { list, range, states, pool in
+            warmStartContactsWideRange(list, range, states, pool)
+        }
+    }
+
+    func warmStartContactsWideRange(
+        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>,
+        _ states: UnsafeMutableBufferPointer<BodyState>, _ pool: UnsafeMutablePointer<ManifoldConstraintW>
+    ) {
+        for i in range {
+            let c = list + i
             let anyRolling = c.pointee.anyRolling
             var linear = Vec3W()
             var angularA = Vec3W()
@@ -143,9 +155,19 @@ extension World {
     }
 
     func pushContactsWide(_ color: Int32, _ context: StepContext, _ mesh: Bool) {
+        withWideContacts(color, mesh) { list, range, states, pool in
+            pushContactsWideRange(list, range, context, states, pool)
+        }
+    }
+
+    func pushContactsWideRange(
+        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext, 
+        _ states: UnsafeMutableBufferPointer<BodyState>, _ pool: UnsafeMutablePointer<ManifoldConstraintW>
+    ) {
         let invH = FloatW(repeating: context.inv_h)
         let minSpeed = FloatW(repeating: -contactSpeed)
-        withWideContacts(color, mesh) { c, states, pool in
+        for i in range {
+            let c = list + i
             let indexA = c.pointee.indexA
             let indexB = c.pointee.indexB
             var a = Self.gatherStatesW(states, indexA)
@@ -194,9 +216,19 @@ extension World {
     }
 
     func solveContactsWide(_ color: Int32, _ context: StepContext, _ mesh: Bool) {
+        withWideContacts(color, mesh) { list, range, states, pool in
+            solveContactsWideRange(list, range, context, states, pool)
+        }
+    }
+
+    func solveContactsWideRange(
+        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext, 
+        _ states: UnsafeMutableBufferPointer<BodyState>, _ pool: UnsafeMutablePointer<ManifoldConstraintW>
+    ) {
         let invH = FloatW(repeating: context.inv_h)
         let epsilon = FloatW(repeating: Float.ulpOfOne)
-        withWideContacts(color, mesh) { c, states, pool in
+        for i in range {
+            let c = list + i
             let indexA = c.pointee.indexA
             let indexB = c.pointee.indexB
             var a = Self.gatherStatesW(states, indexA)
@@ -299,11 +331,21 @@ extension World {
     }
 
     func applyRestitutionWide(_ color: Int32, _ context: StepContext, _ mesh: Bool) {
+        withWideContacts(color, mesh) { list, range, states, pool in
+            applyRestitutionWideRange(list, range, context, states, pool)
+        }
+    }
+
+    func applyRestitutionWideRange(
+        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext, 
+        _ states: UnsafeMutableBufferPointer<BodyState>, _ pool: UnsafeMutablePointer<ManifoldConstraintW>
+    ) {
         let invH = FloatW(repeating: context.inv_h)
         let threshold = FloatW(repeating: -restitutionThreshold)
         let propagate = enableRestitutionPropagation
-        withWideContacts(color, mesh) { c, states, pool in
-            if !propagate && !c.pointee.anyRestitution { return }
+        for i in range {
+            let c = list + i
+            if !propagate && !c.pointee.anyRestitution { continue }
             let indexA = c.pointee.indexA
             let indexB = c.pointee.indexB
             let invIA = c.pointee.invIA
@@ -375,41 +417,43 @@ extension World {
         let split = solverContacts.wideConvexCounts[ci]
         solverContacts.wideConstraints[ci].withUnsafeBufferPointer { wide in
             let range = mesh ? split..<wide.count : 0..<split
-            let wideBase = wide.baseAddress!
+            guard range.isEmpty == false else { return }
             solverContacts.wideManifolds.withUnsafeBufferPointer { pool in
                 contacts.withUnsafeMutableBufferPointer { store in
-                    let poolBase = pool.baseAddress!
-                    let storeBase = store.baseAddress!
-                    for i in range {
-                        let c = wideBase + i
-                        for lane in 0..<4 {
-                            let id = Int(c.pointee.contactIds[lane])
-                            guard id >= 0 else { continue }
-                            let laneCount = Int(c.pointee.laneManifoldCounts[lane])
-                            guard laneCount > 0 else { continue }
-                            let hitEvents =
-                                (storeBase[id].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
-                            let manifoldBase = UnsafeMutablePointer(mutating: storeBase[id].manifolds.buffer.baseAddress!)
-                            for offset in 0..<laneCount {
-                                let m = poolBase + c.pointee.manifoldStart + offset
-                                let out = manifoldBase + offset
-                                for pi in 0..<Int(out.pointee.pointCount) {
-                                    out.pointee.points[pi].normalImpulse = m.pointee.points[pi].normalImpulse[lane]
-                                    out.pointee.points[pi].totalNormalImpulse =
-                                        m.pointee.points[pi].totalNormalImpulse[lane]
-                                    if hitEvents {
-                                        out.pointee.points[pi].normalVelocity =
-                                            m.pointee.points[pi].relativeVelocity[lane]
-                                    }
-                                }
-                                out.pointee.twistImpulse = m.pointee.twistImpulse[lane]
-                                out.pointee.frictionImpulse =
-                                    m.pointee.frictionImpulse.x[lane] * m.pointee.tangent1[lane]
-                                    + m.pointee.frictionImpulse.y[lane] * m.pointee.tangent2[lane]
-                                out.pointee.rollingImpulse = m.pointee.rollingImpulse[lane]
-                            }
+                    storeImpulsesWideRange(wide.baseAddress!, range, pool.baseAddress!, store.baseAddress!)
+                }
+            }
+        }
+    }
+
+    func storeImpulsesWideRange(
+        _ wideBase: UnsafePointer<ContactConstraintW>, _ range: Range<Int>,
+        _ poolBase: UnsafePointer<ManifoldConstraintW>, _ storeBase: UnsafeMutablePointer<Contact>
+    ) {
+        for i in range {
+            let c = wideBase + i
+            for lane in 0..<4 {
+                let id = Int(c.pointee.contactIds[lane])
+                guard id >= 0 else { continue }
+                let laneCount = Int(c.pointee.laneManifoldCounts[lane])
+                guard laneCount > 0 else { continue }
+                let hitEvents = (storeBase[id].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
+                let manifoldBase = UnsafeMutablePointer(mutating: storeBase[id].manifolds.buffer.baseAddress!)
+                for offset in 0..<laneCount {
+                    let m = poolBase + c.pointee.manifoldStart + offset
+                    let out = manifoldBase + offset
+                    for pi in 0..<Int(out.pointee.pointCount) {
+                        out.pointee.points[pi].normalImpulse = m.pointee.points[pi].normalImpulse[lane]
+                        out.pointee.points[pi].totalNormalImpulse = m.pointee.points[pi].totalNormalImpulse[lane]
+                        if hitEvents {
+                            out.pointee.points[pi].normalVelocity = m.pointee.points[pi].relativeVelocity[lane]
                         }
                     }
+                    out.pointee.twistImpulse = m.pointee.twistImpulse[lane]
+                    out.pointee.frictionImpulse =
+                        m.pointee.frictionImpulse.x[lane] * m.pointee.tangent1[lane]
+                        + m.pointee.frictionImpulse.y[lane] * m.pointee.tangent2[lane]
+                    out.pointee.rollingImpulse = m.pointee.rollingImpulse[lane]
                 }
             }
         }

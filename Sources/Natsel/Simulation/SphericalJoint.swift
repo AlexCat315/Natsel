@@ -75,15 +75,15 @@ extension World {
     func prepareSphericalJoint(_ base: inout JointSim, _ context: StepContext) {
         b3Assert(base.type == .sphericalJoint)
 
-        let bodyA = bodies[Int(base.bodyIdA)]
-        let bodyB = bodies[Int(base.bodyIdB)]
+        let bodyA = jointPrepareBody(base.bodyIdA)
+        let bodyB = jointPrepareBody(base.bodyIdB)
 
         b3Assert(
             bodyA.setIndex == SetType.awakeSet.rawValue || bodyB.setIndex == SetType.awakeSet.rawValue
         )
 
-        let simA = solverSets[Int(bodyA.setIndex)].bodySims[Int(bodyA.localIndex)]
-        let simB = solverSets[Int(bodyB.setIndex)].bodySims[Int(bodyB.localIndex)]
+        let simA = jointPrepareSim(bodyA)
+        let simB = jointPrepareSim(bodyB)
 
         base.invMassA = simA.invMass
         base.invMassB = simB.invMass
