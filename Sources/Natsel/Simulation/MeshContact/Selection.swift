@@ -20,7 +20,10 @@ private func meshEdgeKey(_ a: Int32, _ b: Int32) -> UInt64 {
     UInt64(UInt32(bitPattern: minInt(a, b))) << 32 | UInt64(UInt32(bitPattern: maxInt(a, b)))
 }
 
-func selectMeshManifolds(_ manifolds: [MeshTriangleManifold], sphere: Bool) -> [MeshTriangleManifold] {
+func selectMeshManifolds(
+    _ manifolds: [MeshTriangleManifold], sphere: Bool,
+    _ scratch: UnsafeMutablePointer<MeshContactScratch>
+) -> [MeshTriangleManifold] {
     var edges = MeshFeatureKeys()
     var vertices = MeshFeatureKeys()
     var accepted = InlineArray<512, Int32>(repeating: 0)
@@ -94,42 +97,61 @@ func selectMeshManifolds(_ manifolds: [MeshTriangleManifold], sphere: Bool) -> [
             acceptedCount += 1
         }
     }
-    var result: [MeshTriangleManifold] = []
-    result.reserveCapacity(acceptedCount)
+    scratch.pointee.selectedManifolds.removeAll(keepingCapacity: false)
+    scratch.pointee.selectedManifolds.reserveCapacity(acceptedCount)
     for i in 0..<acceptedCount {
-        result.append(manifolds[Int(accepted[i])])
+        scratch.pointee.selectedManifolds.append(manifolds[Int(accepted[i])])
     }
-    return result
+    return scratch.pointee.selectedManifolds
 }
 
 struct MeshManifoldCluster {
-    var normal: Vec3
-    var triangleNormal: Vec3
+    var normal = Vec3()
+    var triangleNormal = Vec3()
     var points: [LocalManifoldPoint] = []
+
+    init() {}
 }
 
-func clusterMeshManifolds(_ manifolds: [MeshTriangleManifold]) -> [MeshManifoldCluster] {
-    var clusters: [MeshManifoldCluster] = []
+func clusterMeshManifolds(
+    _ manifolds: [MeshTriangleManifold],
+    _ scratch: UnsafeMutablePointer<MeshContactScratch>
+) -> ArraySlice<MeshManifoldCluster> {
+    var clusterCount = 0
+    for i in scratch.pointee.clusters.indices {
+        scratch.pointee.clusters[i].points.removeAll(keepingCapacity: true)
+    }
     for manifold in manifolds {
         var selected: Int?
-        for (index, cluster) in clusters.enumerated() {
+        for index in 0..<clusterCount {
+            let cluster = scratch.pointee.clusters[index]
             let manifoldAngle = dot(cluster.normal, manifold.normal)
             let triangleAngle = dot(cluster.triangleNormal, manifold.triangleNormal)
             if manifoldAngle <= 0.996 || triangleAngle <= 0.996 { continue }
             selected = index
             break
         }
-        let index = selected ?? clusters.count
-        if selected == nil {
-            clusters.append(MeshManifoldCluster(normal: manifold.normal, triangleNormal: manifold.triangleNormal))
+        let index: Int
+        if let selected {
+            index = selected
+        } else {
+            index = clusterCount
+            if clusterCount == scratch.pointee.clusters.count {
+                scratch.pointee.clusters.append(MeshManifoldCluster())
+            }
+            scratch.pointee.clusters[index].normal = manifold.normal
+            scratch.pointee.clusters[index].triangleNormal = manifold.triangleNormal
+            clusterCount += 1
         }
         for var point in manifold.points {
             point.triangleIndex = manifold.triangleIndex
-            clusters[index].points.append(point)
+            scratch.pointee.clusters[index].points.append(point)
         }
     }
-    for i in clusters.indices {
-        clusters[i].points = reduceMeshCluster(clusters[i].points, normal: clusters[i].triangleNormal)
+    for i in 0..<clusterCount {
+        let normal = scratch.pointee.clusters[i].triangleNormal
+        reduceMeshCluster(
+            &scratch.pointee.clusters[i].points, normal: normal, projected: &scratch.pointee.projectedPoints)
     }
-    return clusters
+    return scratch.pointee.clusters[0..<clusterCount]
 }

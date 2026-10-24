@@ -238,163 +238,167 @@ extension World {
         bodyMoveEvents.removeAll(keepingCapacity: true)
         bodyMoveEvents.append(contentsOf: repeatElement(BodyMoveEvent(), count: count))
 
-        for simIndex in 0..<count {
-            var state = awakeSet.bodyStates[simIndex]
-            var sim = awakeSet.bodySims[simIndex]
+        awakeSet.bodySims.withUnsafeMutableBufferPointer { sims in
+            awakeSet.bodyStates.withUnsafeMutableBufferPointer { states in
+                for simIndex in 0..<count {
+                    var state = states[simIndex]
+                    var sim = sims[simIndex]
 
-            let v = state.linearVelocity
-            let w = state.angularVelocity
-            let localOmega = invRotateVector(sim.transform.q, w)
-            let localDeltaRotation = invRotateVector(sim.transform.q, state.deltaRotation.v)
+                    let v = state.linearVelocity
+                    let w = state.angularVelocity
+                    let localOmega = invRotateVector(sim.transform.q, w)
+                    let localDeltaRotation = invRotateVector(sim.transform.q, state.deltaRotation.v)
 
-            b3Assert(isValidVec3(v))
-            b3Assert(isValidVec3(w))
+                    b3Assert(isValidVec3(v))
+                    b3Assert(isValidVec3(w))
 
-            sim.center = offsetPos(sim.center, state.deltaPosition)
-            sim.transform.q = normalizeQuat(mulQuat(state.deltaRotation, sim.transform.q))
+                    sim.center = offsetPos(sim.center, state.deltaPosition)
+                    sim.transform.q = normalizeQuat(mulQuat(state.deltaRotation, sim.transform.q))
 
-            // Use the velocity of the farthest point on the body to account for rotation.
-            let velocityArc = modifiedCross(absVec3(localOmega), sim.maxExtent)
-            let maxVelocity = length(v) + length(velocityArc)
+                    // Use the velocity of the farthest point on the body to account for rotation.
+                    let velocityArc = modifiedCross(absVec3(localOmega), sim.maxExtent)
+                    let maxVelocity = length(v) + length(velocityArc)
 
-            // Sleep needs to observe position correction as well as true velocity.
-            let rotationArc = modifiedCross(absVec3(localDeltaRotation), sim.maxExtent)
-            let maxDeltaPosition = length(state.deltaPosition) + 2.0 * length(rotationArc)
+                    // Sleep needs to observe position correction as well as true velocity.
+                    let rotationArc = modifiedCross(absVec3(localDeltaRotation), sim.maxExtent)
+                    let maxDeltaPosition = length(state.deltaPosition) + 2.0 * length(rotationArc)
 
-            // Position correction is not as important for sleep as true velocity.
-            let positionSleepFactor: Float = 0.5
-            let sleepVelocity = maxFloat(maxVelocity, positionSleepFactor * invTimeStep * maxDeltaPosition)
+                    // Position correction is not as important for sleep as true velocity.
+                    let positionSleepFactor: Float = 0.5
+                    let sleepVelocity = maxFloat(maxVelocity, positionSleepFactor * invTimeStep * maxDeltaPosition)
 
-            // reset state deltas
-            state.deltaPosition = Vec3()
-            state.deltaRotation = Quat.identity
+                    // reset state deltas
+                    state.deltaPosition = Vec3()
+                    state.deltaRotation = Quat.identity
 
-            sim.transform.p = offsetPos(sim.center, -rotateVector(sim.transform.q, sim.localCenter))
+                    sim.transform.p = offsetPos(sim.center, -rotateVector(sim.transform.q, sim.localCenter))
 
-            var body = bodies[Int(sim.bodyId)]
-            body.bodyMoveIndex = Int32(simIndex)
-            body.sleepVelocity = sleepVelocity
+                    var body = bodies[Int(sim.bodyId)]
+                    body.bodyMoveIndex = Int32(simIndex)
+                    body.sleepVelocity = sleepVelocity
 
-            var moveEvent = BodyMoveEvent()
-            moveEvent.userData = body.userData
-            moveEvent.transform = sim.transform
-            moveEvent.bodyId = BodyID(index1: sim.bodyId + 1, world0: worldId, generation: body.generation)
-            moveEvent.fellAsleep = false
-            bodyMoveEvents[simIndex] = moveEvent
+                    var moveEvent = BodyMoveEvent()
+                    moveEvent.userData = body.userData
+                    moveEvent.transform = sim.transform
+                    moveEvent.bodyId = BodyID(index1: sim.bodyId + 1, world0: worldId, generation: body.generation)
+                    moveEvent.fellAsleep = false
+                    bodyMoveEvents[simIndex] = moveEvent
 
-            // reset applied force and torque
-            sim.force = Vec3()
-            sim.torque = Vec3()
+                    // reset applied force and torque
+                    sim.force = Vec3()
+                    sim.torque = Vec3()
 
-            b3Assert((body.flags & BodyFlags.dirtyMass.rawValue) == 0)
+                    b3Assert((body.flags & BodyFlags.dirtyMass.rawValue) == 0)
 
-            // Clear the transient flags.
-            body.flags &= ~BodyFlags.bodyTransientFlags.rawValue
-            sim.flags &= ~(BodyFlags.isFast.rawValue | BodyFlags.bodyTransientFlags.rawValue)
+                    // Clear the transient flags.
+                    body.flags &= ~BodyFlags.bodyTransientFlags.rawValue
+                    sim.flags &= ~(BodyFlags.isFast.rawValue | BodyFlags.bodyTransientFlags.rawValue)
 
-            // The body state flag knows about speed capping.
-            body.flags |= (state.flags & BodyFlags.isSpeedCapped.rawValue)
-            state.flags &= ~BodyFlags.bodyTransientFlags.rawValue
+                    // The body state flag knows about speed capping.
+                    body.flags |= (state.flags & BodyFlags.isSpeedCapped.rawValue)
+                    state.flags &= ~BodyFlags.bodyTransientFlags.rawValue
 
-            if enableSleep == false || (body.flags & BodyFlags.enableSleep.rawValue) == 0
-                || sleepVelocity > body.sleepThreshold
-            {
-                // Body is not sleepy
-                body.sleepTime = 0
+                    if enableSleep == false || (body.flags & BodyFlags.enableSleep.rawValue) == 0
+                        || sleepVelocity > body.sleepThreshold
+                    {
+                        // Body is not sleepy
+                        body.sleepTime = 0
 
-                let safetyFactor = body.safetyFactor
-                let maxMotion = maxFloat(maxDeltaPosition, maxVelocity * timeStep)
-                if body.type == .dynamicBody && enableContinuous && maxMotion > safetyFactor * sim.minExtent {
-                    // This flag is used for debug draw and contact recycling.
-                    sim.flags |= BodyFlags.isFast.rawValue
+                        let safetyFactor = body.safetyFactor
+                        let maxMotion = maxFloat(maxDeltaPosition, maxVelocity * timeStep)
+                        if body.type == .dynamicBody && enableContinuous && maxMotion > safetyFactor * sim.minExtent {
+                            // This flag is used for debug draw and contact recycling.
+                            sim.flags |= BodyFlags.isFast.rawValue
 
-                    // Flush this body so the continuous pass sees its current sim and state.
-                    awakeSet.bodyStates[simIndex] = state
-                    awakeSet.bodySims[simIndex] = sim
+                            // Flush this body so the continuous pass sees its current sim and state.
+                            states[simIndex] = state
+                            sims[simIndex] = sim
+                            bodies[Int(sim.bodyId)] = body
+
+                            // Store in fast array for the continuous collision stage
+                            if (sim.flags & BodyFlags.isBullet.rawValue) != 0 {
+                                context.bulletBodies.append(Int32(simIndex))
+                            } else {
+                                solveContinuous(Int32(simIndex), timeStep, sims, states)
+                            }
+
+                            // The continuous pass may have advanced the body and changed its state.
+                            state = states[simIndex]
+                            sim = sims[simIndex]
+                            body = bodies[Int(sim.bodyId)]
+                        } else {
+                            // Body is safe to advance
+                            sim.center0 = sim.center
+                            sim.rotation0 = sim.transform.q
+                        }
+                    } else {
+                        // Body is safe to advance and is falling asleep
+                        sim.center0 = sim.center
+                        sim.rotation0 = sim.transform.q
+                        body.sleepTime += timeStep
+                    }
+
+                    // Update world space inverse inertia tensor.
+                    let rotationMatrix = makeMatrixFromQuat(sim.transform.q)
+                    sim.invInertiaWorld = mulMM(mulMM(rotationMatrix, sim.invInertiaLocal), transpose(rotationMatrix))
+
+                    // Any single body in an island can keep it awake
+                    // Read the two scalars directly; copying an `Island` retains its three arrays.
+                    if body.sleepTime < B3.timeToSleep {
+                        // keep island awake
+                        let islandIndex = islands[Int(body.islandId)].localIndex
+                        b3Assert(islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count)
+                        if islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count {
+                            taskContexts[0].awakeIslandBitSet.setBitGrow(UInt32(islandIndex))
+                        }
+                    } else if islands[Int(body.islandId)].constraintRemoveCount > 0 {
+                        var taskContext = taskContexts[0]
+                        if body.sleepTime > taskContext.splitSleepTime
+                            || (body.sleepTime == taskContext.splitSleepTime && body.islandId > taskContext.splitIslandId)
+                        {
+                            // pick the sleepiest candidate
+                            taskContext.splitIslandId = body.islandId
+                            taskContext.splitSleepTime = body.sleepTime
+                            taskContexts[0] = taskContext
+                        }
+                    }
+
                     bodies[Int(sim.bodyId)] = body
 
-                    // Store in fast array for the continuous collision stage
-                    if (sim.flags & BodyFlags.isBullet.rawValue) != 0 {
-                        context.bulletBodies.append(Int32(simIndex))
-                    } else {
-                        solveContinuous(Int32(simIndex), timeStep, &awakeSet)
-                    }
+                    // Update shapes AABBs
+                    // For fast non-bullet bodies the AABB has already been updated in the CCD pass.
+                    if (sim.flags & BodyFlags.isFast.rawValue) == 0 {
+                        let transform = sim.transform
+                        var shapeId = body.headShapeId
+                        // Mutate the shape in place. A `var shape = shapes[...]` copy plus a store back makes
+                        // the whole world shape array multiply referenced, so the next store copies the
+                        // entire array. With thousands of bodies that copy dominated the step.
+                        shapes.withUnsafeMutableBufferPointer { shapeStore in
+                            while shapeId != B3.nullIndex {
+                                let shapeIndex = Int(shapeId)
+                                let nextShapeId = shapeStore[shapeIndex].nextShapeId
 
-                    // The continuous pass may have advanced the body and changed its state.
-                    state = awakeSet.bodyStates[simIndex]
-                    sim = awakeSet.bodySims[simIndex]
-                    body = bodies[Int(sim.bodyId)]
-                } else {
-                    // Body is safe to advance
-                    sim.center0 = sim.center
-                    sim.rotation0 = sim.transform.q
-                }
-            } else {
-                // Body is safe to advance and is falling asleep
-                sim.center0 = sim.center
-                sim.rotation0 = sim.transform.q
-                body.sleepTime += timeStep
-            }
+                                let aabb = computeFatShapeAABB(shapeStore[shapeIndex], transform, speculativeScalar)
+                                shapeStore[shapeIndex].aabb = aabb
 
-            // Update world space inverse inertia tensor.
-            let rotationMatrix = makeMatrixFromQuat(sim.transform.q)
-            sim.invInertiaWorld = mulMM(mulMM(rotationMatrix, sim.invInertiaLocal), transpose(rotationMatrix))
+                                let fatAABB = fatAABBs[shapeIndex]
+                                if aabbContains(fatAABB, aabb) == false {
+                                    let inflated = aabbInflate(aabb, shapeStore[shapeIndex].aabbMargin)
+                                    fatAABBs[shapeIndex] = inflated
 
-            // Any single body in an island can keep it awake
-            // Read the two scalars directly; copying an `Island` retains its three arrays.
-            if body.sleepTime < B3.timeToSleep {
-                // keep island awake
-                let islandIndex = islands[Int(body.islandId)].localIndex
-                b3Assert(islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count)
-                if islandIndex >= 0 && Int(islandIndex) < awakeSet.islandSims.count {
-                    taskContexts[0].awakeIslandBitSet.setBitGrow(UInt32(islandIndex))
-                }
-            } else if islands[Int(body.islandId)].constraintRemoveCount > 0 {
-                var taskContext = taskContexts[0]
-                if body.sleepTime > taskContext.splitSleepTime
-                    || (body.sleepTime == taskContext.splitSleepTime && body.islandId > taskContext.splitIslandId)
-                {
-                    // pick the sleepiest candidate
-                    taskContext.splitIslandId = body.islandId
-                    taskContext.splitSleepTime = body.sleepTime
-                    taskContexts[0] = taskContext
-                }
-            }
+                                    // Mark the hierarchy as moved.
+                                    broadPhase.markProxyMoved(shapeStore[shapeIndex].proxyKey, inflated)
+                                }
 
-            bodies[Int(sim.bodyId)] = body
-
-            // Update shapes AABBs
-            // For fast non-bullet bodies the AABB has already been updated in the CCD pass.
-            if (sim.flags & BodyFlags.isFast.rawValue) == 0 {
-                let transform = sim.transform
-                var shapeId = body.headShapeId
-                // Mutate the shape in place. A `var shape = shapes[...]` copy plus a store back makes
-                // the whole world shape array multiply referenced, so the next store copies the
-                // entire array. With thousands of bodies that copy dominated the step.
-                shapes.withUnsafeMutableBufferPointer { shapeStore in
-                    while shapeId != B3.nullIndex {
-                        let shapeIndex = Int(shapeId)
-                        let nextShapeId = shapeStore[shapeIndex].nextShapeId
-
-                        let aabb = computeFatShapeAABB(shapeStore[shapeIndex], transform, speculativeScalar)
-                        shapeStore[shapeIndex].aabb = aabb
-
-                        let fatAABB = fatAABBs[shapeIndex]
-                        if aabbContains(fatAABB, aabb) == false {
-                            let inflated = aabbInflate(aabb, shapeStore[shapeIndex].aabbMargin)
-                            fatAABBs[shapeIndex] = inflated
-
-                            // Mark the hierarchy as moved.
-                            broadPhase.markProxyMoved(shapeStore[shapeIndex].proxyKey, inflated)
+                                shapeId = nextShapeId
+                            }
                         }
-
-                        shapeId = nextShapeId
                     }
+
+                    states[simIndex] = state
+                    sims[simIndex] = sim
                 }
             }
-
-            awakeSet.bodyStates[simIndex] = state
-            awakeSet.bodySims[simIndex] = sim
         }
 
         swap(&awakeSet, &solverSets[Int(SetType.awakeSet.rawValue)])

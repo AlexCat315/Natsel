@@ -12,6 +12,7 @@ let package = Package(
             name: "Natsel",
             swiftSettings: [
                 .enableUpcomingFeature("ApproachableConcurrency"),
+                .unsafeFlags(["-enable-builtin-module"]),
                 .unsafeFlags(["-Ounchecked", "-enforce-exclusivity=unchecked"], .when(configuration: .release)),
             ]
         ),

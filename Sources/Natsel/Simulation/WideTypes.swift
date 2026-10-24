@@ -1,3 +1,4 @@
+import Builtin
 private import simd
 
 // 4-wide solver types (simd_wide.h, contact_solver_wide.inl).
@@ -7,15 +8,147 @@ private import simd
 // port only has to preserve the scalar arithmetic order within each lane.
 
 /// Four floats, one per contact lane.
-typealias FloatW = SIMD4<Float>
+///
+/// Swift 6.4 lowers `SIMD4<Float>` arithmetic to scalar lane operations. Keeping the lane vector
+/// as a `Builtin.Vec4xFPIEEE32` lets the four-wide helpers below emit single NEON instructions.
+/// All `Builtin` use in the engine lives in this type and its helpers.
+struct FloatW: @unchecked Sendable {
+    var storage: Builtin.Vec4xFPIEEE32
+
+    @inline(__always) init() { storage = Builtin.zeroInitializer() }
+    @inline(__always) init(storage: Builtin.Vec4xFPIEEE32) { self.storage = storage }
+    @inline(__always) init(_ a: SIMD4<Float>) { storage = Self.load(a) }
+    @inline(__always) init(repeating value: Float) {
+        storage = Self.load(SIMD4<Float>(repeating: value))
+    }
+    @inline(__always) init(_ x: Float, _ y: Float, _ z: Float, _ w: Float) {
+        storage = Self.load(SIMD4<Float>(x, y, z, w))
+    }
+
+    @inline(__always) private static func load(_ value: SIMD4<Float>) -> Builtin.Vec4xFPIEEE32 {
+        var value = value
+        return Builtin.loadRaw(Builtin.addressof(&value))
+    }
+
+    @inline(__always) var simd: SIMD4<Float> {
+        var out = SIMD4<Float>()
+        Builtin.storeRaw(storage, Builtin.addressof(&out))
+        return out
+    }
+
+    @inline(__always) var x: Float {
+        get { simd[0] }
+        set { var value = simd; value[0] = newValue; storage = Self.load(value) }
+    }
+    @inline(__always) var y: Float {
+        get { simd[1] }
+        set { var value = simd; value[1] = newValue; storage = Self.load(value) }
+    }
+    @inline(__always) var z: Float {
+        get { simd[2] }
+        set { var value = simd; value[2] = newValue; storage = Self.load(value) }
+    }
+    @inline(__always) var w: Float {
+        get { simd[3] }
+        set { var value = simd; value[3] = newValue; storage = Self.load(value) }
+    }
+
+    @inline(__always) subscript(_ i: Int) -> Float {
+        get { simd[i] }
+        set { var value = simd; value[i] = newValue; storage = Self.load(value) }
+    }
+
+    @inline(__always) func squareRoot() -> FloatW { FloatW(simd.squareRoot()) }
+
+    @inline(__always) static var zero: FloatW { FloatW(repeating: 0) }
+    @inline(__always) static var one: FloatW { FloatW(repeating: 1) }
+
+    @inline(__always) static func + (a: FloatW, b: FloatW) -> FloatW { wideAdd(a, b) }
+    @inline(__always) static func - (a: FloatW, b: FloatW) -> FloatW { wideSub(a, b) }
+    @inline(__always) static func * (a: FloatW, b: FloatW) -> FloatW { wideMul(a, b) }
+    @inline(__always) static func / (a: FloatW, b: FloatW) -> FloatW { wideDiv(a, b) }
+    @inline(__always) static prefix func - (a: FloatW) -> FloatW { wideNeg(a) }
+
+    @inline(__always) static func + (a: FloatW, b: Float) -> FloatW { wideAdd(a, FloatW(repeating: b)) }
+    @inline(__always) static func + (a: Float, b: FloatW) -> FloatW { wideAdd(FloatW(repeating: a), b) }
+    @inline(__always) static func - (a: FloatW, b: Float) -> FloatW { wideSub(a, FloatW(repeating: b)) }
+    @inline(__always) static func - (a: Float, b: FloatW) -> FloatW { wideSub(FloatW(repeating: a), b) }
+    @inline(__always) static func * (a: FloatW, b: Float) -> FloatW { wideMul(a, FloatW(repeating: b)) }
+    @inline(__always) static func * (a: Float, b: FloatW) -> FloatW { wideMul(FloatW(repeating: a), b) }
+    @inline(__always) static func / (a: FloatW, b: Float) -> FloatW { wideDiv(a, FloatW(repeating: b)) }
+    @inline(__always) static func / (a: Float, b: FloatW) -> FloatW { wideDiv(FloatW(repeating: a), b) }
+
+    @inline(__always) static func += (a: inout FloatW, b: FloatW) { a = wideAdd(a, b) }
+    @inline(__always) static func -= (a: inout FloatW, b: FloatW) { a = wideSub(a, b) }
+    @inline(__always) static func *= (a: inout FloatW, b: FloatW) { a = wideMul(a, b) }
+    @inline(__always) static func /= (a: inout FloatW, b: FloatW) { a = wideDiv(a, b) }
+
+    @inline(__always) static func .> (a: FloatW, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .> b.simd
+    }
+    @inline(__always) static func .< (a: FloatW, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .< b.simd
+    }
+    @inline(__always) static func .>= (a: FloatW, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .>= b.simd
+    }
+    @inline(__always) static func .<= (a: FloatW, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .<= b.simd
+    }
+    @inline(__always) static func .== (a: FloatW, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .== b.simd
+    }
+    @inline(__always) static func .!= (a: FloatW, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .!= b.simd
+    }
+    @inline(__always) static func .> (a: FloatW, b: Float) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .> b
+    }
+    @inline(__always) static func .< (a: FloatW, b: Float) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .< b
+    }
+    @inline(__always) static func .>= (a: FloatW, b: Float) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .>= b
+    }
+    @inline(__always) static func .<= (a: FloatW, b: Float) -> SIMDMask<SIMD4<Int32>> {
+        a.simd .<= b
+    }
+    @inline(__always) static func .> (a: Float, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a .> b.simd
+    }
+    @inline(__always) static func .< (a: Float, b: FloatW) -> SIMDMask<SIMD4<Int32>> {
+        a .< b.simd
+    }
+}
+
+/// The only place the engine touches `Builtin` vector arithmetic.
+@inline(__always) func wideAdd(_ a: FloatW, _ b: FloatW) -> FloatW {
+    FloatW(storage: Builtin.fadd_Vec4xFPIEEE32(a.storage, b.storage))
+}
+
+@inline(__always) func wideSub(_ a: FloatW, _ b: FloatW) -> FloatW {
+    FloatW(storage: Builtin.fsub_Vec4xFPIEEE32(a.storage, b.storage))
+}
+
+@inline(__always) func wideMul(_ a: FloatW, _ b: FloatW) -> FloatW {
+    FloatW(storage: Builtin.fmul_Vec4xFPIEEE32(a.storage, b.storage))
+}
+
+@inline(__always) func wideDiv(_ a: FloatW, _ b: FloatW) -> FloatW {
+    FloatW(storage: Builtin.fdiv_Vec4xFPIEEE32(a.storage, b.storage))
+}
+
+@inline(__always) func wideNeg(_ a: FloatW) -> FloatW {
+    FloatW(storage: Builtin.fneg_Vec4xFPIEEE32(a.storage))
+}
 
 /// Transpose four rows into four lane columns with NEON zips. Building the columns from scalar
 /// lanes makes LLVM split the downstream SIMD math into partial vectors.
 @inline(__always) func transpose4(
     _ a: FloatW, _ b: FloatW, _ c: FloatW, _ d: FloatW
 ) -> (FloatW, FloatW, FloatW, FloatW) {
-    let t = simd_transpose(simd_float4x4(a, b, c, d))
-    return (t.columns.0, t.columns.1, t.columns.2, t.columns.3)
+    let t = simd_transpose(simd_float4x4(a.simd, b.simd, c.simd, d.simd))
+    return (FloatW(t.columns.0), FloatW(t.columns.1), FloatW(t.columns.2), FloatW(t.columns.3))
 }
 
 /// Four 3-vectors, one per lane. `x`, `y`, and `z` each hold four lanes.
@@ -187,10 +320,28 @@ struct SymMatrix2W {
 /// Four body states, gathered for the wide solver. Lane `i` mirrors `states[index[i] - 1]`, or the
 /// identity state when the index is zero (static).
 struct BodyStateW {
-    var v = Vec3W()
-    var w = Vec3W()
-    var dp = Vec3W()
-    var dq = QuatW()
+    var v: Vec3W
+    var w: Vec3W
+    var dp: Vec3W
+    var dq: QuatW
+
+    @inline(__always)
+    init() {
+        v = Vec3W()
+        w = Vec3W()
+        dp = Vec3W()
+        dq = QuatW()
+    }
+
+    /// Build a gathered state directly. The default initializer can be outlined into a call
+    /// that clears all thirteen vectors before the gather overwrites every one of them.
+    @inline(__always)
+    init(v: Vec3W, w: Vec3W, dp: Vec3W, dq: QuatW) {
+        self.v = v
+        self.w = w
+        self.dp = dp
+        self.dq = dq
+    }
 }
 
 extension World {
@@ -213,9 +364,9 @@ extension World {
 /// (NEON `bsl`): the generic `replacing(with:where:)` is lowered lane by lane.
 @inline(__always) func selectW(_ mask: SIMDMask<SIMD4<Int32>>, _ a: FloatW, _ b: FloatW) -> FloatW {
     let m = unsafeBitCast(mask, to: SIMD4<UInt32>.self)
-    let bitsA = unsafeBitCast(a, to: SIMD4<UInt32>.self)
-    let bitsB = unsafeBitCast(b, to: SIMD4<UInt32>.self)
-    return unsafeBitCast((bitsA & m) | (bitsB & ~m), to: FloatW.self)
+    let bitsA = unsafeBitCast(a.simd, to: SIMD4<UInt32>.self)
+    let bitsB = unsafeBitCast(b.simd, to: SIMD4<UInt32>.self)
+    return FloatW(unsafeBitCast((bitsA & m) | (bitsB & ~m), to: SIMD4<Float>.self))
 }
 
 @inline(__always) func selectW(_ mask: SIMDMask<SIMD4<Int32>>, _ a: Vec3W, _ b: Vec3W) -> Vec3W {
@@ -238,7 +389,4 @@ extension World {
 
 /// SIMD's generic unary minus uses zero subtraction, which loses the sign of +0.
 /// Flip the IEEE sign bit to match scalar Float negation, including zero and NaNs.
-@inline(__always) func negW(_ a: FloatW) -> FloatW {
-    let bits = unsafeBitCast(a, to: SIMD4<UInt32>.self)
-    return unsafeBitCast(bits ^ SIMD4<UInt32>(repeating: 0x8000_0000), to: FloatW.self)
-}
+@inline(__always) func negW(_ a: FloatW) -> FloatW { wideNeg(a) }

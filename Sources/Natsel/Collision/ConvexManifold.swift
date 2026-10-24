@@ -152,14 +152,14 @@ func getFaceDots(_ hull: Hull, _ d: Vec3, _ dots: UnsafeMutablePointer<Float>) {
     let nz = ny + faceStride
 
     let faceCount = Int(hull.faceCount)
-    let dx = SIMD4<Float>(repeating: d.x)
-    let dy = SIMD4<Float>(repeating: d.y)
-    let dz = SIMD4<Float>(repeating: d.z)
+    let dx = FloatW(repeating: d.x)
+    let dy = FloatW(repeating: d.y)
+    let dz = FloatW(repeating: d.z)
     var i = 0
     while i + 4 <= faceCount {
-        let x = UnsafeRawPointer(nx + i).loadUnaligned(as: SIMD4<Float>.self)
-        let y = UnsafeRawPointer(ny + i).loadUnaligned(as: SIMD4<Float>.self)
-        let z = UnsafeRawPointer(nz + i).loadUnaligned(as: SIMD4<Float>.self)
+        let x = FloatW(UnsafeRawPointer(nx + i).loadUnaligned(as: SIMD4<Float>.self))
+        let y = FloatW(UnsafeRawPointer(ny + i).loadUnaligned(as: SIMD4<Float>.self))
+        let z = FloatW(UnsafeRawPointer(nz + i).loadUnaligned(as: SIMD4<Float>.self))
         let value = dx * x + dy * y + dz * z
         dots[i] = value[0]; dots[i + 1] = value[1]
         dots[i + 2] = value[2]; dots[i + 3] = value[3]
@@ -227,20 +227,20 @@ func getSupportWide(
     let mask: UInt32 = (1 << UInt32(hullBitCount)) - 1
     let clearMask = SIMD4<UInt32>(repeating: ~mask)
     let indexMask = SIMD4<UInt32>(repeating: mask)
-    let nx = SIMD4<Float>(repeating: normal.x)
-    let ny = SIMD4<Float>(repeating: normal.y)
-    let nz = SIMD4<Float>(repeating: normal.z)
-    let bias4 = SIMD4<Float>(repeating: bias)
-    var minimum = SIMD4<Float>(repeating: .infinity)
+    let nx = FloatW(repeating: normal.x)
+    let ny = FloatW(repeating: normal.y)
+    let nz = FloatW(repeating: normal.z)
+    let bias4 = FloatW(repeating: bias)
+    var minimum = FloatW(repeating: .infinity)
     var indices = SIMD4<UInt32>(0, 1, 2, 3)
     var i = 0
     while i + 4 <= Int(n) {
-        let x = UnsafeRawPointer(vx + i).loadUnaligned(as: SIMD4<Float>.self)
-        let y = UnsafeRawPointer(vy + i).loadUnaligned(as: SIMD4<Float>.self)
-        let z = UnsafeRawPointer(vz + i).loadUnaligned(as: SIMD4<Float>.self)
+        let x = FloatW(UnsafeRawPointer(vx + i).loadUnaligned(as: SIMD4<Float>.self))
+        let y = FloatW(UnsafeRawPointer(vy + i).loadUnaligned(as: SIMD4<Float>.self))
+        let z = FloatW(UnsafeRawPointer(vz + i).loadUnaligned(as: SIMD4<Float>.self))
         let value = bias4 - (nx * x + ny * y + nz * z)
-        let bits = unsafeBitCast(value, to: SIMD4<UInt32>.self)
-        let augmented = unsafeBitCast((bits & clearMask) | (indices & indexMask), to: SIMD4<Float>.self)
+        let bits = unsafeBitCast(value.simd, to: SIMD4<UInt32>.self)
+        let augmented = FloatW(unsafeBitCast((bits & clearMask) | (indices & indexMask), to: SIMD4<Float>.self))
         minimum = selectW(augmented .< minimum, augmented, minimum)
         indices = indices &+ SIMD4<UInt32>(repeating: 4)
         i += 4

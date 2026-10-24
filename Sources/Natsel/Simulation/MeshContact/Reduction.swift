@@ -13,9 +13,14 @@ private func betterMeshCullCandidate(_ score: Float, _ separation: Float,
 }
 
 /// mesh_contact.c's four-point reduction, including tie tolerances and swap removal order.
-func cullMeshPoints(_ source: [MeshPatchPoint]) -> [MeshPatchPoint] {
-    if source.count <= 1 { return source }
-    var points = source
+private func cullMeshPoints(
+    _ points: UnsafeMutableBufferPointer<MeshPatchPoint>,
+    _ selected: inout InlineArray<4, MeshPatchPoint>
+) -> Int {
+    if points.count <= 1 {
+        if points.count == 1 { selected[0] = points[0] }
+        return points.count
+    }
     let tolerance: Float = 0.25 * B3.linearSlop
     let toleranceSquared = tolerance * tolerance
     let separationTolerance = B3.linearSlop
@@ -42,15 +47,17 @@ func cullMeshPoints(_ source: [MeshPatchPoint]) -> [MeshPatchPoint] {
         for i in 1..<count {
             if points[i].separation < points[deepest].separation { deepest = i }
         }
-        return [points[deepest]]
+        selected[0] = points[deepest]
+        return 1
     }
-    var final = [points[bestIndex1], points[bestIndex2]]
+    selected[0] = points[bestIndex1]
+    selected[1] = points[bestIndex2]
     points[bestIndex2] = points[count - 1]
     points[bestIndex1] = points[count - 2]
     count -= 2
-    if count == 0 { return final }
-    let a = final[0].p
-    var b = final[1].p
+    if count == 0 { return 2 }
+    let a = selected[0].p
+    var b = selected[1].p
     var ba = Vec2(b.x - a.x, b.y - a.y)
     bestScore = 0
     bestSeparation = .greatestFiniteMagnitude
@@ -67,12 +74,12 @@ func cullMeshPoints(_ source: [MeshPatchPoint]) -> [MeshPatchPoint] {
             bestIndex = i
         }
     }
-    if bestIndex == -1 { return final }
-    final.append(points[bestIndex])
-    if count == 1 { return final }
+    if bestIndex == -1 { return 2 }
+    selected[2] = points[bestIndex]
+    if count == 1 { return 3 }
     points[bestIndex] = points[count - 1]
     count -= 1
-    var c = final[2].p
+    var c = selected[2].p
     if bestSignedArea < 0 {
         swap(&b, &c)
         ba = Vec2(b.x - a.x, b.y - a.y)
@@ -94,19 +101,53 @@ func cullMeshPoints(_ source: [MeshPatchPoint]) -> [MeshPatchPoint] {
             bestIndex = i
         }
     }
-    if bestIndex != -1 { final.append(points[bestIndex]) }
-    return final
+    if bestIndex != -1 {
+        selected[3] = points[bestIndex]
+        return 4
+    }
+    return 3
 }
 
-func reduceMeshCluster(_ points: [LocalManifoldPoint], normal: Vec3) -> [LocalManifoldPoint] {
-    if points.count <= 1 { return points }
+/// Standalone/reference-test entry point. Production projects into the worker's reusable buffer.
+func cullMeshPoints(_ source: [MeshPatchPoint]) -> [MeshPatchPoint] {
+    var points = source
+    var selected = InlineArray<4, MeshPatchPoint>(
+        repeating: MeshPatchPoint(p: Vec2(), separation: 0, originalIndex: 0))
+    let count = points.withUnsafeMutableBufferPointer { cullMeshPoints($0, &selected) }
+    var output: [MeshPatchPoint] = []
+    output.reserveCapacity(count)
+    for i in 0..<count { output.append(selected[i]) }
+    return output
+}
+
+/// Reduce in place, preserving each cluster's allocation for the next contact. The projected
+/// scratch has no shared slices, so neither projection nor swap removal needs an Array copy.
+func reduceMeshCluster(
+    _ points: inout [LocalManifoldPoint], normal: Vec3, projected: inout [MeshPatchPoint]
+) {
+    let count = points.count
+    if count <= 1 { return }
     let u = perp(normal)
     let v = cross(normal, u)
     let origin = points[0].point
-    var projected: [MeshPatchPoint] = []
-    for (i, point) in points.enumerated() {
-        let d = point.point - origin
-        projected.append(MeshPatchPoint(p: Vec2(dot(d, u), dot(d, v)), separation: point.separation, originalIndex: i))
+    if projected.count < count {
+        projected.append(contentsOf: repeatElement(
+            MeshPatchPoint(p: Vec2(), separation: 0, originalIndex: 0), count: count - projected.count))
     }
-    return cullMeshPoints(projected).map { points[$0.originalIndex] }
+    var selected = InlineArray<4, MeshPatchPoint>(
+        repeating: MeshPatchPoint(p: Vec2(), separation: 0, originalIndex: 0))
+    let selectedCount = projected.withUnsafeMutableBufferPointer { scratch in
+        for i in 0..<count {
+            let point = points[i]
+            let d = point.point - origin
+            scratch[i] = MeshPatchPoint(
+                p: Vec2(dot(d, u), dot(d, v)), separation: point.separation, originalIndex: i)
+        }
+        return cullMeshPoints(UnsafeMutableBufferPointer(start: scratch.baseAddress, count: count), &selected)
+    }
+    // Fetch all chosen points before overwriting the source prefix: selected indices may alias it.
+    var output = InlineArray<4, LocalManifoldPoint>(repeating: LocalManifoldPoint())
+    for i in 0..<selectedCount { output[i] = points[selected[i].originalIndex] }
+    for i in 0..<selectedCount { points[i] = output[i] }
+    points.removeLast(count - selectedCount)
 }

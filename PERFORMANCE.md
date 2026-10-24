@@ -1,6 +1,6 @@
 # Natsel (Swift) vs Box3D (C) 性能报告
 
-> 第一至五节保留原始测量，第六节为首轮优化。当前 10% 目标与后续进展见第七节。
+> 第一至五节保留原始测量，第六、七节为阶段记录。最新完整十场景复测见第八节。
 
 机器：Apple M1，8 核，macOS 27.0.1
 构建：C 为 `-O3 -DNDEBUG`（Release，NEON 4 宽求解器）；Swift 为 `swift build -c release`
@@ -232,3 +232,75 @@ POD/SAT 版本 Release 全量 391 项测试通过。关节 SIMD 与网格 arena 
 
 后续重点是去掉标量约束再打包为 SIMD 的双重准备成本，并继续压低网格处理及窄相开销。
 在十场景复测证明 Swift/C ≤ 1.10 之前，目标不算完成。
+
+## 八、Builtin 后续优化与完整复测（2026-10-24）
+
+本节为当前工作树的最新生产构建结果。第六、七节保留阶段记录，不代表当前性能。
+
+本轮以已经包含 `FloatW` Builtin 向量运算、直接 SoA 准备和持久化碰撞 scratch 的工作树为起点，继续处理以下开销：
+
+- 四路刚体状态改为直接构造全部字段，消除先默认初始化再覆盖的数据。生产汇编中 push 内核从约 693 条减到 631 条，solve 从约 1090 条减到 1025 条，收集状态时不再调用默认构造器。
+- finalize 一次借出整个 awake 刚体 sim/state 缓冲区，CCD 复用同一缓冲区，减少每个刚体的 Array 唯一性检查；刚体处理和 CCD 顺序保持不变。
+- prepare 的四个 lane 使用常量下标，避免动态 SIMD 下标导致的中间落栈。
+- 网格四点归约复用 worker 投影 scratch，并原地缩减 cluster 点数组，保留 C 的容差、并列选择和 swap-remove 顺序。
+- 四元数旋转、四元数乘法及矩阵乘法显式内联，减少 finalize 和窄相中的调用；未改变算式或引入 FMA。
+- 基准程序在计时前解析环境变量，避免每步构造诊断环境字典。这是计时辅助开销的清理，不能全部算作物理引擎的提速。
+
+### 最新十场景 Swift/C 对照
+
+Apple M1、Swift 6.4.1、生产 Release、单 worker、四路 SIMD、4 子步。每场景分别交替运行 C 和 Swift 三次，取各自最小值。C 使用同一已构建的 `-O3 -DNDEBUG -ffp-contract=off` 静态库；未把 C 求解器链接进 Swift。
+
+| 场景 | C ms | Swift ms | Swift/C |
+|---|---:|---:|---:|
+| large_pyramid | 1231.3 | 1795.1 | 1.458x |
+| many_pyramids | 1418.5 | 1965.0 | 1.385x |
+| joint_grid | 821.2 | 736.7 | 0.897x |
+| spinner | 2252.9 | 3555.6 | 1.578x |
+| sleep | 542.0 | 820.5 | 1.514x |
+| trees25 | 333.8 | 479.5 | 1.437x |
+| trees50 | 158.9 | 234.4 | 1.475x |
+| trees100 | 96.3 | 147.2 | 1.529x |
+| washer | 15618.9 | 21099.5 | 1.351x |
+| convex_pile | 4912.1 | 6944.6 | 1.414x |
+| **合计** | **27386.0** | **37778.2** | **1.379x** |
+
+**整体仍慢约 37.9%，未达到 Swift/C ≤ 1.10。** joint_grid 已快于 C，其余九个场景仍未达标。washer 为约 1.351x，不能用它或局部求解器的结果替代完整十场景验收。
+
+十场景每个版本各运行三次，60 个最终状态哈希逐场景一致。washer 为 `fad87a98c0b30df`。哈希覆盖 C 的世界状态字段；接触点/冲量等更细的行为还由测试套件中的 C 参考与 scalar/wide 对照检查。
+
+完整时间、每轮哈希、Swift 阶段耗时、二进制 SHA-256 与本轮阶段检查保存在 `Tools/Benchmarks/Results/builtin-followup-2026-10-24.json`。当前原始运行日志在 `/tmp/natsel-next/final-validation/`。
+
+### 复测工具
+
+新增 `Tools/Benchmarks/reference.c`，它只包装上游 benchmark 的 world 销毁以在计时之外打印 `b3HashWorldState`；`validate.py` 同时验证时间和哈希，固定 C 单线程与 SIMD width 4，并清除继承的 NATSEL 调试覆盖。
+
+```sh
+B3_CHECKOUT=/Users/cyke666/dev/box3d-main
+clang -O3 -DNDEBUG -DBOX3D_INTERNAL_BENCHMARKS -std=c17 -ffp-contract=off \
+  "-DNATSEL_BOX3D_BENCHMARK_MAIN=\"$B3_CHECKOUT/benchmark/main.c\"" \
+  -I"$B3_CHECKOUT/include" -I"$B3_CHECKOUT/src" \
+  -I"$B3_CHECKOUT/build-bench/src" -I"$B3_CHECKOUT/shared" \
+  Tools/Benchmarks/reference.c \
+  "$B3_CHECKOUT/build-bench/shared/libshared.a" \
+  "$B3_CHECKOUT/build-bench/src/libbox3d.a" -o /tmp/natsel-c-reference
+swift build -c release
+python3 Tools/Benchmarks/validate.py /tmp/natsel-c-reference .build/release/Benchmarks \
+  --repeats 3 --output /tmp/natsel-c-swift-validation
+```
+
+### 后续热点
+
+仍需压低接触约束准备/求解、凸体碰撞与 CCD 的开销。最新 washer 最快一次的阶段平均值约为：
+
+| 阶段 | Swift ms/step |
+|---|---:|
+| pairs | 2.608 |
+| collide | 9.481 |
+| prepare | 2.445 |
+| warm | 0.478 |
+| push | 1.455 |
+| solve | 2.003 |
+| store | 0.708 |
+| finalize | 1.540 |
+
+本轮内存结构修改后 Debug 与 Release 各 395 项测试通过，Address Sanitizer 的 39 项相关测试通过。随后只调整了数学内联与基准配置解析；最终全量测试及生产构建正在复核。

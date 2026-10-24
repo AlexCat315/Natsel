@@ -469,12 +469,11 @@ extension World {
         let w = transpose4(a.1, b.1, c.1, d.1)
         let dp = transpose4(a.2, b.2, c.2, d.2)
         let dq = transpose4(a.3, b.3, c.3, d.3)
-        var out = BodyStateW()
-        out.v = Vec3W(v.0, v.1, v.2)
-        out.w = Vec3W(w.0, w.1, w.2)
-        out.dp = Vec3W(dp.0, dp.1, dp.2)
-        out.dq = QuatW(v: Vec3W(dq.0, dq.1, dq.2), s: dq.3)
-        return out
+        return BodyStateW(
+            v: Vec3W(v.0, v.1, v.2),
+            w: Vec3W(w.0, w.1, w.2),
+            dp: Vec3W(dp.0, dp.1, dp.2),
+            dq: QuatW(v: Vec3W(dq.0, dq.1, dq.2), s: dq.3))
     }
 
     /// Write only the velocities back, as two 16-byte rows per dynamic body (b3ScatterBodies).

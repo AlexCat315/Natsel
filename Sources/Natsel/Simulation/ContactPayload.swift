@@ -102,6 +102,12 @@ struct MeshContactScratch {
     /// every hull pair.
     var satScratch: [UInt8] = []
     var faceScratch: [UInt8] = []
+
+    /// Reused mesh-manifold selection and clustering storage.
+    var selectedManifolds: [MeshTriangleManifold] = []
+    var clusters: [MeshManifoldCluster] = []
+    var consumedManifolds: [Bool] = []
+    var projectedPoints: [MeshPatchPoint] = []
 }
 
 let satScratchByteCount = 25 * 132 * 4

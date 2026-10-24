@@ -10,7 +10,8 @@ extension World {
         contact.meshContact.refresh(surface: surface, transform: transformA, bounds: shapeB.aabb)
         let triangles = collideMeshTriangles(&contact, surface: surface, transformA: transformA,
                                              shapeB: shapeB, transformB: transformB, isFast: isFast, scratch)
-        let accepted = selectMeshManifolds(triangles, sphere: shapeB.type == .sphereShape)
+        let accepted = selectMeshManifolds(
+            triangles, sphere: shapeB.type == .sphereShape, scratch)
         if meshTraceEnabled && contact.shapeIdA == 0 && contact.shapeIdB == 2 {
             func h(_ f: Float) -> String { String(f.bitPattern, radix: 16) }
             print("T count=\(contact.meshContact.triangles.count) ids=\(contact.meshContact.triangles.map { $0.triangleIndex })")
@@ -23,9 +24,10 @@ extension World {
             cs.set(contactId, contact)
             return false
         }
-        let clusters = clusterMeshManifolds(accepted)
-        let persisted = persistMeshManifolds(clusters, previous: contact.payload!.pointee.manifolds,
-                                             transformA: transformA, transformB: transformB)
+        let clusters = clusterMeshManifolds(accepted, scratch)
+        let persisted = persistMeshManifolds(
+            clusters, previous: contact.payload!.pointee.manifolds,
+            transformA: transformA, transformB: transformB, scratch)
         contact.manifolds.replace(with: persisted)
         contact.manifoldCount = Int32(contact.manifolds.count)
         mixMeshMaterials(&contact, surface: surface, shapeA: shapeA, transformA: transformA,

@@ -29,6 +29,9 @@ extension World {
         let distance: Float = speculative ? B3.speculativeDistance : 0
         let margin = Vec3(distance, distance, distance)
         scratch.pointee.survivors.removeAll(keepingCapacity: true)
+        // Release last contact's manifold slices before overwriting the point arena. Keeping them
+        // alive here would make the arena multiply referenced and copy on the first point write.
+        scratch.pointee.selectedManifolds.removeAll(keepingCapacity: true)
         for (index, entry) in contact.meshContact.triangles.enumerated() {
             let triangle = surface.triangle(entry.triangleIndex)
             // Each scalar lane uses exactly the nested adds in C's four-wide transform.

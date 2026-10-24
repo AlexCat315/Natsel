@@ -1,7 +1,12 @@
-func persistMeshManifolds(_ clusters: [MeshManifoldCluster], previous: ContactManifolds,
-                          transformA: WorldTransform, transformB: WorldTransform) -> ContactManifolds {
+func persistMeshManifolds(_ clusters: ArraySlice<MeshManifoldCluster>, previous: ContactManifolds,
+                          transformA: WorldTransform, transformB: WorldTransform,
+                          _ scratch: UnsafeMutablePointer<MeshContactScratch>) -> ContactManifolds {
     var old = previous
-    var consumed = [Bool](repeating: false, count: old.count)
+    if scratch.pointee.consumedManifolds.count < old.count {
+        scratch.pointee.consumedManifolds.append(
+            contentsOf: repeatElement(false, count: old.count - scratch.pointee.consumedManifolds.count))
+    }
+    for i in 0..<old.count { scratch.pointee.consumedManifolds[i] = false }
     let matrix = makeMatrixFromQuat(transformB.q)
     let offset = subPos(transformB.p, transformA.p)
     var output = ContactManifolds()
@@ -13,7 +18,7 @@ func persistMeshManifolds(_ clusters: [MeshManifoldCluster], previous: ContactMa
         var bestDot: Float = 0.995
         var bestIndex: Int?
         for j in old.indices {
-            if consumed[j] { continue }
+            if scratch.pointee.consumedManifolds[j] { continue }
             let d = dot(old[j].normal, clusterNormal)
             if d > bestDot { bestIndex = j; bestDot = d }
         }
@@ -21,7 +26,7 @@ func persistMeshManifolds(_ clusters: [MeshManifoldCluster], previous: ContactMa
             manifold.frictionImpulse = old[bestIndex].frictionImpulse
             manifold.rollingImpulse = old[bestIndex].rollingImpulse
             manifold.twistImpulse = old[bestIndex].twistImpulse
-            consumed[bestIndex] = true
+            scratch.pointee.consumedManifolds[bestIndex] = true
         }
         for (j, source) in cluster.points.enumerated() {
             var target = ManifoldPoint()

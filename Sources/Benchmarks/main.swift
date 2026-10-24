@@ -28,7 +28,13 @@ var benchmarks: [Benchmark] = [
 var singleBenchmark: Int = -1
 var runCount = 4
 var recordSteps = false
-let traceSteps = ProcessInfo.processInfo.environment["NATSEL_TRACE"] == "1"
+// Parse diagnostics once; environment dictionary construction is not physics-step work.
+let benchmarkEnvironment = ProcessInfo.processInfo.environment
+let traceSteps = benchmarkEnvironment["NATSEL_TRACE"] == "1"
+let meshTraceStep = benchmarkEnvironment["NATSEL_MESHTRACE"].flatMap(Int.init)
+let dumpStep = benchmarkEnvironment["NATSEL_DUMP"].flatMap(Int.init)
+let recordPhases = benchmarkEnvironment["NATSEL_PHASE"] == "1"
+let recordHash = benchmarkEnvironment["NATSEL_HASH"] == "1"
 
 var args = CommandLine.arguments
 var i = 1
@@ -72,14 +78,14 @@ for (index, benchmark) in benchmarks.enumerated() {
 
     for runIndex in 0..<runCount {
         let world = World()
-        if let wide = ProcessInfo.processInfo.environment["NATSEL_WIDE"] {
+        if let wide = benchmarkEnvironment["NATSEL_WIDE"] {
             world.enableWideSolver = wide == "1"
         }
-        if ProcessInfo.processInfo.environment["NATSEL_CCD"] == "0" {
+        if benchmarkEnvironment["NATSEL_CCD"] == "0" {
             world.enableContinuous = false
         }
         benchmark.create(world)
-        if let probe = ProcessInfo.processInfo.environment["NATSEL_PROBE"], benchmark.name == "spinner" {
+        if let probe = benchmarkEnvironment["NATSEL_PROBE"], benchmark.name == "spinner" {
             world.disableBody(spinnerProbeBodies[probe == "nomesh" ? 0 : 1])
         }
         if traceSteps { print("create \(String(world.worldStateHash(), radix: 16)) bodies \(world.bodyCount)") }
@@ -97,9 +103,9 @@ for (index, benchmark) in benchmarks.enumerated() {
                 benchmark.step!(world, stepIndex)
             }
             world.step(1.0 / 60.0, subStepCount: 4)
-            meshTraceEnabled = ProcessInfo.processInfo.environment["NATSEL_MESHTRACE"].flatMap { Int($0) } == stepIndex + 1
+            meshTraceEnabled = meshTraceStep == stepIndex + 1
             if traceSteps { print("step \(stepIndex) \(String(world.worldStateHash(), radix: 16))") }
-            if let dump = ProcessInfo.processInfo.environment["NATSEL_DUMP"], Int(dump) == stepIndex {
+            if dumpStep == stepIndex {
                 for line in world.bodyStateDump() { print("B " + line) }
                 for line in world.contactDump() { print(line) }
             }
@@ -114,7 +120,7 @@ for (index, benchmark) in benchmarks.enumerated() {
         }
         let end = DispatchTime.now().uptimeNanoseconds
         let n = Float(stepCount - 1)
-        if ProcessInfo.processInfo.environment["NATSEL_PHASE"] == "1" {
+        if recordPhases {
             print(String(format: "AVG %@ step=%.3f pairs=%.3f collide=%.3f prepare=%.3f warm=%.3f push=%.3f solve=%.3f store=%.3f intV=%.3f intP=%.3f finalize=%.2f hit=%.2f sleep=%.2f restit=%.2f refit=%.2f bullets=%.2f",
                 benchmark.name, acc.step/n, acc.pairs/n, acc.collide/n, acc.prepareConstraints/n, acc.warmStart/n,
                 acc.solveImpulses/n, acc.relaxImpulses/n, acc.storeImpulses/n,
@@ -123,7 +129,7 @@ for (index, benchmark) in benchmarks.enumerated() {
         }
 
         let ms = Double(end - start) / 1_000_000.0
-        if ProcessInfo.processInfo.environment["NATSEL_PHASE"] == "1" {
+        if recordPhases {
             let p = world.profile
             print("PHASE steps=\(stepCount) pairs=\(p.pairs) collide=\(p.collide) prepare=\(p.prepareConstraints) warm=\(p.warmStart) push=\(p.solveImpulses) solve=\(p.relaxImpulses) store=\(p.storeImpulses) intVel=\(p.integrateVelocities) intPos=\(p.integratePositions) substeps=\(p.constraints) hit=\(p.hitEvents) jnt=\(p.jointEvents) finalize=\(p.transforms) refit=\(p.refit) sleep=\(p.sleepIslands) total=\(ms)")
         }
@@ -134,7 +140,7 @@ for (index, benchmark) in benchmarks.enumerated() {
         if runIndex == runCount - 1 {
             worldCounters = (world.bodyCount, 0, world.contactCount)
         }
-        if ProcessInfo.processInfo.environment["NATSEL_HASH"] == "1" {
+        if recordHash {
             print("state: \(String(world.worldStateHash(), radix: 16))")
         }
         benchmark.destroy?()

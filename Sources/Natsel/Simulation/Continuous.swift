@@ -180,7 +180,20 @@ extension World {
     /// Continuous pass against an awake set the caller already owns. The caller keeps the set so
     /// the per-body loop does not copy it in and out of `solverSets` for every fast body.
     func solveContinuous(_ bodySimIndex: Int32, _ dt: Float, _ awakeSet: inout SolverSet) {
-        var fastBodySim = awakeSet.bodySims[Int(bodySimIndex)]
+        awakeSet.bodySims.withUnsafeMutableBufferPointer { sims in
+            awakeSet.bodyStates.withUnsafeMutableBufferPointer { states in
+                solveContinuous(bodySimIndex, dt, sims, states)
+            }
+        }
+    }
+
+    /// The finalize pass already owns these buffers. Borrow them once for the whole pass so
+    /// each fast body does not repeat Array uniqueness checks when its pose is written back.
+    func solveContinuous(
+        _ bodySimIndex: Int32, _ dt: Float,
+        _ sims: UnsafeMutableBufferPointer<BodySim>, _ states: UnsafeMutableBufferPointer<BodyState>
+    ) {
+        var fastBodySim = sims[Int(bodySimIndex)]
         b3Validate((fastBodySim.flags & BodyFlags.isFast.rawValue) != 0)
 
         // Re-center the sweep on the fast body so the TOI and the swept query stay in float precision
@@ -293,7 +306,7 @@ extension World {
 
             // Timeloss means there is a lost gravity contribution. Other forces and torques are
             // ignored for now.
-            var fastBodyState = awakeSet.bodyStates[Int(bodySimIndex)]
+            var fastBodyState = states[Int(bodySimIndex)]
             let v = fastBodyState.linearVelocity
             let timeLoss = (1 - context.fraction) * dt
             var dv = (-timeLoss * fastBodySim.gravityScale) * gravity
@@ -301,7 +314,7 @@ extension World {
             dv.y = (fastBodyState.flags & BodyFlags.lockLinearY.rawValue) != 0 ? 0 : dv.y
             dv.z = (fastBodyState.flags & BodyFlags.lockLinearZ.rawValue) != 0 ? 0 : dv.z
             fastBodyState.linearVelocity = v + dv
-            awakeSet.bodyStates[Int(bodySimIndex)] = fastBodyState
+            states[Int(bodySimIndex)] = fastBodyState
 
             // The move event was written before CCD, so correct it with the impact pose
             if bodySimIndex < bodyMoveEvents.count {
@@ -379,6 +392,6 @@ extension World {
         )
         taskContexts[0].rootIterations = maxInt(taskContexts[0].rootIterations, context.rootIterations)
 
-        awakeSet.bodySims[Int(bodySimIndex)] = fastBodySim
+        sims[Int(bodySimIndex)] = fastBodySim
     }
 }

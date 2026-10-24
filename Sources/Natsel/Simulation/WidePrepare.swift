@@ -37,7 +37,10 @@ extension World {
                             var tangentVelocity = Vec3W()
                             var simLanesA = InlineArray<4, UnsafeRawPointer?>(repeating: nil)
                             var simLanesB = InlineArray<4, UnsafeRawPointer?>(repeating: nil)
-                            for lane in 0..<min(4, count - start) {
+                            // Constant lane indices let the compiler insert each scalar directly
+                            // into its vector instead of spilling through a dynamic SIMD subscript.
+                            @inline(__always) func gatherLane(_ lane: Int) {
+                                guard lane < count - start else { return }
                                 let id = ids[start + lane]
                                 let contact = contactBase + Int(id)
                                 let indexA = decodeAwakeIndex(contact.pointee.encodedBodySimA)
@@ -77,6 +80,10 @@ extension World {
                                     manifolds[lane] = UnsafePointer(contact.pointee.manifolds.buffer.baseAddress!)
                                 }
                             }
+                            gatherLane(0)
+                            gatherLane(1)
+                            gatherLane(2)
+                            gatherLane(3)
                             c.invIA = gatherInvInertiaW(simLanesA)
                             c.invIB = gatherInvInertiaW(simLanesB)
                             if c.anyRestitution { solveAnyRestitution = true }

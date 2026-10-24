@@ -258,7 +258,7 @@ public func computeCosSin(_ radians: Float) -> CosSin {
 }
 
 /// Rotate a vector.
-@inlinable public func rotateVector(_ q: Quat, _ v: Vec3) -> Vec3 {
+@inlinable @inline(__always) public func rotateVector(_ q: Quat, _ v: Vec3) -> Vec3 {
     // v + 2 * cross(q.v, cross(q.v, v) + q.s * v)
     let t1 = cross(q.v, v)
     let t2 = mulAdd(t1, q.s, v)
@@ -267,7 +267,7 @@ public func computeCosSin(_ radians: Float) -> CosSin {
 }
 
 /// Inverse rotate a vector.
-@inlinable public func invRotateVector(_ q: Quat, _ v: Vec3) -> Vec3 {
+@inlinable @inline(__always) public func invRotateVector(_ q: Quat, _ v: Vec3) -> Vec3 {
     // v + 2 * cross(q.v, cross(q.v, v) - q.s * v)
     let t1 = cross(q.v, v)
     let t2 = mulSub(t1, q.s, v)
@@ -281,7 +281,7 @@ public func computeCosSin(_ radians: Float) -> CosSin {
 }
 
 /// Multiply two quaternions.
-@inlinable public func mulQuat(_ q1: Quat, _ q2: Quat) -> Quat {
+@inlinable @inline(__always) public func mulQuat(_ q1: Quat, _ q2: Quat) -> Quat {
     let t1 = cross(q1.v, q2.v)
     let t2 = mulAdd(t1, q1.s, q2.v)
     let t3 = mulAdd(t2, q2.s, q1.v)
@@ -289,7 +289,7 @@ public func computeCosSin(_ radians: Float) -> CosSin {
 }
 
 /// Compute a relative quaternion: inv(q1) * q2
-@inlinable public func invMulQuat(_ q1: Quat, _ q2: Quat) -> Quat {
+@inlinable @inline(__always) public func invMulQuat(_ q1: Quat, _ q2: Quat) -> Quat {
     let t1 = cross(q2.v, q1.v)
     let t2 = mulAdd(t1, q1.s, q2.v)
     let t3 = mulSub(t2, q2.s, q1.v)
@@ -502,7 +502,7 @@ public func computeCosSin(_ radians: Float) -> CosSin {
 @inlinable public func mulSM(_ s: Float, _ a: Matrix3) -> Matrix3 { Matrix3(s * a.cx, s * a.cy, s * a.cz) }
 
 /// Matrix multiplication: a * b
-@inlinable public func mulMM(_ a: Matrix3, _ b: Matrix3) -> Matrix3 {
+@inlinable @inline(__always) public func mulMM(_ a: Matrix3, _ b: Matrix3) -> Matrix3 {
     Matrix3(mulMV(a, b.cx), mulMV(a, b.cy), mulMV(a, b.cz))
 }
 

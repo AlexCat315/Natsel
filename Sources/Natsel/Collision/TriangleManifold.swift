@@ -263,7 +263,7 @@ func buildTriangleAndCapsuleFaceContact(
 ) {
     b3Assert(manifold.pointCount == 0)
 
-    var segment = [ClipVertex](repeating: ClipVertex(), count: 2)
+    var segment: InlineArray<2, ClipVertex> = [ClipVertex(), ClipVertex()]
     segment[0].position = capsule.center1
     segment[0].separation = 0
     segment[0].pair = makeFeaturePair(.shapeA, 0, .shapeA, 0)
@@ -271,7 +271,7 @@ func buildTriangleAndCapsuleFaceContact(
     segment[1].separation = 0
     segment[1].pair = makeFeaturePair(.shapeA, 1, .shapeA, 1)
 
-    let havePoints = segment.withUnsafeMutableBufferPointer {
+    let havePoints = withInlineBuffer(&segment) {
         clipSegmentToTriangleFace($0.baseAddress!, triangle, plane)
     }
     if havePoints == false {
@@ -352,8 +352,7 @@ func buildTriangleAndCapsuleEdgeContact(
     manifold.normal = normal
     manifold.pointCount = 1
 
-    let edgesFeatures: [TriangleFeature] = [.featureEdge1, .featureEdge2, .featureEdge3]
-    manifold.feature = edgesFeatures[Int(query.indexA)]
+    manifold.feature = query.indexA == 0 ? .featureEdge1 : (query.indexA == 1 ? .featureEdge2 : .featureEdge3)
 
     let pt = manifold.points!
     pt[0].point = point
@@ -387,10 +386,10 @@ func collideTriangleAndCapsule(
         return
     }
 
-    let capsulePoints = [capsuleB.center1, capsuleB.center2]
+    let capsulePoints: InlineArray<2, Vec3> = [capsuleB.center1, capsuleB.center2]
 
     var distanceOutput = DistanceOutput()
-    capsulePoints.withUnsafeBufferPointer { points in
+    withInlineReadBuffer(capsulePoints) { points in
         var distanceInput = DistanceInput()
         distanceInput.proxyA = ShapeProxy(points: triangleA, count: 3, radius: 0)
         distanceInput.proxyB = ShapeProxy(points: points.baseAddress, count: 2, radius: 0)
@@ -419,7 +418,7 @@ func collideTriangleAndCapsule(
         let cosAngle = absFloat(dot(plane.normal, delta))
         if cosAngle > kTolerance {
             // Clip capsule segment against side planes of reference face
-            var segment = [ClipVertex](repeating: ClipVertex(), count: 2)
+            var segment: InlineArray<2, ClipVertex> = [ClipVertex(), ClipVertex()]
             segment[0].position = capsuleB.center1
             segment[0].separation = 0
             segment[0].pair = makeFeaturePair(.shapeA, 0, .shapeA, 0)
@@ -427,7 +426,7 @@ func collideTriangleAndCapsule(
             segment[1].separation = 0
             segment[1].pair = makeFeaturePair(.shapeA, 1, .shapeA, 1)
 
-            let havePoints = segment.withUnsafeMutableBufferPointer {
+            let havePoints = withInlineBuffer(&segment) {
                 clipSegmentToTriangleFace($0.baseAddress!, triangleA, plane)
             }
 
@@ -553,7 +552,7 @@ func queryHullFace(_ triangle: TriangleData, _ hull: Hull) -> SeparatingAxis {
     let hullPlanes = hull.planes!
     let faceCount = hull.faceCount
 
-    let trianglePoints = [triangle.v1, triangle.v2, triangle.v3]
+    let trianglePoints: InlineArray<3, Vec3> = [triangle.v1, triangle.v2, triangle.v3]
 
     var maxNormal = Vec3()
     var maxFaceSeparation = -Float.infinity
@@ -563,7 +562,7 @@ func queryHullFace(_ triangle: TriangleData, _ hull: Hull) -> SeparatingAxis {
     for faceIndex in 0..<Int(faceCount) {
         let plane = hullPlanes[faceIndex]
 
-        let vertexIndex = trianglePoints.withUnsafeBufferPointer {
+        let vertexIndex = withInlineReadBuffer(trianglePoints) {
             getTriangleSupport($0.baseAddress!, -plane.normal)
         }
         let support = trianglePoints[Int(vertexIndex)]
@@ -595,8 +594,8 @@ func queryTriangleAndHullEdges(_ triangle: TriangleData, _ hull: Hull) -> Separa
     result.indexB = B3.nullIndex
     result.type = .edgePairAxis
 
-    let trianglePoints = [triangle.v1, triangle.v2, triangle.v3]
-    let triangleEdges = [triangle.e1, triangle.e2, triangle.e3]
+    let trianglePoints: InlineArray<3, Vec3> = [triangle.v1, triangle.v2, triangle.v3]
+    let triangleEdges: InlineArray<3, Vec3> = [triangle.e1, triangle.e2, triangle.e3]
 
     let triNormal = triangle.plane.normal
 
@@ -844,8 +843,8 @@ func collideTriangleFace(
             var useBuffer1AsInput = true
             var useBuffer1AsOutput = false
 
-            let trianglePoints = [triangle.v1, triangle.v2, triangle.v3]
-            let triangleEdges = [triangle.e1, triangle.e2, triangle.e3]
+            let trianglePoints: InlineArray<3, Vec3> = [triangle.v1, triangle.v2, triangle.v3]
+            let triangleEdges: InlineArray<3, Vec3> = [triangle.e1, triangle.e2, triangle.e3]
 
             for i in 0..<3 where pointCount > 0 {
                 var sideNormal = cross(triangleEdges[i], refPlane.normal)
@@ -978,8 +977,7 @@ func collideTriangleAndHullEdges(
     manifold.normal = query.normal
     manifold.pointCount = 1
 
-    let edgesFeatures: [TriangleFeature] = [.featureEdge1, .featureEdge2, .featureEdge3]
-    manifold.feature = edgesFeatures[Int(query.indexA)]
+    manifold.feature = query.indexA == 0 ? .featureEdge1 : (query.indexA == 1 ? .featureEdge2 : .featureEdge3)
 }
 
 /// Triangle versus hull. The triangle is in the local space of the hull.
@@ -1021,8 +1019,8 @@ func collideTriangleAndHull(
         return
     }
 
-    let trianglePoints = [v1, v2, v3]
-    let triangleEdges = [v2 - v1, v3 - v2, v1 - v3]
+    let trianglePoints: InlineArray<3, Vec3> = [v1, v2, v3]
+    let triangleEdges: InlineArray<3, Vec3> = [v2 - v1, v3 - v2, v1 - v3]
 
     var triangle = TriangleData()
     triangle.v1 = v1
@@ -1301,10 +1299,10 @@ func collideTriangleAndHull(
     // Using the speculative distance means that sometimes there are no valid contact points from
     // SAT. In this fall back to GJK. This is important to prevent tunneling in rare cases.
     if manifold.pointCount == 0 {
-        let triangleB = [v1, v2, v3]
+        let triangleB: InlineArray<3, Vec3> = [v1, v2, v3]
 
         var distanceOutput = DistanceOutput()
-        triangleB.withUnsafeBufferPointer { points in
+        withInlineReadBuffer(triangleB) { points in
             var input = DistanceInput()
             input.proxyA = ShapeProxy(points: points.baseAddress, count: 3, radius: 0)
             input.proxyB = ShapeProxy(points: hullPoints, count: hullB.vertexCount, radius: 0)
