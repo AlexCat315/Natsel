@@ -88,6 +88,27 @@ struct OverflowColorTests {
         #expect(counters.contactCount == 65)
     }
 
+    @Test("shared overflow bodies preserve scalar solver order")
+    func overflowMatchesScalar() throws {
+        let scalar = World(), wide = World()
+        scalar.enableWideSolver = false
+        wide.enableWideSolver = true
+        scalar.enableSleep = false
+        wide.enableSleep = false
+        _ = createOverflowColorPile(scalar)
+        _ = createOverflowColorPile(wide)
+        var sawOverflow = false
+        for step in 0..<60 {
+            scalar.step(1 / 60, subStepCount: 4)
+            wide.step(1 / 60, subStepCount: 4)
+            sawOverflow = sawOverflow || !wide.constraintGraph.colors[Int(overflowIndex)].contacts.isEmpty
+            #expect(!wide.usesWideContacts(overflowIndex, false))
+            #expect(!wide.usesWideContacts(overflowIndex, true))
+            try #require(scalar.worldStateHash() == wide.worldStateHash(), "step \(step)")
+        }
+        #expect(sawOverflow)
+    }
+
     @Test("color counts sum to the awake contact total")
     func colorCountsSum() {
         let world = World()

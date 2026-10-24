@@ -152,8 +152,22 @@ func getFaceDots(_ hull: Hull, _ d: Vec3, _ dots: UnsafeMutablePointer<Float>) {
     let nz = ny + faceStride
 
     let faceCount = Int(hull.faceCount)
-    for i in 0..<faceCount {
+    let dx = SIMD4<Float>(repeating: d.x)
+    let dy = SIMD4<Float>(repeating: d.y)
+    let dz = SIMD4<Float>(repeating: d.z)
+    var i = 0
+    while i + 4 <= faceCount {
+        let x = UnsafeRawPointer(nx + i).loadUnaligned(as: SIMD4<Float>.self)
+        let y = UnsafeRawPointer(ny + i).loadUnaligned(as: SIMD4<Float>.self)
+        let z = UnsafeRawPointer(nz + i).loadUnaligned(as: SIMD4<Float>.self)
+        let value = dx * x + dy * y + dz * z
+        dots[i] = value[0]; dots[i + 1] = value[1]
+        dots[i + 2] = value[2]; dots[i + 3] = value[3]
+        i += 4
+    }
+    while i < faceCount {
         dots[i] = d.x * nx[i] + d.y * ny[i] + d.z * nz[i]
+        i += 1
     }
 }
 
@@ -194,7 +208,7 @@ func filterEdgeCandidates(
     return keptCount
 }
 
-/// SIMD support point calculation, scalarized.
+/// Four-wide support query, preserving the index bits embedded by the C kernel.
 ///
 /// The C version minimizes `bias - dot(normal, vertex)` with the vertex index embedded in the low
 /// mantissa bits and then performs a horizontal minimum. Because the values are positive, that is
@@ -210,21 +224,33 @@ func getSupportWide(
     _ bias: Float
 ) -> (support: Float, vertexIndex: Int32) {
     var minValue = Float.infinity
-
     let mask: UInt32 = (1 << UInt32(hullBitCount)) - 1
-
+    let clearMask = SIMD4<UInt32>(repeating: ~mask)
+    let indexMask = SIMD4<UInt32>(repeating: mask)
+    let nx = SIMD4<Float>(repeating: normal.x)
+    let ny = SIMD4<Float>(repeating: normal.y)
+    let nz = SIMD4<Float>(repeating: normal.z)
+    let bias4 = SIMD4<Float>(repeating: bias)
+    var minimum = SIMD4<Float>(repeating: .infinity)
+    var indices = SIMD4<UInt32>(0, 1, 2, 3)
     var i = 0
+    while i + 4 <= Int(n) {
+        let x = UnsafeRawPointer(vx + i).loadUnaligned(as: SIMD4<Float>.self)
+        let y = UnsafeRawPointer(vy + i).loadUnaligned(as: SIMD4<Float>.self)
+        let z = UnsafeRawPointer(vz + i).loadUnaligned(as: SIMD4<Float>.self)
+        let value = bias4 - (nx * x + ny * y + nz * z)
+        let bits = unsafeBitCast(value, to: SIMD4<UInt32>.self)
+        let augmented = unsafeBitCast((bits & clearMask) | (indices & indexMask), to: SIMD4<Float>.self)
+        minimum = minimum.replacing(with: augmented, where: augmented .< minimum)
+        indices = indices &+ SIMD4<UInt32>(repeating: 4)
+        i += 4
+    }
+    for lane in 0..<4 where minimum[lane] < minValue { minValue = minimum[lane] }
     while i < Int(n) {
         let d = normal.x * vx[i] + normal.y * vy[i] + normal.z * vz[i]
-
-        // This is always positive.
         let value = bias - d
         let augmented = Float(bitPattern: (value.bitPattern & ~mask) | (UInt32(truncatingIfNeeded: i) & mask))
-
-        if augmented < minValue {
-            minValue = augmented
-        }
-
+        if augmented < minValue { minValue = augmented }
         i += 1
     }
 
@@ -296,226 +322,242 @@ func negativeTransformFromSoA(
 
 /// Compute the best face and edge separating axes between two hulls, with B in A's frame.
 func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ earlyReturn: Bool) -> AxisQuery {
-    let R = makeMatrixFromQuat(xfB.q)
-    let invR = transpose(R)
+    // Match C's uninitialized scratch: every consumed element is written first. One aligned
+    // temporary slab avoids clearing 25 maximum-sized arrays for each hull pair.
+    precondition(B3.maxHullVertices <= 128 && B3.maxHullFaces <= 128 && B3.maxHullEdges <= 128)
+    return withUnsafeTemporaryAllocation(byteCount: 25 * 132 * 4, alignment: 16) { scratch in
+        let dotA = scratch.baseAddress!.advanced(by: 0).bindMemory(to: Float.self, capacity: 132)
+        let dotB = scratch.baseAddress!.advanced(by: 528).bindMemory(to: Float.self, capacity: 132)
+        let planeDotA = scratch.baseAddress!.advanced(by: 1056).bindMemory(to: Float.self, capacity: 132)
+        let planeDotB = scratch.baseAddress!.advanced(by: 1584).bindMemory(to: Float.self, capacity: 132)
+        let edgeIndicesA = scratch.baseAddress!.advanced(by: 2112).bindMemory(to: Int32.self, capacity: 132)
+        let edgeIndicesB = scratch.baseAddress!.advanced(by: 2640).bindMemory(to: Int32.self, capacity: 132)
+        let bFNx = scratch.baseAddress!.advanced(by: 3168).bindMemory(to: Float.self, capacity: 132)
+        let bFNy = scratch.baseAddress!.advanced(by: 3696).bindMemory(to: Float.self, capacity: 132)
+        let bFNz = scratch.baseAddress!.advanced(by: 4224).bindMemory(to: Float.self, capacity: 132)
+        let bWx = scratch.baseAddress!.advanced(by: 4752).bindMemory(to: Float.self, capacity: 132)
+        let bWy = scratch.baseAddress!.advanced(by: 5280).bindMemory(to: Float.self, capacity: 132)
+        let bWz = scratch.baseAddress!.advanced(by: 5808).bindMemory(to: Float.self, capacity: 132)
+        let aN0x = scratch.baseAddress!.advanced(by: 6336).bindMemory(to: Float.self, capacity: 132)
+        let aN0y = scratch.baseAddress!.advanced(by: 6864).bindMemory(to: Float.self, capacity: 132)
+        let aN0z = scratch.baseAddress!.advanced(by: 7392).bindMemory(to: Float.self, capacity: 132)
+        let aN1x = scratch.baseAddress!.advanced(by: 7920).bindMemory(to: Float.self, capacity: 132)
+        let aN1y = scratch.baseAddress!.advanced(by: 8448).bindMemory(to: Float.self, capacity: 132)
+        let aN1z = scratch.baseAddress!.advanced(by: 8976).bindMemory(to: Float.self, capacity: 132)
+        let aDx = scratch.baseAddress!.advanced(by: 9504).bindMemory(to: Float.self, capacity: 132)
+        let aDy = scratch.baseAddress!.advanced(by: 10032).bindMemory(to: Float.self, capacity: 132)
+        let aDz = scratch.baseAddress!.advanced(by: 10560).bindMemory(to: Float.self, capacity: 132)
+        let aV0x = scratch.baseAddress!.advanced(by: 11088).bindMemory(to: Float.self, capacity: 132)
+        let aV0y = scratch.baseAddress!.advanced(by: 11616).bindMemory(to: Float.self, capacity: 132)
+        let aV0z = scratch.baseAddress!.advanced(by: 12144).bindMemory(to: Float.self, capacity: 132)
+        let aTol = scratch.baseAddress!.advanced(by: 12672).bindMemory(to: Float.self, capacity: 132)
+        let R = makeMatrixFromQuat(xfB.q)
+        let invR = transpose(R)
 
-    let speculativeDistance = B3.speculativeDistance
+        let speculativeDistance = B3.speculativeDistance
 
-    var res = AxisQuery()
-    res.faceA = SeparatingAxis()
-    res.faceA.normal = Vec3()
-    res.faceA.separation = -Float.infinity
-    res.faceA.indexA = B3.nullIndex
-    res.faceA.indexB = B3.nullIndex
-    res.faceA.type = .faceAxisA
+        var res = AxisQuery()
+        res.faceA = SeparatingAxis()
+        res.faceA.normal = Vec3()
+        res.faceA.separation = -Float.infinity
+        res.faceA.indexA = B3.nullIndex
+        res.faceA.indexB = B3.nullIndex
+        res.faceA.type = .faceAxisA
 
-    res.faceB = SeparatingAxis()
-    res.faceB.normal = Vec3()
-    res.faceB.separation = -Float.infinity
-    res.faceB.indexA = B3.nullIndex
-    res.faceB.indexB = B3.nullIndex
-    res.faceB.type = .faceAxisB
+        res.faceB = SeparatingAxis()
+        res.faceB.normal = Vec3()
+        res.faceB.separation = -Float.infinity
+        res.faceB.indexA = B3.nullIndex
+        res.faceB.indexB = B3.nullIndex
+        res.faceB.type = .faceAxisB
 
-    res.edge = SeparatingAxis()
-    res.edge.normal = Vec3()
-    res.edge.separation = -Float.infinity
-    res.edge.indexA = B3.nullIndex
-    res.edge.indexB = B3.nullIndex
-    res.edge.type = .edgePairAxis
+        res.edge = SeparatingAxis()
+        res.edge.normal = Vec3()
+        res.edge.separation = -Float.infinity
+        res.edge.indexA = B3.nullIndex
+        res.edge.indexB = B3.nullIndex
+        res.edge.type = .edgePairAxis
 
-    res.separatedFeature = .invalidAxis
+        res.separatedFeature = .invalidAxis
 
-    let faceCountA = hullA.faceCount
-    let planesA = hullA.planes!
+        let faceCountA = hullA.faceCount
+        let planesA = hullA.planes!
 
-    let vertexStrideB = hullSoaStride(hullB.vertexCount)
-    let vxB = hullB.soaVertices!
-    let vyB = vxB + Int(vertexStrideB)
-    let vzB = vyB + Int(vertexStrideB)
-    let wideVertexCountB = roundUpToSIMDWidth(hullB.vertexCount)
+        let vertexStrideB = hullSoaStride(hullB.vertexCount)
+        let vxB = hullB.soaVertices!
+        let vyB = vxB + Int(vertexStrideB)
+        let vzB = vyB + Int(vertexStrideB)
+        let wideVertexCountB = roundUpToSIMDWidth(hullB.vertexCount)
 
-    let cB = aabbCenter(hullB.aabb)
-    let hB = aabbExtents(hullB.aabb)
+        let cB = aabbCenter(hullB.aabb)
+        let hB = aabbExtents(hullB.aabb)
 
-    let deltaCenter = mulMV(R, hullB.center) + xfB.p - hullA.center
-    let centerDistance = length(deltaCenter)
-    let radius = hullA.innerRadius + hullB.innerRadius
+        let deltaCenter = mulMV(R, hullB.center) + xfB.p - hullA.center
+        let centerDistance = length(deltaCenter)
+        let radius = hullA.innerRadius + hullB.innerRadius
 
-    // Adjust the radius to ensure the best axis isn't skipped.
-    let radiusBound = radius - (B3.linearSlop + 0.001 * (centerDistance + radius))
+        // Adjust the radius to ensure the best axis isn't skipped.
+        let radiusBound = radius - (B3.linearSlop + 0.001 * (centerDistance + radius))
 
-    // Stack scratch: this routine runs per candidate hull pair, so heap arrays here dominated the
-    // collide cost. The sizes are fixed by the hull limits.
-    var dotA = InlineArray<132, Float>(repeating: 0)
-    var dotB = InlineArray<132, Float>(repeating: 0)
-    var planeDotA = InlineArray<132, Float>(repeating: 0)
-    var planeDotB = InlineArray<132, Float>(repeating: 0)
+        // Stack scratch: this routine runs per candidate hull pair, so heap arrays here dominated the
+        // collide cost. The sizes are fixed by the hull limits.
 
-    withInlineBuffer(&dotA) { getFaceDots(hullA, deltaCenter, $0.baseAddress!) }
+        getFaceDots(hullA, deltaCenter, dotA)
 
-    // Find the face of hullA that most aligns with centerDelta.
-    var seedIndexA: Int32 = 0
-    var maxDotA = dotA[0]
-    for i in 1..<Int(faceCountA) {
-        if dotA[i] > maxDotA {
-            maxDotA = dotA[i]
-            seedIndexA = Int32(i)
+        // Find the face of hullA that most aligns with centerDelta.
+        var seedIndexA: Int32 = 0
+        var maxDotA = dotA[0]
+        for i in 1..<Int(faceCountA) {
+            if dotA[i] > maxDotA {
+                maxDotA = dotA[i]
+                seedIndexA = Int32(i)
+            }
         }
-    }
 
-    // Use the seed to get a lower bound on the separation for the faces of hullA.
-    var floorA = -Float.infinity
-    var seedSeparationA = -Float.infinity
-    var seedVertexB: Int32 = 0
-    if earlyReturn {
-        let plane = planesA[Int(seedIndexA)]
-        let direction = -mulMV(invR, plane.normal)
-        let planeSep = dot(plane.normal, xfB.p) - plane.offset
-        seedSeparationA = getFaceSeparation(
-            direction, planeSep, vxB, vyB, vzB, wideVertexCountB, cB, hB, &seedVertexB
-        )
-        floorA = minFloat(seedSeparationA, speculativeDistance)
-    }
-
-    // Test A's face planes against B's vertices.
-    for i in 0..<Int(faceCountA) {
-        // The bound offset ensures the seed will be evaluated.
-        if dotA[i] - radiusBound < maxFloat(floorA, res.faceA.separation) {
-            continue
-        }
-
-        let plane = planesA[i]
-        var vertexIndex = seedVertexB
-        var separation = seedSeparationA
-
-        // Avoid recomputing the seed face separation.
-        if earlyReturn == false || i != Int(seedIndexA) {
+        // Use the seed to get a lower bound on the separation for the faces of hullA.
+        var floorA = -Float.infinity
+        var seedSeparationA = -Float.infinity
+        var seedVertexB: Int32 = 0
+        if earlyReturn {
+            let plane = planesA[Int(seedIndexA)]
             let direction = -mulMV(invR, plane.normal)
             let planeSep = dot(plane.normal, xfB.p) - plane.offset
-            separation = getFaceSeparation(
-                direction, planeSep, vxB, vyB, vzB, wideVertexCountB, cB, hB, &vertexIndex
+            seedSeparationA = getFaceSeparation(
+                direction, planeSep, vxB, vyB, vzB, wideVertexCountB, cB, hB, &seedVertexB
             )
+            floorA = minFloat(seedSeparationA, speculativeDistance)
         }
 
-        if separation > res.faceA.separation {
-            res.faceA.normal = plane.normal
-            res.faceA.separation = separation
-            res.faceA.indexA = Int32(i)
-            res.faceA.indexB = vertexIndex
-            if separation > speculativeDistance && earlyReturn {
-                res.separatedFeature = .faceAxisA
-                return res
+        // Test A's face planes against B's vertices.
+        for i in 0..<Int(faceCountA) {
+            // The bound offset ensures the seed will be evaluated.
+            if dotA[i] - radiusBound < maxFloat(floorA, res.faceA.separation) {
+                continue
+            }
+
+            let plane = planesA[i]
+            var vertexIndex = seedVertexB
+            var separation = seedSeparationA
+
+            // Avoid recomputing the seed face separation.
+            if earlyReturn == false || i != Int(seedIndexA) {
+                let direction = -mulMV(invR, plane.normal)
+                let planeSep = dot(plane.normal, xfB.p) - plane.offset
+                separation = getFaceSeparation(
+                    direction, planeSep, vxB, vyB, vzB, wideVertexCountB, cB, hB, &vertexIndex
+                )
+            }
+
+            if separation > res.faceA.separation {
+                res.faceA.normal = plane.normal
+                res.faceA.separation = separation
+                res.faceA.indexA = Int32(i)
+                res.faceA.indexB = vertexIndex
+                if separation > speculativeDistance && earlyReturn {
+                    res.separatedFeature = .faceAxisA
+                    return res
+                }
             }
         }
-    }
 
-    b3Validate(res.faceA.indexA != B3.nullIndex)
+        b3Validate(res.faceA.indexA != B3.nullIndex)
 
-    let faceCountB = hullB.faceCount
-    let planesB = hullB.planes!
+        let faceCountB = hullB.faceCount
+        let planesB = hullB.planes!
 
-    let vertexStrideA = hullSoaStride(hullA.vertexCount)
-    let vxA = hullA.soaVertices!
-    let vyA = vxA + Int(vertexStrideA)
-    let vzA = vyA + Int(vertexStrideA)
-    let wideVertexCountA = roundUpToSIMDWidth(hullA.vertexCount)
+        let vertexStrideA = hullSoaStride(hullA.vertexCount)
+        let vxA = hullA.soaVertices!
+        let vyA = vxA + Int(vertexStrideA)
+        let vzA = vyA + Int(vertexStrideA)
+        let wideVertexCountA = roundUpToSIMDWidth(hullA.vertexCount)
 
-    let cA = aabbCenter(hullA.aabb)
-    let hA = aabbExtents(hullA.aabb)
+        let cA = aabbCenter(hullA.aabb)
+        let hA = aabbExtents(hullA.aabb)
 
-    withInlineBuffer(&dotB) {
-        getFaceDots(hullB, -mulMV(invR, deltaCenter), $0.baseAddress!)
-    }
+        getFaceDots(hullB, -mulMV(invR, deltaCenter), dotB)
 
-    // Find the face of hullB that most aligns with the vector pointing from centerB to centerA.
-    var seedIndexB: Int32 = 0
-    var maxDotB = dotB[0]
-    for i in 1..<Int(faceCountB) {
-        if dotB[i] > maxDotB {
-            maxDotB = dotB[i]
-            seedIndexB = Int32(i)
-        }
-    }
-
-    // Get a lower bound on the separation for the faces of hullB.
-    var floorB = -Float.infinity
-    var seedSeparationB = -Float.infinity
-    var seedVertexA: Int32 = 0
-    if earlyReturn {
-        let plane = planesB[Int(seedIndexB)]
-        let direction = -mulMV(R, plane.normal)
-        let planeSep = dot(direction, xfB.p) - plane.offset
-        seedSeparationB = getFaceSeparation(
-            direction, planeSep, vxA, vyA, vzA, wideVertexCountA, cA, hA, &seedVertexA
-        )
-
-        // Include the floor set by hull A faces.
-        floorB = maxFloat(seedSeparationB, res.faceA.separation)
-        floorB = minFloat(floorB, speculativeDistance)
-    }
-
-    // Test B's face planes against A's vertices.
-    for i in 0..<Int(faceCountB) {
-        if dotB[i] - radiusBound < maxFloat(floorB, res.faceB.separation) {
-            continue
+        // Find the face of hullB that most aligns with the vector pointing from centerB to centerA.
+        var seedIndexB: Int32 = 0
+        var maxDotB = dotB[0]
+        for i in 1..<Int(faceCountB) {
+            if dotB[i] > maxDotB {
+                maxDotB = dotB[i]
+                seedIndexB = Int32(i)
+            }
         }
 
-        let plane = planesB[i]
-        let direction = -mulMV(R, plane.normal)
-        var vertexIndex = seedVertexA
-        var separation = seedSeparationB
-
-        // Avoid recomputing the seed face separation.
-        if earlyReturn == false || i != Int(seedIndexB) {
+        // Get a lower bound on the separation for the faces of hullB.
+        var floorB = -Float.infinity
+        var seedSeparationB = -Float.infinity
+        var seedVertexA: Int32 = 0
+        if earlyReturn {
+            let plane = planesB[Int(seedIndexB)]
+            let direction = -mulMV(R, plane.normal)
             let planeSep = dot(direction, xfB.p) - plane.offset
-            separation = getFaceSeparation(
-                direction, planeSep, vxA, vyA, vzA, wideVertexCountA, cA, hA, &vertexIndex
+            seedSeparationB = getFaceSeparation(
+                direction, planeSep, vxA, vyA, vzA, wideVertexCountA, cA, hA, &seedVertexA
             )
+
+            // Include the floor set by hull A faces.
+            floorB = maxFloat(seedSeparationB, res.faceA.separation)
+            floorB = minFloat(floorB, speculativeDistance)
         }
 
-        if separation > res.faceB.separation {
-            res.faceB.normal = direction
-            res.faceB.separation = separation
-            res.faceB.indexA = vertexIndex
-            res.faceB.indexB = Int32(i)
-            if separation > speculativeDistance && earlyReturn {
-                res.separatedFeature = .faceAxisB
-                return res
+        // Test B's face planes against A's vertices.
+        for i in 0..<Int(faceCountB) {
+            if dotB[i] - radiusBound < maxFloat(floorB, res.faceB.separation) {
+                continue
+            }
+
+            let plane = planesB[i]
+            let direction = -mulMV(R, plane.normal)
+            var vertexIndex = seedVertexA
+            var separation = seedSeparationB
+
+            // Avoid recomputing the seed face separation.
+            if earlyReturn == false || i != Int(seedIndexB) {
+                let planeSep = dot(direction, xfB.p) - plane.offset
+                separation = getFaceSeparation(
+                    direction, planeSep, vxA, vyA, vzA, wideVertexCountA, cA, hA, &vertexIndex
+                )
+            }
+
+            if separation > res.faceB.separation {
+                res.faceB.normal = direction
+                res.faceB.separation = separation
+                res.faceB.indexA = vertexIndex
+                res.faceB.indexB = Int32(i)
+                if separation > speculativeDistance && earlyReturn {
+                    res.separatedFeature = .faceAxisB
+                    return res
+                }
             }
         }
-    }
 
-    // Gather edges of A that can feasibly create a separating axis that beats the maximum face
-    // separation.
-    let halfEdgeCountA = hullA.halfEdgeCount
-    let halfEdgesA = hullA.edges!
-    var edgeIndicesA = InlineArray<132, Int32>(repeating: 0)
-    var na: Int32 = 0
+        // Gather edges of A that can feasibly create a separating axis that beats the maximum face
+        // separation.
+        let halfEdgeCountA = hullA.halfEdgeCount
+        let halfEdgesA = hullA.edges!
+        var na: Int32 = 0
 
-    let halfEdgeCountB = hullB.halfEdgeCount
-    let halfEdgesB = hullB.edges!
-    var edgeIndicesB = InlineArray<132, Int32>(repeating: 0)
-    var nb: Int32 = 0
+        let halfEdgeCountB = hullB.halfEdgeCount
+        let halfEdgesB = hullB.edges!
+        var nb: Int32 = 0
 
-    let maxFaceSeparation = maxFloat(res.faceA.separation, res.faceB.separation)
-    let boundSlack = radius - radiusBound
-    let thresholdA = earlyReturn ? maxFaceSeparation + hullB.innerRadius - boundSlack : -Float.infinity
-    let thresholdB = earlyReturn ? maxFaceSeparation + hullA.innerRadius - boundSlack : -Float.infinity
+        let maxFaceSeparation = maxFloat(res.faceA.separation, res.faceB.separation)
+        let boundSlack = radius - radiusBound
+        let thresholdA = earlyReturn ? maxFaceSeparation + hullB.innerRadius - boundSlack : -Float.infinity
+        let thresholdB = earlyReturn ? maxFaceSeparation + hullA.innerRadius - boundSlack : -Float.infinity
 
-    let centerBinA = mulMV(R, hullB.center) + xfB.p
-    let centerAinB = mulMV(invR, hullA.center - xfB.p)
+        let centerBinA = mulMV(R, hullB.center) + xfB.p
+        let centerAinB = mulMV(invR, hullA.center - xfB.p)
 
-    withInlineBuffer(&planeDotA) {
-        getFacePlaneSeparations(hullA, centerBinA, $0.baseAddress!)
-    }
-    withInlineBuffer(&planeDotB) {
-        getFacePlaneSeparations(hullB, centerAinB, $0.baseAddress!)
-    }
+        getFacePlaneSeparations(hullA, centerBinA, planeDotA)
+        getFacePlaneSeparations(hullB, centerAinB, planeDotB)
 
-    let cosinesA = hullA.edgeCosines!
-    let cosinesB = hullB.edgeCosines!
+        let cosinesA = hullA.edgeCosines!
+        let cosinesB = hullB.edgeCosines!
 
-    withInlineBuffer(&edgeIndicesA) { edgeIndicesA in
         for i in stride(from: 0, to: Int(halfEdgeCountA), by: 2) {
             let i1 = Int32(halfEdgesA[i].face)
             let i2 = Int32(halfEdgesA[i + 1].face)
@@ -525,9 +567,7 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
                 na += 1
             }
         }
-    }
 
-    withInlineBuffer(&edgeIndicesB) { edgeIndicesB in
         for i in stride(from: 0, to: Int(halfEdgeCountB), by: 2) {
             let i1 = Int32(halfEdgesB[i].face)
             let i2 = Int32(halfEdgesB[i + 1].face)
@@ -537,194 +577,151 @@ func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ ear
                 nb += 1
             }
         }
-    }
 
-    // Apply additional culling using the support points for the best face axes.
-    if earlyReturn && nb * ((na + 3) >> 2) >= Int32(edgeProbeMinTests) {
-        let probeBound = maxFaceSeparation - (0.1 * B3.linearSlop + 0.001 * absFloat(centerDistance + radius))
+        // Apply additional culling using the support points for the best face axes.
+        if earlyReturn && nb * ((na + 3) >> 2) >= Int32(edgeProbeMinTests) {
+            let probeBound = maxFaceSeparation - (0.1 * B3.linearSlop + 0.001 * absFloat(centerDistance + radius))
 
-        let vertexB = res.faceA.indexB != B3.nullIndex ? res.faceA.indexB : seedVertexB
-        let probeB = Vec3(vxB[Int(vertexB)], vyB[Int(vertexB)], vzB[Int(vertexB)])
-        withInlineBuffer(&planeDotA) {
-            getFacePlaneSeparations(hullA, mulMV(R, probeB) + xfB.p, $0.baseAddress!)
+            let vertexB = res.faceA.indexB != B3.nullIndex ? res.faceA.indexB : seedVertexB
+            let probeB = Vec3(vxB[Int(vertexB)], vyB[Int(vertexB)], vzB[Int(vertexB)])
+            getFacePlaneSeparations(hullA, mulMV(R, probeB) + xfB.p, planeDotA)
+            na = filterEdgeCandidates(hullA, planeDotA, probeBound, edgeIndicesA, na)
+
+            let vertexA = res.faceB.indexA != B3.nullIndex ? res.faceB.indexA : seedVertexA
+            let probeA = Vec3(vxA[Int(vertexA)], vyA[Int(vertexA)], vzA[Int(vertexA)])
+            getFacePlaneSeparations(hullB, mulMV(invR, probeA - xfB.p), planeDotB)
+            nb = filterEdgeCandidates(hullB, planeDotB, probeBound, edgeIndicesB, nb)
         }
-        withInlineReadBuffer(planeDotA) { planeDotA in
-            withInlineBuffer(&edgeIndicesA) {
-                na = filterEdgeCandidates(hullA, planeDotA.baseAddress!, probeBound, $0.baseAddress!, na)
-            }
+
+        if na == 0 || nb == 0 {
+            // No edge candidates found.
+            return res
         }
 
-        let vertexA = res.faceB.indexA != B3.nullIndex ? res.faceB.indexA : seedVertexA
-        let probeA = Vec3(vxA[Int(vertexA)], vyA[Int(vertexA)], vzA[Int(vertexA)])
-        withInlineBuffer(&planeDotB) {
-            getFacePlaneSeparations(hullB, mulMV(invR, probeA - xfB.p), $0.baseAddress!)
+        // B face normals in A space, negated. B vertices in A space, negated.
+
+        let faceStrideB = hullSoaStride(faceCountB)
+        let nxB = hullB.soaNormals!
+        let nyB = nxB + Int(faceStrideB)
+        let nzB = nyB + Int(faceStrideB)
+
+        let wideFaceCountB = roundUpToSIMDWidth(faceCountB)
+        negativeTransformFromSoA(
+            R, xfB.p, nxB, nyB, nzB, wideFaceCountB,
+            bFNx, bFNy, bFNz, false
+        )
+        negativeTransformFromSoA(
+            R, xfB.p, vxB, vyB, vzB, wideVertexCountB,
+            bWx, bWy, bWz, true
+        )
+
+        // Per A edge data. n0 and n1 are the two face normals, d the edge vector, v0 the first vertex.
+        // tol is the parallel edge tolerance, scaled by the edge length.
+
+        let squaredTol = parallelEdgeTolerance * parallelEdgeTolerance
+        for k in 0..<Int(na) {
+            let edge = halfEdgesA + Int(edgeIndicesA[k])
+            let twin = edge + 1
+
+            let A = planesA[Int(edge.pointee.face)].normal
+            let B = planesA[Int(twin.pointee.face)].normal
+            aN0x[k] = A.x
+            aN0y[k] = A.y
+            aN0z[k] = A.z
+            aN1x[k] = B.x
+            aN1y[k] = B.y
+            aN1z[k] = B.z
+
+            let v0 = Int(edge.pointee.origin)
+            let v1 = Int(twin.pointee.origin)
+
+            aDx[k] = vxA[v1] - vxA[v0]
+            aDy[k] = vyA[v1] - vyA[v0]
+            aDz[k] = vzA[v1] - vzA[v0]
+            aV0x[k] = vxA[v0]
+            aV0y[k] = vyA[v0]
+            aV0z[k] = vzA[v0]
+
+            aTol[k] = squaredTol * (aDx[k] * aDx[k] + aDy[k] * aDy[k] + aDz[k] * aDz[k])
         }
-        withInlineReadBuffer(planeDotB) { planeDotB in
-            withInlineBuffer(&edgeIndicesB) {
-                nb = filterEdgeCandidates(hullB, planeDotB.baseAddress!, probeBound, $0.baseAddress!, nb)
-            }
-        }
-    }
 
-    if na == 0 || nb == 0 {
-        // No edge candidates found.
-        return res
-    }
+        let linearSlop = B3.linearSlop
+        let EPS = -linearSlop * linearSlop
 
-    // B face normals in A space, negated. B vertices in A space, negated.
-    var bFNx = InlineArray<132, Float>(repeating: 0)
-    var bFNy = bFNx
-    var bFNz = bFNx
-    var bWx = InlineArray<132, Float>(repeating: 0)
-    var bWy = bWx
-    var bWz = bWx
+        // Scalar edge/edge test. This matches the C scalar fallback, which is required to agree with
+        // the SIMD path for cross platform determinism.
+        for j in 0..<Int(nb) {
+            let edge = halfEdgesB + Int(edgeIndicesB[j])
+            let twin = edge + 1
+            let f0 = Int(edge.pointee.face)
+            let f1 = Int(twin.pointee.face)
+            let v0 = Int(edge.pointee.origin)
+            let v1 = Int(twin.pointee.origin)
 
-    let faceStrideB = hullSoaStride(faceCountB)
-    let nxB = hullB.soaNormals!
-    let nyB = nxB + Int(faceStrideB)
-    let nzB = nyB + Int(faceStrideB)
+            let C = Vec3(bFNx[f0], bFNy[f0], bFNz[f0])
+            let D = Vec3(bFNx[f1], bFNy[f1], bFNz[f1])
+            let bv0 = Vec3(bWx[v0], bWy[v0], bWz[v0])
+            let bv1 = Vec3(bWx[v1], bWy[v1], bWz[v1])
+            let DC = bv1 - bv0
 
-    let wideFaceCountB = roundUpToSIMDWidth(faceCountB)
-    withInlineBuffer(&bFNx) { bFNx in
-        withInlineBuffer(&bFNy) { bFNy in
-            withInlineBuffer(&bFNz) { bFNz in
-                negativeTransformFromSoA(
-                    R, xfB.p, nxB, nyB, nzB, wideFaceCountB,
-                    bFNx.baseAddress!, bFNy.baseAddress!, bFNz.baseAddress!, false
-                )
-            }
-        }
-    }
-    withInlineBuffer(&bWx) { bWx in
-        withInlineBuffer(&bWy) { bWy in
-            withInlineBuffer(&bWz) { bWz in
-                negativeTransformFromSoA(
-                    R, xfB.p, vxB, vyB, vzB, wideVertexCountB,
-                    bWx.baseAddress!, bWy.baseAddress!, bWz.baseAddress!, true
-                )
-            }
-        }
-    }
+            for i in 0..<Int(na) {
+                let d = Vec3(aDx[i], aDy[i], aDz[i])
 
-    // Per A edge data. n0 and n1 are the two face normals, d the edge vector, v0 the first vertex.
-    // tol is the parallel edge tolerance, scaled by the edge length.
-    var aN0x = InlineArray<132, Float>(repeating: 0)
-    var aN0y = aN0x
-    var aN0z = aN0x
-    var aN1x = aN0x
-    var aN1y = aN0x
-    var aN1z = aN0x
-    var aDx = aN0x
-    var aDy = aN0x
-    var aDz = aN0x
-    var aV0x = aN0x
-    var aV0y = aN0x
-    var aV0z = aN0x
-    var aTol = aN0x
+                // CBA = C.dir, DBA = D.dir, where dir = B_x_A
+                let CBA = dot(C, d)
+                let DBA = dot(D, d)
+                if CBA * DBA >= EPS {
+                    continue
+                }
 
-    let squaredTol = parallelEdgeTolerance * parallelEdgeTolerance
-    for k in 0..<Int(na) {
-        let edge = halfEdgesA + Int(edgeIndicesA[k])
-        let twin = edge + 1
+                let n0 = Vec3(aN0x[i], aN0y[i], aN0z[i])
+                let n1 = Vec3(aN1x[i], aN1y[i], aN1z[i])
 
-        let A = planesA[Int(edge.pointee.face)].normal
-        let B = planesA[Int(twin.pointee.face)].normal
-        aN0x[k] = A.x
-        aN0y[k] = A.y
-        aN0z[k] = A.z
-        aN1x[k] = B.x
-        aN1y[k] = B.y
-        aN1z[k] = B.z
+                // ADC = n0.DC, BDC = n1.DC, where DC = D_x_C
+                let ADC = dot(n0, DC)
+                let BDC = dot(n1, DC)
+                if ADC * BDC >= EPS || CBA * BDC >= EPS {
+                    continue
+                }
 
-        let v0 = Int(edge.pointee.origin)
-        let v1 = Int(twin.pointee.origin)
+                // Reject near parallel edges
+                let maxCD = maxFloat(CBA * CBA, DBA * DBA)
+                if maxCD <= aTol[i] {
+                    continue
+                }
 
-        aDx[k] = vxA[v1] - vxA[v0]
-        aDy[k] = vyA[v1] - vyA[v0]
-        aDz[k] = vzA[v1] - vzA[v0]
-        aV0x[k] = vxA[v0]
-        aV0y[k] = vyA[v0]
-        aV0z[k] = vzA[v0]
+                // t = -CBA / (DBA - CBA)
+                let t = -CBA / (DBA - CBA)
 
-        aTol[k] = squaredTol * (aDx[k] * aDx[k] + aDy[k] * aDy[k] + aDz[k] * aDz[k])
-    }
+                // normal = lerp(t, C, D) = C + (D-C)*t
+                var n = mulAdd(C, t, D - C)
+                let len2 = dot(n, n)
 
-    let linearSlop = B3.linearSlop
-    let EPS = -linearSlop * linearSlop
+                let inv = 1 / len2.squareRoot()
+                n = inv * n
 
-    // Scalar edge/edge test. This matches the C scalar fallback, which is required to agree with
-    // the SIMD path for cross platform determinism.
-    for j in 0..<Int(nb) {
-        let edge = halfEdgesB + Int(edgeIndicesB[j])
-        let twin = edge + 1
-        let f0 = Int(edge.pointee.face)
-        let f1 = Int(twin.pointee.face)
-        let v0 = Int(edge.pointee.origin)
-        let v1 = Int(twin.pointee.origin)
+                // separation = -dot(normal, av0 + bv0)
+                let av0 = Vec3(aV0x[i], aV0y[i], aV0z[i])
+                let separation = -dot(av0 + bv0, n)
 
-        let C = Vec3(bFNx[f0], bFNy[f0], bFNz[f0])
-        let D = Vec3(bFNx[f1], bFNy[f1], bFNz[f1])
-        let bv0 = Vec3(bWx[v0], bWy[v0], bWz[v0])
-        let bv1 = Vec3(bWx[v1], bWy[v1], bWz[v1])
-        let DC = bv1 - bv0
+                if separation > res.edge.separation {
+                    res.edge.normal = n
+                    res.edge.separation = separation
 
-        for i in 0..<Int(na) {
-            let d = Vec3(aDx[i], aDy[i], aDz[i])
+                    // Half edge index
+                    res.edge.indexA = edgeIndicesA[i]
+                    res.edge.indexB = edgeIndicesB[j]
 
-            // CBA = C.dir, DBA = D.dir, where dir = B_x_A
-            let CBA = dot(C, d)
-            let DBA = dot(D, d)
-            if CBA * DBA >= EPS {
-                continue
-            }
-
-            let n0 = Vec3(aN0x[i], aN0y[i], aN0z[i])
-            let n1 = Vec3(aN1x[i], aN1y[i], aN1z[i])
-
-            // ADC = n0.DC, BDC = n1.DC, where DC = D_x_C
-            let ADC = dot(n0, DC)
-            let BDC = dot(n1, DC)
-            if ADC * BDC >= EPS || CBA * BDC >= EPS {
-                continue
-            }
-
-            // Reject near parallel edges
-            let maxCD = maxFloat(CBA * CBA, DBA * DBA)
-            if maxCD <= aTol[i] {
-                continue
-            }
-
-            // t = -CBA / (DBA - CBA)
-            let t = -CBA / (DBA - CBA)
-
-            // normal = lerp(t, C, D) = C + (D-C)*t
-            var n = mulAdd(C, t, D - C)
-            let len2 = dot(n, n)
-
-            let inv = 1 / len2.squareRoot()
-            n = inv * n
-
-            // separation = -dot(normal, av0 + bv0)
-            let av0 = Vec3(aV0x[i], aV0y[i], aV0z[i])
-            let separation = -dot(av0 + bv0, n)
-
-            if separation > res.edge.separation {
-                res.edge.normal = n
-                res.edge.separation = separation
-
-                // Half edge index
-                res.edge.indexA = edgeIndicesA[i]
-                res.edge.indexB = edgeIndicesB[j]
-
-                if separation > speculativeDistance && earlyReturn {
-                    res.separatedFeature = .edgePairAxis
-                    return res
+                    if separation > speculativeDistance && earlyReturn {
+                        res.separatedFeature = .edgePairAxis
+                        return res
+                    }
                 }
             }
         }
-    }
 
-    return res
+        return res
+    }
 }
 
 // MARK: - Manifold point reduction
@@ -952,97 +949,91 @@ func buildFaceAContact(
     let incFace = findIncidentFace(hullB, refNormalInB, query.indexB)
 
     // Build clip polygon from incident face in frame A
-    var buffer1 = [ClipVertex](repeating: ClipVertex(), count: Int(maxClipPoints))
-    var buffer2 = [ClipVertex](repeating: ClipVertex(), count: Int(maxClipPoints))
+    var buffer1 = InlineArray<64, ClipVertex>(repeating: ClipVertex())
+    var buffer2 = InlineArray<64, ClipVertex>(repeating: ClipVertex())
+    return withInlineBuffer(&buffer1) { buffer1 in
+        return withInlineBuffer(&buffer2) { buffer2 in
 
-    var pointCount = buffer1.withUnsafeMutableBufferPointer {
-        buildPolygon($0.baseAddress!, transformBtoA, hullB, incFace, refPlane)
-    }
+            var pointCount = buildPolygon(buffer1.baseAddress!, transformBtoA, hullB, incFace, refPlane)
 
-    // Clip incident face against side planes of reference face
-    let face = facesA + Int(refFace)
-    var edgeIndex = Int32(face.pointee.edge)
+            // Clip incident face against side planes of reference face
+            let face = facesA + Int(refFace)
+            var edgeIndex = Int32(face.pointee.edge)
 
-    var useBuffer1AsInput = true
+            var useBuffer1AsInput = true
 
-    repeat {
-        let edge = edgesA + Int(edgeIndex)
-        let nextEdgeIndex = Int32(edge.pointee.next)
-        let next = edgesA + Int(nextEdgeIndex)
-        let vertex1 = pointsA[Int(edge.pointee.origin)]
-        let vertex2 = pointsA[Int(next.pointee.origin)]
-        let tangent = normalize(vertex2 - vertex1)
-        let binormal = cross(tangent, refPlane.normal)
+            repeat {
+                let edge = edgesA + Int(edgeIndex)
+                let nextEdgeIndex = Int32(edge.pointee.next)
+                let next = edgesA + Int(nextEdgeIndex)
+                let vertex1 = pointsA[Int(edge.pointee.origin)]
+                let vertex2 = pointsA[Int(next.pointee.origin)]
+                let tangent = normalize(vertex2 - vertex1)
+                let binormal = cross(tangent, refPlane.normal)
 
-        let clipPlane = makePlaneFromNormalAndPoint(binormal, vertex1)
+                let clipPlane = makePlaneFromNormalAndPoint(binormal, vertex1)
 
-        if useBuffer1AsInput {
-            pointCount = buffer1.withUnsafeMutableBufferPointer { input in
-                buffer2.withUnsafeMutableBufferPointer { output in
-                    clipPolygon(output.baseAddress!, input.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                if useBuffer1AsInput {
+                    pointCount = clipPolygon(buffer2.baseAddress!, buffer1.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                } else {
+                    pointCount = clipPolygon(buffer1.baseAddress!, buffer2.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
                 }
-            }
-        } else {
-            pointCount = buffer2.withUnsafeMutableBufferPointer { input in
-                buffer1.withUnsafeMutableBufferPointer { output in
-                    clipPolygon(output.baseAddress!, input.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                b3Assert(pointCount <= maxClipPoints)
+
+                useBuffer1AsInput = !useBuffer1AsInput
+
+                if pointCount < 3 {
+                    cache = SATCache()
+                    return false
                 }
+
+                edgeIndex = nextEdgeIndex
+            } while edgeIndex != Int32(face.pointee.edge)
+
+            pointCount = minInt(pointCount, maxClipPoints)
+
+            var points = InlineArray<64, LocalManifoldPoint>(repeating: LocalManifoldPoint())
+            var minSeparation = Float.greatestFiniteMagnitude
+
+            manifold.normal = refPlane.normal
+
+            let input = useBuffer1AsInput ? buffer1 : buffer2
+
+            for i in 0..<Int(pointCount) {
+                let clipPoint = input[i]
+                var pt = LocalManifoldPoint()
+
+                // Using the half-way point keeps the points in the same position when swapping reference
+                // face from A to B.
+                let point = mulSub(clipPoint.position, 0.5 * clipPoint.separation, refPlane.normal)
+
+                pt.point = point
+                pt.separation = clipPoint.separation
+                pt.pair = clipPoint.pair
+
+                minSeparation = minFloat(minSeparation, clipPoint.separation)
+
+                points[i] = pt
             }
+
+            if minSeparation >= B3.speculativeDistance {
+                cache = SATCache()
+                return false
+            }
+
+            withInlineBuffer(&points) {
+                reduceManifoldPoints(&manifold, capacity, $0.baseAddress!, pointCount)
+            }
+
+            // Save cache
+            cache.separation = minSeparation
+            cache.type = .faceAxisA
+            cache.indexA = UInt8(truncatingIfNeeded: query.indexA)
+            cache.indexB = UInt8(truncatingIfNeeded: query.indexB)
+
+            return true
         }
-        b3Assert(pointCount <= maxClipPoints)
-
-        useBuffer1AsInput = !useBuffer1AsInput
-
-        if pointCount < 3 {
-            cache = SATCache()
-            return false
-        }
-
-        edgeIndex = nextEdgeIndex
-    } while edgeIndex != Int32(face.pointee.edge)
-
-    pointCount = minInt(pointCount, maxClipPoints)
-
-    var points = [LocalManifoldPoint](repeating: LocalManifoldPoint(), count: Int(pointCount))
-    var minSeparation = Float.greatestFiniteMagnitude
-
-    manifold.normal = refPlane.normal
-
-    let input = useBuffer1AsInput ? buffer1 : buffer2
-
-    for i in 0..<Int(pointCount) {
-        let clipPoint = input[i]
-        var pt = LocalManifoldPoint()
-
-        // Using the half-way point keeps the points in the same position when swapping reference
-        // face from A to B.
-        let point = mulSub(clipPoint.position, 0.5 * clipPoint.separation, refPlane.normal)
-
-        pt.point = point
-        pt.separation = clipPoint.separation
-        pt.pair = clipPoint.pair
-
-        minSeparation = minFloat(minSeparation, clipPoint.separation)
-
-        points[i] = pt
     }
-
-    if minSeparation >= B3.speculativeDistance {
-        cache = SATCache()
-        return false
-    }
-
-    points.withUnsafeMutableBufferPointer {
-        reduceManifoldPoints(&manifold, capacity, $0.baseAddress!, pointCount)
-    }
-
-    // Save cache
-    cache.separation = minSeparation
-    cache.type = .faceAxisA
-    cache.indexA = UInt8(truncatingIfNeeded: query.indexA)
-    cache.indexB = UInt8(truncatingIfNeeded: query.indexB)
-
-    return true
 }
 
 /// Build a manifold for a face-B reference axis.

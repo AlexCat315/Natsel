@@ -70,7 +70,9 @@ for (index, benchmark) in benchmarks.enumerated() {
 
     for runIndex in 0..<runCount {
         let world = World()
-        if ProcessInfo.processInfo.environment["NATSEL_WIDE"] == "1" { world.enableWideSolver = true }
+        if let wide = ProcessInfo.processInfo.environment["NATSEL_WIDE"] {
+            world.enableWideSolver = wide == "1"
+        }
         benchmark.create(world)
 
         if benchmark.step != nil {
@@ -111,10 +113,14 @@ for (index, benchmark) in benchmarks.enumerated() {
             print("PHASE steps=\(stepCount) pairs=\(p.pairs) collide=\(p.collide) prepare=\(p.prepareConstraints) warm=\(p.warmStart) push=\(p.solveImpulses) solve=\(p.relaxImpulses) store=\(p.storeImpulses) intVel=\(p.integrateVelocities) intPos=\(p.integratePositions) substeps=\(p.constraints) hit=\(p.hitEvents) jnt=\(p.jointEvents) finalize=\(p.transforms) refit=\(p.refit) sleep=\(p.sleepIslands) total=\(ms)")
         }
         print("run \(runIndex) : \(ms) (ms)")
+        fflush(nil)
         minTime = Swift.min(minTime, ms)
 
         if runIndex == runCount - 1 {
             worldCounters = (world.bodyCount, 0, world.contactCount)
+        }
+        if ProcessInfo.processInfo.environment["NATSEL_HASH"] == "1" {
+            print("state: \(String(world.worldStateHash(), radix: 16))")
         }
         benchmark.destroy?()
     }

@@ -2,7 +2,7 @@
 
 // Spherical joint (spherical_joint.c).
 
-struct SphericalJointSim {
+struct SphericalJointSim: BitwiseCopyable {
     var linearImpulse = Vec3()
     var springImpulse = Vec3()
     var motorImpulse = Vec3()
@@ -154,7 +154,7 @@ extension World {
         base.sphericalJoint = joint
     }
 
-    func warmStartSphericalJoint(_ base: inout JointSim, _ context: StepContext) {
+    func warmStartSphericalJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .sphericalJoint)
 
         let mA = base.invMassA
@@ -163,8 +163,8 @@ extension World {
         let iB = base.invIB
 
         let joint = base.sphericalJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -196,19 +196,19 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
     }
 
-    func solveSphericalJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool) {
+    func solveSphericalJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool, _ states: UnsafeMutableBufferPointer<BodyState>) {
         let mA = base.invMassA
         let mB = base.invMassB
         let iA = base.invIA
         let iB = base.invIB
 
         var joint = base.sphericalJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -404,8 +404,8 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
 
         base.sphericalJoint = joint
     }

@@ -160,9 +160,9 @@ struct SymMatrix2W {
 
 @inline(__always) func mulMVW(_ m: SymMatrix3W, _ a: Vec3W) -> Vec3W {
     Vec3W(
-        x: m.xx * a.x + m.xy * a.y + m.xz * a.z,
-        y: m.xy * a.x + m.yy * a.y + m.yz * a.z,
-        z: m.xz * a.x + m.yz * a.y + m.zz * a.z)
+        x: m.xx * a.x + (m.xy * a.y + m.xz * a.z),
+        y: m.xy * a.x + (m.yy * a.y + m.yz * a.z),
+        z: m.xz * a.x + (m.yz * a.y + m.zz * a.z))
 }
 
 @inline(__always) func mulMV2W(_ m: SymMatrix2W, _ a: Vec2W) -> Vec2W {
@@ -170,7 +170,7 @@ struct SymMatrix2W {
 }
 
 @inline(__always) func negW(_ a: Vec3W) -> Vec3W {
-    Vec3W(x: -a.x, y: -a.y, z: -a.z)
+    Vec3W(x: negW(a.x), y: negW(a.y), z: negW(a.z))
 }
 
 // MARK: - Body state lanes
@@ -185,67 +185,6 @@ struct BodyStateW {
 }
 
 extension World {
-    /// Gather four body states. Index zero means static and yields the identity state, matching C's
-    /// `b3GatherBodies`.
-    func gatherBodyStates(_ indices: SIMD4<Int32>) -> BodyStateW {
-        var states = [BodyState](repeating: BodyState.identity, count: 4)
-        for lane in 0..<4 {
-            let index = indices[lane]
-            if index != 0 {
-                states[lane] = solverSets[Int(SetType.awakeSet.rawValue)].bodyStates[Int(index - 1)]
-            }
-        }
-
-        var out = BodyStateW()
-        out.v = Vec3W(
-            FloatW(states[0].linearVelocity.x, states[1].linearVelocity.x,
-                   states[2].linearVelocity.x, states[3].linearVelocity.x),
-            FloatW(states[0].linearVelocity.y, states[1].linearVelocity.y,
-                   states[2].linearVelocity.y, states[3].linearVelocity.y),
-            FloatW(states[0].linearVelocity.z, states[1].linearVelocity.z,
-                   states[2].linearVelocity.z, states[3].linearVelocity.z))
-        out.w = Vec3W(
-            FloatW(states[0].angularVelocity.x, states[1].angularVelocity.x,
-                   states[2].angularVelocity.x, states[3].angularVelocity.x),
-            FloatW(states[0].angularVelocity.y, states[1].angularVelocity.y,
-                   states[2].angularVelocity.y, states[3].angularVelocity.y),
-            FloatW(states[0].angularVelocity.z, states[1].angularVelocity.z,
-                   states[2].angularVelocity.z, states[3].angularVelocity.z))
-        out.dp = Vec3W(
-            FloatW(states[0].deltaPosition.x, states[1].deltaPosition.x,
-                   states[2].deltaPosition.x, states[3].deltaPosition.x),
-            FloatW(states[0].deltaPosition.y, states[1].deltaPosition.y,
-                   states[2].deltaPosition.y, states[3].deltaPosition.y),
-            FloatW(states[0].deltaPosition.z, states[1].deltaPosition.z,
-                   states[2].deltaPosition.z, states[3].deltaPosition.z))
-        out.dq = QuatW(
-            v: Vec3W(
-                FloatW(states[0].deltaRotation.v.x, states[1].deltaRotation.v.x,
-                       states[2].deltaRotation.v.x, states[3].deltaRotation.v.x),
-                FloatW(states[0].deltaRotation.v.y, states[1].deltaRotation.v.y,
-                       states[2].deltaRotation.v.y, states[3].deltaRotation.v.y),
-                FloatW(states[0].deltaRotation.v.z, states[1].deltaRotation.v.z,
-                       states[2].deltaRotation.v.z, states[3].deltaRotation.v.z)),
-            s: FloatW(states[0].deltaRotation.s, states[1].deltaRotation.s,
-                      states[2].deltaRotation.s, states[3].deltaRotation.s))
-        return out
-    }
-
-    /// Write the gathered velocities back. Lanes that are static or non-dynamic are skipped.
-    func scatterBodyStates(_ indices: SIMD4<Int32>, _ wide: BodyStateW) {
-        let setIndex = Int(SetType.awakeSet.rawValue)
-        for lane in 0..<4 {
-            let index = indices[lane]
-            if index == 0 { continue }
-            let local = Int(index - 1)
-            var state = solverSets[setIndex].bodyStates[local]
-            guard (state.flags & BodyFlags.dynamicFlag.rawValue) != 0 else { continue }
-            state.linearVelocity = wide.v[lane]
-            state.angularVelocity = wide.w[lane]
-            solverSets[setIndex].bodyStates[local] = state
-        }
-    }
-
     /// Inverse-rotate four vectors by four quaternions, matching the wide scalar helper
     /// `invRotateVectorWide`. That helper is deliberately not bit-equivalent to the generic
     /// `invRotateVector`, so the lane math has to follow it exactly.
@@ -261,37 +200,32 @@ extension World {
     }
 }
 
-/// Select `a` where `mask` is non-zero, else `b`. A float mask keeps the signature expressible:
-/// Swift's `SIMDMask` only covers integer vectors.
-@inline(__always) func selectW(_ mask: FloatW, _ a: FloatW, _ b: FloatW) -> FloatW {
-    var out = FloatW(repeating: 0)
-    for lane in 0..<4 {
-        out[lane] = mask[lane] != 0 ? a[lane] : b[lane]
-    }
-    return out
+/// Selection preserves the scalar operand order, including signed zeros and NaNs.
+@inline(__always) func selectW(_ mask: SIMDMask<SIMD4<Int32>>, _ a: FloatW, _ b: FloatW) -> FloatW {
+    b.replacing(with: a, where: mask)
 }
 
-/// Signed comparison used as a float mask: 1 where `a > b`, else 0.
-@inline(__always) func greaterW(_ a: FloatW, _ b: FloatW) -> FloatW {
-    var out = FloatW(repeating: 0)
-    for lane in 0..<4 {
-        out[lane] = a[lane] > b[lane] ? 1 : 0
-    }
-    return out
+@inline(__always) func selectW(_ mask: SIMDMask<SIMD4<Int32>>, _ a: Vec3W, _ b: Vec3W) -> Vec3W {
+    Vec3W(selectW(mask, a.x, b.x), selectW(mask, a.y, b.y), selectW(mask, a.z, b.z))
 }
 
 @inline(__always) func maxW(_ a: FloatW, _ b: FloatW) -> FloatW {
-    var out = FloatW(repeating: 0)
-    for lane in 0..<4 {
-        out[lane] = maxFloat(a[lane], b[lane])
-    }
-    return out
+    selectW(a .> b, a, b)
+}
+
+@inline(__always) func minW(_ a: FloatW, _ b: FloatW) -> FloatW {
+    selectW(a .< b, a, b)
 }
 
 @inline(__always) func mulSVW(_ s: FloatW, _ a: Vec3W) -> Vec3W {
-    Vec3W(a.x * s, a.y * s, a.z * s)
+    Vec3W(s * a.x, s * a.y, s * a.z)
 }
 
-@inline(__always) func mulW(_ s: FloatW, _ a: Vec3W) -> Vec3W {
-    Vec3W(x: a.x * s, y: a.y * s, z: a.z * s)
+@inline(__always) func mulW(_ s: FloatW, _ a: Vec3W) -> Vec3W { mulSVW(s, a) }
+
+/// SIMD's generic unary minus uses zero subtraction, which loses the sign of +0.
+/// Flip the IEEE sign bit to match scalar Float negation, including zero and NaNs.
+@inline(__always) func negW(_ a: FloatW) -> FloatW {
+    let bits = unsafeBitCast(a, to: SIMD4<UInt32>.self)
+    return unsafeBitCast(bits ^ SIMD4<UInt32>(repeating: 0x8000_0000), to: FloatW.self)
 }

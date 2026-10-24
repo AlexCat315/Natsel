@@ -1,10 +1,10 @@
-func persistMeshManifolds(_ clusters: [MeshManifoldCluster], previous: [Manifold],
-                          transformA: WorldTransform, transformB: WorldTransform) -> [Manifold] {
+func persistMeshManifolds(_ clusters: [MeshManifoldCluster], previous: ContactManifolds,
+                          transformA: WorldTransform, transformB: WorldTransform) -> ContactManifolds {
     var old = previous
     var consumed = [Bool](repeating: false, count: old.count)
     let matrix = makeMatrixFromQuat(transformB.q)
     let offset = subPos(transformB.p, transformA.p)
-    var output: [Manifold] = []
+    var output = ContactManifolds()
     for cluster in clusters {
         var manifold = Manifold()
         manifold.pointCount = Int32(cluster.points.count)

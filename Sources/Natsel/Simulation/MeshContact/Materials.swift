@@ -14,8 +14,8 @@ extension World {
                     let mapped = materialIndices.map { Int32($0[Int(localIndex)]) } ?? localIndex
                     let materialIndex = clampInt(mapped, 0, shapeA.materialCount - 1)
                     let material = shapeA.material(materialIndex)
-                    friction += frictionCallback(material.friction, material.userMaterialId, materialB.friction, materialB.userMaterialId)
-                    restitution += restitutionCallback(material.restitution, material.userMaterialId, materialB.restitution, materialB.userMaterialId)
+                    friction += mixFriction(material.friction, material.userMaterialId, materialB.friction, materialB.userMaterialId)
+                    restitution += mixRestitution(material.restitution, material.userMaterialId, materialB.restitution, materialB.userMaterialId)
                     tangentA = tangentA + material.tangentVelocity
                     sampleCount += 1
                 }
@@ -28,8 +28,8 @@ extension World {
             }
         } else {
             let material = shapeA.material(0)
-            contact.friction = frictionCallback(material.friction, material.userMaterialId, materialB.friction, materialB.userMaterialId)
-            contact.restitution = restitutionCallback(material.restitution, material.userMaterialId, materialB.restitution, materialB.userMaterialId)
+            contact.friction = mixFriction(material.friction, material.userMaterialId, materialB.friction, materialB.userMaterialId)
+            contact.restitution = mixRestitution(material.restitution, material.userMaterialId, materialB.restitution, materialB.userMaterialId)
             tangentA = material.tangentVelocity
         }
         tangentA = rotateVector(transformA.q, tangentA)

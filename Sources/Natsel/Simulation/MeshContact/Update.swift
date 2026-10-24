@@ -9,14 +9,15 @@ extension World {
                                              shapeB: shapeB, transformB: transformB, isFast: isFast)
         let accepted = selectMeshManifolds(triangles, sphere: shapeB.type == .sphereShape)
         if accepted.isEmpty {
-            contact.manifolds = []
+            contact.manifolds.removeAll()
             contact.manifoldCount = 0
             cs.set(contactId, contact)
             return false
         }
         let clusters = clusterMeshManifolds(accepted)
-        contact.manifolds = persistMeshManifolds(clusters, previous: contact.manifolds,
-                                                 transformA: transformA, transformB: transformB)
+        let persisted = persistMeshManifolds(clusters, previous: contact.payload!.pointee.manifolds,
+                                             transformA: transformA, transformB: transformB)
+        contact.manifolds.replace(with: persisted)
         contact.manifoldCount = Int32(contact.manifolds.count)
         mixMeshMaterials(&contact, surface: surface, shapeA: shapeA, transformA: transformA,
                          shapeB: shapeB, transformB: transformB, materialIndices: materialIndices)

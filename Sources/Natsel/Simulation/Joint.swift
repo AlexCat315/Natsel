@@ -3,7 +3,7 @@
 // Joint model, creation, and destruction (joint.c).
 
 /// Distance joint solver data.
-struct DistanceJointSim {
+struct DistanceJointSim: BitwiseCopyable {
     var length: Float = 0
     var hertz: Float = 0
     var dampingRatio: Float = 0

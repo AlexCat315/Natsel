@@ -685,112 +685,108 @@ func collideHullFace(
     let refPlane = hullPlanes[Int(query.indexB)]
 
     // Build clip polygon from triangle face (the incident face)
-    var buffer1 = [ClipVertex](repeating: ClipVertex(), count: Int(maxClipPoints))
-    var buffer2 = [ClipVertex](repeating: ClipVertex(), count: Int(maxClipPoints))
+    var buffer1 = InlineArray<64, ClipVertex>(repeating: ClipVertex())
+    var buffer2 = InlineArray<64, ClipVertex>(repeating: ClipVertex())
+    return withInlineBuffer(&buffer1) { buffer1 in
+        return withInlineBuffer(&buffer2) { buffer2 in
 
-    let v1 = triangle.v1
-    let v2 = triangle.v2
-    let v3 = triangle.v3
-    buffer1[0].position = v1
-    buffer1[0].separation = planeSeparation(refPlane, v1)
-    buffer1[0].pair = makeFeaturePair(.shapeB, 2, .shapeB, 0)
-    buffer1[1].position = v2
-    buffer1[1].separation = planeSeparation(refPlane, v2)
-    buffer1[1].pair = makeFeaturePair(.shapeB, 0, .shapeB, 1)
-    buffer1[2].position = v3
-    buffer1[2].separation = planeSeparation(refPlane, v3)
-    buffer1[2].pair = makeFeaturePair(.shapeB, 1, .shapeB, 2)
+            let v1 = triangle.v1
+            let v2 = triangle.v2
+            let v3 = triangle.v3
+            buffer1[0].position = v1
+            buffer1[0].separation = planeSeparation(refPlane, v1)
+            buffer1[0].pair = makeFeaturePair(.shapeB, 2, .shapeB, 0)
+            buffer1[1].position = v2
+            buffer1[1].separation = planeSeparation(refPlane, v2)
+            buffer1[1].pair = makeFeaturePair(.shapeB, 0, .shapeB, 1)
+            buffer1[2].position = v3
+            buffer1[2].separation = planeSeparation(refPlane, v3)
+            buffer1[2].pair = makeFeaturePair(.shapeB, 1, .shapeB, 2)
 
-    var pointCount: Int32 = 3
+            var pointCount: Int32 = 3
 
-    // Clip triangle face against side planes of reference face
-    var useBuffer1AsInput = true
-    var useBuffer1AsOutput = false
+            // Clip triangle face against side planes of reference face
+            var useBuffer1AsInput = true
+            var useBuffer1AsOutput = false
 
-    let face = hullFaces + Int(query.indexB)
-    var edgeIndex = Int32(face.pointee.edge)
+            let face = hullFaces + Int(query.indexB)
+            var edgeIndex = Int32(face.pointee.edge)
 
-    repeat {
-        let edge = hullEdges + Int(edgeIndex)
-        let nextEdgeIndex = Int32(edge.pointee.next)
-        let next = hullEdges + Int(nextEdgeIndex)
-        let vertex1 = hullPoints[Int(edge.pointee.origin)]
-        let vertex2 = hullPoints[Int(next.pointee.origin)]
-        let tangent = normalize(vertex2 - vertex1)
-        let binormal = cross(tangent, refPlane.normal)
+            repeat {
+                let edge = hullEdges + Int(edgeIndex)
+                let nextEdgeIndex = Int32(edge.pointee.next)
+                let next = hullEdges + Int(nextEdgeIndex)
+                let vertex1 = hullPoints[Int(edge.pointee.origin)]
+                let vertex2 = hullPoints[Int(next.pointee.origin)]
+                let tangent = normalize(vertex2 - vertex1)
+                let binormal = cross(tangent, refPlane.normal)
 
-        let clipPlane = makePlaneFromNormalAndPoint(binormal, vertex1)
+                let clipPlane = makePlaneFromNormalAndPoint(binormal, vertex1)
 
-        if useBuffer1AsInput {
-            useBuffer1AsOutput = true
-            pointCount = buffer1.withUnsafeMutableBufferPointer { input in
-                buffer2.withUnsafeMutableBufferPointer { output in
-                    clipPolygon(output.baseAddress!, input.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                if useBuffer1AsInput {
+                    useBuffer1AsOutput = true
+                    pointCount = clipPolygon(buffer2.baseAddress!, buffer1.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                } else {
+                    useBuffer1AsOutput = false
+                    pointCount = clipPolygon(buffer1.baseAddress!, buffer2.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
                 }
-            }
-        } else {
-            useBuffer1AsOutput = false
-            pointCount = buffer2.withUnsafeMutableBufferPointer { input in
-                buffer1.withUnsafeMutableBufferPointer { output in
-                    clipPolygon(output.baseAddress!, input.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                b3Assert(pointCount <= maxClipPoints)
+
+                if pointCount < 3 {
+                    // Using a stale cache
+                    cache = SATCache()
+                    return query.separation
                 }
+
+                useBuffer1AsInput = !useBuffer1AsInput
+                edgeIndex = nextEdgeIndex
+            } while edgeIndex != Int32(face.pointee.edge)
+
+            pointCount = minInt(pointCount, pointCapacity)
+            var minSeparation = Float.greatestFiniteMagnitude
+            var finalPointCount: Int32 = 0
+
+            let input = useBuffer1AsOutput ? buffer2 : buffer1
+
+            for i in 0..<Int(pointCount) {
+                let clipPoint = input[i]
+                minSeparation = minFloat(minSeparation, clipPoint.separation)
+
+                if enableSpeculative == false && clipPoint.separation > 0 {
+                    continue
+                }
+
+                // Move point onto hull face for improved culling
+                let point = mulSub(clipPoint.position, clipPoint.separation, refPlane.normal)
+
+                let pt = manifold.points!
+                pt[Int(finalPointCount)].point = point
+                pt[Int(finalPointCount)].separation = clipPoint.separation
+                pt[Int(finalPointCount)].pair = flipPair(clipPoint.pair)
+
+                finalPointCount += 1
             }
+
+            let speculativeDistance = enableSpeculative ? B3.speculativeDistance : 0
+            if minSeparation > speculativeDistance {
+                // This can occur with a stale SAT cache
+                manifold.pointCount = 0
+                cache = SATCache()
+                return minSeparation
+            }
+
+            manifold.pointCount = finalPointCount
+            manifold.normal = -refPlane.normal
+            manifold.feature = .featureHullFace
+
+            // Save cache
+            cache.separation = minSeparation
+            cache.type = .faceAxisB
+            cache.indexA = UInt8(truncatingIfNeeded: query.indexA)
+            cache.indexB = UInt8(truncatingIfNeeded: query.indexB)
+            return minSeparation
         }
-        b3Assert(pointCount <= maxClipPoints)
-
-        if pointCount < 3 {
-            // Using a stale cache
-            cache = SATCache()
-            return query.separation
-        }
-
-        useBuffer1AsInput = !useBuffer1AsInput
-        edgeIndex = nextEdgeIndex
-    } while edgeIndex != Int32(face.pointee.edge)
-
-    pointCount = minInt(pointCount, pointCapacity)
-    var minSeparation = Float.greatestFiniteMagnitude
-    var finalPointCount: Int32 = 0
-
-    let input = useBuffer1AsOutput ? buffer2 : buffer1
-
-    for i in 0..<Int(pointCount) {
-        let clipPoint = input[i]
-        minSeparation = minFloat(minSeparation, clipPoint.separation)
-
-        if enableSpeculative == false && clipPoint.separation > 0 {
-            continue
-        }
-
-        // Move point onto hull face for improved culling
-        let point = mulSub(clipPoint.position, clipPoint.separation, refPlane.normal)
-
-        let pt = manifold.points!
-        pt[Int(finalPointCount)].point = point
-        pt[Int(finalPointCount)].separation = clipPoint.separation
-        pt[Int(finalPointCount)].pair = flipPair(clipPoint.pair)
-
-        finalPointCount += 1
     }
-
-    let speculativeDistance = enableSpeculative ? B3.speculativeDistance : 0
-    if minSeparation > speculativeDistance {
-        // This can occur with a stale SAT cache
-        manifold.pointCount = 0
-        cache = SATCache()
-        return minSeparation
-    }
-
-    manifold.pointCount = finalPointCount
-    manifold.normal = -refPlane.normal
-    manifold.feature = .featureHullFace
-
-    // Save cache
-    cache.separation = minSeparation
-    cache.type = .faceAxisB
-    cache.indexA = UInt8(truncatingIfNeeded: query.indexA)
-    cache.indexB = UInt8(truncatingIfNeeded: query.indexB)
-    return minSeparation
 }
 
 /// Clip the incident hull face against the triangle face.
@@ -819,115 +815,111 @@ func collideTriangleFace(
 
     // Build clip polygon from incident face
     let bigCapacity = Int(2 * maxClipPoints)
-    var buffer1 = [ClipVertex](repeating: ClipVertex(), count: bigCapacity)
-    var buffer2 = [ClipVertex](repeating: ClipVertex(), count: bigCapacity)
-    var pointCount: Int32 = 0
-    let face = hullFaces + Int(incFace)
-    var hullEdgeIndex = Int32(face.pointee.edge)
+    var buffer1 = InlineArray<128, ClipVertex>(repeating: ClipVertex())
+    var buffer2 = InlineArray<128, ClipVertex>(repeating: ClipVertex())
+    return withInlineBuffer(&buffer1) { buffer1 in
+        return withInlineBuffer(&buffer2) { buffer2 in
+            var pointCount: Int32 = 0
+            let face = hullFaces + Int(incFace)
+            var hullEdgeIndex = Int32(face.pointee.edge)
 
-    repeat {
-        let edge = hullEdges + Int(hullEdgeIndex)
+            repeat {
+                let edge = hullEdges + Int(hullEdgeIndex)
 
-        let nextEdgeIndex = Int32(edge.pointee.next)
-        let next = hullEdges + Int(nextEdgeIndex)
+                let nextEdgeIndex = Int32(edge.pointee.next)
+                let next = hullEdges + Int(nextEdgeIndex)
 
-        let hullPoint = hullPoints[Int(next.pointee.origin)]
-        buffer1[Int(pointCount)].position = hullPoint
-        buffer1[Int(pointCount)].separation = planeSeparation(refPlane, hullPoint)
-        buffer1[Int(pointCount)].pair = makeFeaturePair(.shapeB, hullEdgeIndex, .shapeB, nextEdgeIndex)
+                let hullPoint = hullPoints[Int(next.pointee.origin)]
+                buffer1[Int(pointCount)].position = hullPoint
+                buffer1[Int(pointCount)].separation = planeSeparation(refPlane, hullPoint)
+                buffer1[Int(pointCount)].pair = makeFeaturePair(.shapeB, hullEdgeIndex, .shapeB, nextEdgeIndex)
 
-        pointCount += 1
-        hullEdgeIndex = nextEdgeIndex
-    } while hullEdgeIndex != Int32(face.pointee.edge) && pointCount < Int32(bigCapacity)
+                pointCount += 1
+                hullEdgeIndex = nextEdgeIndex
+            } while hullEdgeIndex != Int32(face.pointee.edge) && pointCount < Int32(bigCapacity)
 
-    b3Assert(pointCount >= 3)
+            b3Assert(pointCount >= 3)
 
-    // Clip incident face against side planes of reference face (triangle)
-    var useBuffer1AsInput = true
-    var useBuffer1AsOutput = false
+            // Clip incident face against side planes of reference face (triangle)
+            var useBuffer1AsInput = true
+            var useBuffer1AsOutput = false
 
-    let trianglePoints = [triangle.v1, triangle.v2, triangle.v3]
-    let triangleEdges = [triangle.e1, triangle.e2, triangle.e3]
+            let trianglePoints = [triangle.v1, triangle.v2, triangle.v3]
+            let triangleEdges = [triangle.e1, triangle.e2, triangle.e3]
 
-    for i in 0..<3 where pointCount > 0 {
-        var sideNormal = cross(triangleEdges[i], refPlane.normal)
-        sideNormal = normalize(sideNormal)
+            for i in 0..<3 where pointCount > 0 {
+                var sideNormal = cross(triangleEdges[i], refPlane.normal)
+                sideNormal = normalize(sideNormal)
 
-        let clipPlane = makePlaneFromNormalAndPoint(sideNormal, trianglePoints[i])
+                let clipPlane = makePlaneFromNormalAndPoint(sideNormal, trianglePoints[i])
 
-        if useBuffer1AsInput {
-            useBuffer1AsOutput = true
-            pointCount = buffer1.withUnsafeMutableBufferPointer { input in
-                buffer2.withUnsafeMutableBufferPointer { output in
-                    clipPolygon(
-                        output.baseAddress!, input.baseAddress!, pointCount, clipPlane, Int32(i), refPlane
-                    )
+                if useBuffer1AsInput {
+                    useBuffer1AsOutput = true
+                    pointCount = clipPolygon(
+                                buffer2.baseAddress!, buffer1.baseAddress!, pointCount, clipPlane, Int32(i), refPlane
+                            )
+                } else {
+                    useBuffer1AsOutput = false
+                    pointCount = clipPolygon(
+                                buffer1.baseAddress!, buffer2.baseAddress!, pointCount, clipPlane, Int32(i), refPlane
+                            )
                 }
+                b3Assert(pointCount <= Int32(bigCapacity))
+
+                useBuffer1AsInput = !useBuffer1AsInput
             }
-        } else {
-            useBuffer1AsOutput = false
-            pointCount = buffer2.withUnsafeMutableBufferPointer { input in
-                buffer1.withUnsafeMutableBufferPointer { output in
-                    clipPolygon(
-                        output.baseAddress!, input.baseAddress!, pointCount, clipPlane, Int32(i), refPlane
-                    )
+
+            if pointCount == 0 {
+                // Triangle face clipped away. Invalidate cache.
+                cache = SATCache()
+                return Float.greatestFiniteMagnitude
+            }
+
+            pointCount = minInt(pointCount, pointCapacity)
+
+            var minSeparation = Float.greatestFiniteMagnitude
+
+            var finalPointCount: Int32 = 0
+            let input = useBuffer1AsOutput ? buffer2 : buffer1
+            let pt = manifold.points!
+
+            for i in 0..<Int(pointCount) {
+                let clipPoint = input[i]
+                minSeparation = minFloat(minSeparation, clipPoint.separation)
+
+                if enableSpeculative == false && clipPoint.separation > 0 {
+                    continue
                 }
+
+                // Move point onto triangle surface for improved culling
+                let point = clipPoint.position
+
+                pt[Int(finalPointCount)].point = point
+                pt[Int(finalPointCount)].separation = clipPoint.separation
+                pt[Int(finalPointCount)].pair = clipPoint.pair
+
+                finalPointCount += 1
             }
+
+            let speculativeDistance = enableSpeculative ? B3.speculativeDistance : 0
+            if minSeparation >= speculativeDistance {
+                // This can happen if the objects move apart while re-using a cached axis
+                cache = SATCache()
+                return minSeparation
+            }
+
+            manifold.pointCount = finalPointCount
+            manifold.normal = refPlane.normal
+            manifold.feature = .featureTriangleFace
+
+            // Save cache
+            cache.separation = minSeparation
+            cache.type = .faceAxisA
+            cache.indexA = UInt8(truncatingIfNeeded: query.indexA)
+            cache.indexB = UInt8(truncatingIfNeeded: query.indexB)
+            return minSeparation
         }
-        b3Assert(pointCount <= Int32(bigCapacity))
-
-        useBuffer1AsInput = !useBuffer1AsInput
     }
-
-    if pointCount == 0 {
-        // Triangle face clipped away. Invalidate cache.
-        cache = SATCache()
-        return Float.greatestFiniteMagnitude
-    }
-
-    pointCount = minInt(pointCount, pointCapacity)
-
-    var minSeparation = Float.greatestFiniteMagnitude
-
-    var finalPointCount: Int32 = 0
-    let input = useBuffer1AsOutput ? buffer2 : buffer1
-    let pt = manifold.points!
-
-    for i in 0..<Int(pointCount) {
-        let clipPoint = input[i]
-        minSeparation = minFloat(minSeparation, clipPoint.separation)
-
-        if enableSpeculative == false && clipPoint.separation > 0 {
-            continue
-        }
-
-        // Move point onto triangle surface for improved culling
-        let point = clipPoint.position
-
-        pt[Int(finalPointCount)].point = point
-        pt[Int(finalPointCount)].separation = clipPoint.separation
-        pt[Int(finalPointCount)].pair = clipPoint.pair
-
-        finalPointCount += 1
-    }
-
-    let speculativeDistance = enableSpeculative ? B3.speculativeDistance : 0
-    if minSeparation >= speculativeDistance {
-        // This can happen if the objects move apart while re-using a cached axis
-        cache = SATCache()
-        return minSeparation
-    }
-
-    manifold.pointCount = finalPointCount
-    manifold.normal = refPlane.normal
-    manifold.feature = .featureTriangleFace
-
-    // Save cache
-    cache.separation = minSeparation
-    cache.type = .faceAxisA
-    cache.indexA = UInt8(truncatingIfNeeded: query.indexA)
-    cache.indexB = UInt8(truncatingIfNeeded: query.indexB)
-    return minSeparation
 }
 
 /// Build the edge contact between a triangle edge and a hull edge.

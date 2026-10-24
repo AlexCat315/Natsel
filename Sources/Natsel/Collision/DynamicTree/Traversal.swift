@@ -33,45 +33,48 @@ struct TreeView {
             return result
         }
 
-        var stack = [Int32](repeating: 0, count: treeStackSize)
-        var stackCount = 0
-        stack[stackCount] = rootPairIndex
-        stackCount += 1
+        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
+            var stackCount = 0
+            stack[stackCount] = rootPairIndex
+            stackCount += 1
 
-        while stackCount > 0 {
-            stackCount -= 1
-            let pair = stack[stackCount]
-            result.nodeVisits += 1
+            while stackCount > 0 {
+                stackCount -= 1
+                let pair = stack[stackCount]
+                result.nodeVisits += 1
 
-            for i in 0..<2 {
-                let nodeIndex = pair + Int32(i)
-                let node = nodes[Int(nodeIndex)]
-                if aabbOverlaps(aabb, node.aabb) == false {
-                    continue
-                }
-
-                if isLeaf(node) {
-                    let proxyId = proxyIdOf(node)
-                    guard let userData = userData(node, mask: maskBits, requireAll: requireAllBits) else { continue }
-
-                    let proceed = callback(proxyId, userData)
-                    result.leafVisits += 1
-
-                    if proceed == false {
-                        return result
+                for i in 0..<2 {
+                    let nodeIndex = pair + Int32(i)
+                    let node = nodes[Int(nodeIndex)]
+                    if aabbOverlaps(aabb, node.aabb) == false {
+                        continue
                     }
-                } else {
-                    if stackCount < treeStackSize - 1 {
-                        stack[stackCount] = leftChild(node)
-                        stackCount += 1
+
+                    if isLeaf(node) {
+                        let proxyId = proxyIdOf(node)
+                        guard let userData = userData(node, mask: maskBits, requireAll: requireAllBits) else {
+                            continue
+                        }
+
+                        let proceed = callback(proxyId, userData)
+                        result.leafVisits += 1
+
+                        if proceed == false {
+                            return result
+                        }
                     } else {
-                        b3Assert(stackCount < treeStackSize - 1)
+                        if stackCount < treeStackSize - 1 {
+                            stack[stackCount] = leftChild(node)
+                            stackCount += 1
+                        } else {
+                            b3Assert(stackCount < treeStackSize - 1)
+                        }
                     }
                 }
             }
-        }
 
-        return result
+            return result
+        }
     }
 
     func queryClosest(
@@ -97,76 +100,79 @@ struct TreeView {
             return dot(r, r)
         }
 
-        var stack = [(nodeIndex: Int32, distanceToNodeSqr: Float)](repeating: (0, 0), count: treeStackSize)
-        var stackCount = 0
+        return withUnsafeTemporaryAllocation(
+            of: (nodeIndex: Int32, distanceToNodeSqr: Float).self, capacity: treeStackSize
+        ) { stack in
+            var stackCount = 0
 
-        let root = rootPairIndex
-        let seed1 = (nodeIndex: root, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(root)]))
+            let root = rootPairIndex
+            let seed1 = (nodeIndex: root, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(root)]))
 
-        if root == rootNode {
-            stack[stackCount] = seed1
-            stackCount += 1
-        } else {
-            let seed2 = (nodeIndex: root + 1, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(root) + 1]))
-
-            // Ensure we iterate the closest child first as we pop off the stack
-            if seed2.distanceToNodeSqr < seed1.distanceToNodeSqr {
+            if root == rootNode {
                 stack[stackCount] = seed1
-                stack[stackCount + 1] = seed2
+                stackCount += 1
             } else {
-                stack[stackCount] = seed2
-                stack[stackCount + 1] = seed1
-            }
-            stackCount += 2
-        }
+                let seed2 = (nodeIndex: root + 1, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(root) + 1]))
 
-        while stackCount > 0 {
-            stackCount -= 1
-            let item = stack[stackCount]
-            let node = nodes[Int(item.nodeIndex)]
-            result.nodeVisits += 1
-
-            if item.distanceToNodeSqr >= minSqr {
-                continue
+                // Ensure we iterate the closest child first as we pop off the stack
+                if seed2.distanceToNodeSqr < seed1.distanceToNodeSqr {
+                    stack[stackCount] = seed1
+                    stack[stackCount + 1] = seed2
+                } else {
+                    stack[stackCount] = seed2
+                    stack[stackCount + 1] = seed1
+                }
+                stackCount += 2
             }
 
-            if isLeaf(node) {
-                let proxyId = proxyIdOf(node)
-                guard let userData = userData(node, mask: maskBits, requireAll: requireAllBits) else { continue }
+            while stackCount > 0 {
+                stackCount -= 1
+                let item = stack[stackCount]
+                let node = nodes[Int(item.nodeIndex)]
+                result.nodeVisits += 1
 
-                // callback to user code with minimum distance squared so far and proxy id
-                let dd = callback(minSqr, proxyId, userData)
-
-                if dd < minSqr {
-                    minSqr = dd
+                if item.distanceToNodeSqr >= minSqr {
+                    continue
                 }
 
-                result.leafVisits += 1
-                continue
+                if isLeaf(node) {
+                    let proxyId = proxyIdOf(node)
+                    guard let userData = userData(node, mask: maskBits, requireAll: requireAllBits) else { continue }
+
+                    // callback to user code with minimum distance squared so far and proxy id
+                    let dd = callback(minSqr, proxyId, userData)
+
+                    if dd < minSqr {
+                        minSqr = dd
+                    }
+
+                    result.leafVisits += 1
+                    continue
+                }
+
+                if stackCount + 2 > treeStackSize {
+                    b3Assert(stackCount + 2 <= treeStackSize)
+                    continue
+                }
+
+                let pair = leftChild(node)
+
+                let item1 = (nodeIndex: pair, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(pair)]))
+                let item2 = (nodeIndex: pair + 1, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(pair) + 1]))
+
+                // Ensure we iterate the closest child first as we pop off the stack
+                if item2.distanceToNodeSqr < item1.distanceToNodeSqr {
+                    stack[stackCount] = item1
+                    stack[stackCount + 1] = item2
+                } else {
+                    stack[stackCount] = item2
+                    stack[stackCount + 1] = item1
+                }
+                stackCount += 2
             }
 
-            if stackCount + 2 > treeStackSize {
-                b3Assert(stackCount + 2 <= treeStackSize)
-                continue
-            }
-
-            let pair = leftChild(node)
-
-            let item1 = (nodeIndex: pair, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(pair)]))
-            let item2 = (nodeIndex: pair + 1, distanceToNodeSqr: distanceToNodeSqr(nodes[Int(pair) + 1]))
-
-            // Ensure we iterate the closest child first as we pop off the stack
-            if item2.distanceToNodeSqr < item1.distanceToNodeSqr {
-                stack[stackCount] = item1
-                stack[stackCount + 1] = item2
-            } else {
-                stack[stackCount] = item2
-                stack[stackCount + 1] = item1
-            }
-            stackCount += 2
+            return (result, minSqr)
         }
-
-        return (result, minSqr)
     }
 
     func rayCast(
@@ -195,86 +201,89 @@ struct TreeView {
         // Build a bounding box for the segment.
         var segmentAABB = AABB(minVec3(p1, p2), maxVec3(p1, p2))
 
-        var stack = [Int32](repeating: 0, count: treeStackSize)
-        var stackCount = 0
-        stack[stackCount] = rootPairIndex
-        stackCount += 1
+        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
+            var stackCount = 0
+            stack[stackCount] = rootPairIndex
+            stackCount += 1
 
-        var subInput = input
+            var subInput = input
 
-        while stackCount > 0 {
-            stackCount -= 1
-            let pair = stack[stackCount]
-            result.nodeVisits += 1
+            while stackCount > 0 {
+                stackCount -= 1
+                let pair = stack[stackCount]
+                result.nodeVisits += 1
 
-            var hit = [TreeNode](repeating: TreeNode(), count: 2)
-            var isLeafHit = [false, false]
-            var hitCount = 0
-            for i in 0..<2 {
-                let node = nodes[Int(pair) + i]
+                var hit = [TreeNode](repeating: TreeNode(), count: 2)
+                var isLeafHit = [false, false]
+                var hitCount = 0
+                for i in 0..<2 {
+                    let node = nodes[Int(pair) + i]
 
-                if aabbOverlaps(segmentAABB, node.aabb) == false {
-                    continue
-                }
-
-                let nodeAABB = node.aabb
-                if testBoundsRayOverlap(nodeAABB.lowerBound, nodeAABB.upperBound, p1, d) == false {
-                    continue
-                }
-
-                isLeafHit[hitCount] = isLeaf(node)
-                hit[hitCount] = node
-                hitCount += 1
-            }
-
-            if hitCount == 2 && isLeafHit[0] == false && isLeafHit[1] == false {
-                let center1 = aabbCenter(hit[0].aabb)
-                let center2 = aabbCenter(hit[1].aabb)
-                let d1 = distanceSquared(center1, p1)
-                let d2 = distanceSquared(center2, p1)
-
-                // Want to push the closest one last. Both have the same isLeaf, so they don't swap.
-                if d1 < d2 {
-                    hit.swapAt(0, 1)
-                }
-            }
-
-            for i in 0..<hitCount {
-                if isLeafHit[i] {
-                    let proxyId = proxyIdOf(hit[i])
-                    guard let userData = userData(hit[i], mask: maskBits, requireAll: requireAllBits) else { continue }
-
-                    subInput.maxFraction = maxFraction
-
-                    let value = callback(&subInput, proxyId, userData)
-                    result.leafVisits += 1
-
-                    // The user may return -1 to indicate this shape should be skipped
-
-                    if value == 0 {
-                        // The client has terminated the ray cast.
-                        return result
+                    if aabbOverlaps(segmentAABB, node.aabb) == false {
+                        continue
                     }
 
-                    if 0 < value && value <= maxFraction {
-                        // Update segment bounding box.
-                        maxFraction = value
-                        p2 = mulAdd(p1, maxFraction, d)
-                        segmentAABB.lowerBound = minVec3(p1, p2)
-                        segmentAABB.upperBound = maxVec3(p1, p2)
+                    let nodeAABB = node.aabb
+                    if testBoundsRayOverlap(nodeAABB.lowerBound, nodeAABB.upperBound, p1, d) == false {
+                        continue
                     }
-                } else {
-                    if stackCount < treeStackSize - 1 {
-                        stack[stackCount] = leftChild(hit[i])
-                        stackCount += 1
+
+                    isLeafHit[hitCount] = isLeaf(node)
+                    hit[hitCount] = node
+                    hitCount += 1
+                }
+
+                if hitCount == 2 && isLeafHit[0] == false && isLeafHit[1] == false {
+                    let center1 = aabbCenter(hit[0].aabb)
+                    let center2 = aabbCenter(hit[1].aabb)
+                    let d1 = distanceSquared(center1, p1)
+                    let d2 = distanceSquared(center2, p1)
+
+                    // Want to push the closest one last. Both have the same isLeaf, so they don't swap.
+                    if d1 < d2 {
+                        hit.swapAt(0, 1)
+                    }
+                }
+
+                for i in 0..<hitCount {
+                    if isLeafHit[i] {
+                        let proxyId = proxyIdOf(hit[i])
+                        guard let userData = userData(hit[i], mask: maskBits, requireAll: requireAllBits) else {
+                            continue
+                        }
+
+                        subInput.maxFraction = maxFraction
+
+                        let value = callback(&subInput, proxyId, userData)
+                        result.leafVisits += 1
+
+                        // The user may return -1 to indicate this shape should be skipped
+
+                        if value == 0 {
+                            // The client has terminated the ray cast.
+                            return result
+                        }
+
+                        if 0 < value && value <= maxFraction {
+                            // Update segment bounding box.
+                            maxFraction = value
+                            p2 = mulAdd(p1, maxFraction, d)
+                            segmentAABB.lowerBound = minVec3(p1, p2)
+                            segmentAABB.upperBound = maxVec3(p1, p2)
+                        }
                     } else {
-                        b3Assert(stackCount < treeStackSize - 1)
+                        if stackCount < treeStackSize - 1 {
+                            stack[stackCount] = leftChild(hit[i])
+                            stackCount += 1
+                        } else {
+                            b3Assert(stackCount < treeStackSize - 1)
+                        }
                     }
                 }
             }
-        }
 
-        return result
+            return result
+        }
     }
 
     func boxCast(
@@ -310,86 +319,89 @@ struct TreeView {
             maxVec3(originAABB.upperBound, originAABB.upperBound + t)
         )
 
-        var stack = [Int32](repeating: 0, count: treeStackSize)
-        var stackCount = 0
-        stack[stackCount] = rootPairIndex
-        stackCount += 1
+        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
+            var stackCount = 0
+            stack[stackCount] = rootPairIndex
+            stackCount += 1
 
-        var subInput = input
+            var subInput = input
 
-        while stackCount > 0 {
-            stackCount -= 1
-            let pair = stack[stackCount]
-            result.nodeVisits += 1
+            while stackCount > 0 {
+                stackCount -= 1
+                let pair = stack[stackCount]
+                result.nodeVisits += 1
 
-            var hit = [TreeNode](repeating: TreeNode(), count: 2)
-            var isLeafHit = [false, false]
-            var hitCount = 0
-            for i in 0..<2 {
-                let node = nodes[Int(pair) + i]
+                var hit = [TreeNode](repeating: TreeNode(), count: 2)
+                var isLeafHit = [false, false]
+                var hitCount = 0
+                for i in 0..<2 {
+                    let node = nodes[Int(pair) + i]
 
-                if aabbOverlaps(totalAABB, node.aabb) == false {
-                    continue
-                }
-
-                // radius extension is added to the node in this case
-                let nodeAABB = node.aabb
-                let lower = nodeAABB.lowerBound - extension_
-                let upper = nodeAABB.upperBound + extension_
-                if testBoundsRayOverlap(lower, upper, p1, d) == false {
-                    continue
-                }
-
-                isLeafHit[hitCount] = isLeaf(node)
-                hit[hitCount] = node
-                hitCount += 1
-            }
-
-            if hitCount == 2 && isLeafHit[0] == false && isLeafHit[1] == false {
-                let center1 = aabbCenter(hit[0].aabb)
-                let center2 = aabbCenter(hit[1].aabb)
-                let d1 = distanceSquared(center1, p1)
-                let d2 = distanceSquared(center2, p1)
-
-                // Want to push the closest one last. Both have the same isLeaf, so they don't swap.
-                if d1 < d2 {
-                    hit.swapAt(0, 1)
-                }
-            }
-
-            for i in 0..<hitCount {
-                if isLeafHit[i] {
-                    let proxyId = proxyIdOf(hit[i])
-                    guard let userData = userData(hit[i], mask: maskBits, requireAll: requireAllBits) else { continue }
-
-                    subInput.maxFraction = maxFraction
-
-                    let value = callback(&subInput, proxyId, userData)
-                    result.leafVisits += 1
-
-                    if value == 0 {
-                        // The client has terminated the cast.
-                        return result
+                    if aabbOverlaps(totalAABB, node.aabb) == false {
+                        continue
                     }
 
-                    if 0 < value && value < maxFraction {
-                        maxFraction = value
-                        t = maxFraction * input.translation
-                        totalAABB.lowerBound = minVec3(originAABB.lowerBound, originAABB.lowerBound + t)
-                        totalAABB.upperBound = maxVec3(originAABB.upperBound, originAABB.upperBound + t)
+                    // radius extension is added to the node in this case
+                    let nodeAABB = node.aabb
+                    let lower = nodeAABB.lowerBound - extension_
+                    let upper = nodeAABB.upperBound + extension_
+                    if testBoundsRayOverlap(lower, upper, p1, d) == false {
+                        continue
                     }
-                } else {
-                    if stackCount < treeStackSize - 1 {
-                        stack[stackCount] = leftChild(hit[i])
-                        stackCount += 1
+
+                    isLeafHit[hitCount] = isLeaf(node)
+                    hit[hitCount] = node
+                    hitCount += 1
+                }
+
+                if hitCount == 2 && isLeafHit[0] == false && isLeafHit[1] == false {
+                    let center1 = aabbCenter(hit[0].aabb)
+                    let center2 = aabbCenter(hit[1].aabb)
+                    let d1 = distanceSquared(center1, p1)
+                    let d2 = distanceSquared(center2, p1)
+
+                    // Want to push the closest one last. Both have the same isLeaf, so they don't swap.
+                    if d1 < d2 {
+                        hit.swapAt(0, 1)
+                    }
+                }
+
+                for i in 0..<hitCount {
+                    if isLeafHit[i] {
+                        let proxyId = proxyIdOf(hit[i])
+                        guard let userData = userData(hit[i], mask: maskBits, requireAll: requireAllBits) else {
+                            continue
+                        }
+
+                        subInput.maxFraction = maxFraction
+
+                        let value = callback(&subInput, proxyId, userData)
+                        result.leafVisits += 1
+
+                        if value == 0 {
+                            // The client has terminated the cast.
+                            return result
+                        }
+
+                        if 0 < value && value < maxFraction {
+                            maxFraction = value
+                            t = maxFraction * input.translation
+                            totalAABB.lowerBound = minVec3(originAABB.lowerBound, originAABB.lowerBound + t)
+                            totalAABB.upperBound = maxVec3(originAABB.upperBound, originAABB.upperBound + t)
+                        }
                     } else {
-                        b3Assert(stackCount < treeStackSize - 1)
+                        if stackCount < treeStackSize - 1 {
+                            stack[stackCount] = leftChild(hit[i])
+                            stackCount += 1
+                        } else {
+                            b3Assert(stackCount < treeStackSize - 1)
+                        }
                     }
                 }
             }
-        }
 
-        return result
+            return result
+        }
     }
 
 }

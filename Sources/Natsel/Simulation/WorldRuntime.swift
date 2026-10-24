@@ -264,7 +264,7 @@ enum ContactCacheKind: Int32, BitwiseCopyable {
 }
 
 /// The persistent interaction between two shapes.
-struct Contact {
+struct Contact: BitwiseCopyable {
     var setIndex: Int32 = B3.nullIndex
     var colorIndex: Int32 = B3.nullIndex
     var localIndex: Int32 = B3.nullIndex
@@ -283,7 +283,7 @@ struct Contact {
 
     var flags: UInt32 = 0
 
-    var manifolds: [Manifold] = []
+    var payload: UnsafeMutablePointer<ContactPayload>?
     var manifoldCount: Int32 = 0
 
     var cachedRotationA = Quat()
@@ -296,7 +296,6 @@ struct Contact {
     /// pair fixes which one is written.
     var satCache = SATCache()
     var simplexCache = SimplexCache()
-    var meshContact = MeshContactState()
 
     var restitution: Float = 0
     var rollingResistance: Float = 0
@@ -341,8 +340,20 @@ struct Joint {
     init() {}
 }
 
+/// The discriminant and only the active joint's POD data share one allocation-free value.
+private enum JointPayload: BitwiseCopyable {
+    case distance(DistanceJointSim)
+    case revolute(RevoluteJointSim)
+    case weld(WeldJointSim)
+    case parallel(ParallelJointSim)
+    case motor(MotorJointSim)
+    case prismatic(PrismaticJointSim)
+    case spherical(SphericalJointSim)
+    case wheel(WheelJointSim)
+}
+
 /// Solver data for a joint.
-struct JointSim {
+struct JointSim: BitwiseCopyable {
     var jointId: Int32 = B3.nullIndex
     var bodyIdA: Int32 = B3.nullIndex
     var bodyIdB: Int32 = B3.nullIndex
@@ -366,16 +377,73 @@ struct JointSim {
 
     var fixedRotation = false
 
-    // Joint type data. Only the field matching `type` is used.
-    var distance = DistanceJointSim()
-    var revolute = RevoluteJointSim()
-    var weld = WeldJointSim()
-    var parallel = ParallelJointSim()
-    var motor = MotorJointSim()
-    var prismatic = PrismaticJointSim()
-    var spherical = SphericalJointSim()
-    var wheel = WheelJointSim()
+    // A joint owns exactly one variant. Keeping all eight payloads increased each solver
+    // record to over 1.7 KB and copied unused state through every API and solver stage.
+    private var payload = JointPayload.distance(DistanceJointSim())
 
+    var distance: DistanceJointSim {
+        @inline(__always) get {
+            if case .distance(let value) = payload { return value }
+            return DistanceJointSim()
+        }
+        @inline(__always) set { payload = .distance(newValue) }
+    }
+
+    var revolute: RevoluteJointSim {
+        @inline(__always) get {
+            if case .revolute(let value) = payload { return value }
+            return RevoluteJointSim()
+        }
+        @inline(__always) set { payload = .revolute(newValue) }
+    }
+
+    var weld: WeldJointSim {
+        @inline(__always) get {
+            if case .weld(let value) = payload { return value }
+            return WeldJointSim()
+        }
+        @inline(__always) set { payload = .weld(newValue) }
+    }
+
+    var parallel: ParallelJointSim {
+        @inline(__always) get {
+            if case .parallel(let value) = payload { return value }
+            return ParallelJointSim()
+        }
+        @inline(__always) set { payload = .parallel(newValue) }
+    }
+
+    var motor: MotorJointSim {
+        @inline(__always) get {
+            if case .motor(let value) = payload { return value }
+            return MotorJointSim()
+        }
+        @inline(__always) set { payload = .motor(newValue) }
+    }
+
+    var prismatic: PrismaticJointSim {
+        @inline(__always) get {
+            if case .prismatic(let value) = payload { return value }
+            return PrismaticJointSim()
+        }
+        @inline(__always) set { payload = .prismatic(newValue) }
+    }
+
+    var spherical: SphericalJointSim {
+        @inline(__always) get {
+            if case .spherical(let value) = payload { return value }
+            return SphericalJointSim()
+        }
+        @inline(__always) set { payload = .spherical(newValue) }
+    }
+
+    var wheel: WheelJointSim {
+        @inline(__always) get {
+            if case .wheel(let value) = payload { return value }
+            return WheelJointSim()
+        }
+        @inline(__always) set { payload = .wheel(newValue) }
+    }
     init() {}
 }
 
@@ -446,6 +514,7 @@ public final class World {
     var fatAABBs: [AABB] = []
 
     var contacts: ContiguousArray<Contact> = []
+    let contactPayloads = ContactPayloadPool()
     var contactIdPool = IDPool()
 
     var joints: [Joint] = []
@@ -479,12 +548,13 @@ public final class World {
     /// slices are merged in contact id order.
     public var workerCount: Int32 = 1
 
-    /// Route convex contacts through the 4-lane solver. Off by default while the wide path is
-    /// being validated against the scalar one.
-    public var enableWideSolver = false
+    /// Solve independent contact batches with four SIMD lanes. Disable to use the equivalent
+    /// scalar path. Overflow constraints always remain sequential.
+    public var enableWideSolver = true
 
     /// Per-step solver constraint data.
     var solverContacts = SolverContactData()
+    var solverJoints = SolverJointData()
 
     /// True when any prepared contact has restitution.
     var solveAnyRestitution = false
@@ -507,14 +577,22 @@ public final class World {
     var satCallCount: Int32 = 0
     var satCacheHitCount: Int32 = 0
 
-    var frictionCallback: FrictionCallback = { frictionA, _, frictionB, _ in
-        (frictionA * frictionB).squareRoot()
-    }
-    var restitutionCallback: RestitutionCallback = { restitutionA, _, restitutionB, _ in
-        maxFloat(restitutionA, restitutionB)
+    // nil selects the inline default mixer. A custom callback still runs for every update.
+    var frictionCallback: FrictionCallback?
+    var restitutionCallback: RestitutionCallback?
+
+    @inline(__always)
+    func mixFriction(_ a: Float, _ idA: UInt64, _ b: Float, _ idB: UInt64) -> Float {
+        if let frictionCallback { return frictionCallback(a, idA, b, idB) }
+        return (a * b).squareRoot()
     }
 
-    /// Optional user filter applied when creating pairs.
+    @inline(__always)
+    func mixRestitution(_ a: Float, _ idA: UInt64, _ b: Float, _ idB: UInt64) -> Float {
+        if let restitutionCallback { return restitutionCallback(a, idA, b, idB) }
+        return maxFloat(a, b)
+    }
+
     var customFilter: CustomFilterCallback?
 
     /// Optional pre-solve callback. Returning false disables the contact.

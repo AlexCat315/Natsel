@@ -2,7 +2,7 @@
 
 // Weld joint (weld_joint.c).
 
-struct WeldJointSim {
+struct WeldJointSim: BitwiseCopyable {
     var linearHertz: Float = 0
     var linearDampingRatio: Float = 0
     var angularHertz: Float = 0
@@ -103,7 +103,7 @@ extension World {
         base.weldJoint = joint
     }
 
-    func warmStartWeldJoint(_ base: inout JointSim, _ context: StepContext) {
+    func warmStartWeldJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .weldJoint)
 
         let mA = base.invMassA
@@ -112,8 +112,8 @@ extension World {
         let iB = base.invIB
 
         let joint = base.weldJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -139,19 +139,19 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
     }
 
-    func solveWeldJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool) {
+    func solveWeldJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool, _ states: UnsafeMutableBufferPointer<BodyState>) {
         let mA = base.invMassA
         let mB = base.invMassB
         let iA = base.invIA
         let iB = base.invIB
 
         var joint = base.weldJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -237,8 +237,8 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
 
         base.weldJoint = joint
     }

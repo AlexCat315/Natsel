@@ -2,7 +2,7 @@
 
 // Motor joint (motor_joint.c). Controls relative velocity and optionally a spring pose.
 
-struct MotorJointSim {
+struct MotorJointSim: BitwiseCopyable {
     var linearVelocity = Vec3()
     var angularVelocity = Vec3()
     var maxVelocityForce: Float = 0
@@ -112,7 +112,7 @@ extension World {
         base.motorJoint = joint
     }
 
-    func warmStartMotorJoint(_ base: inout JointSim, _ context: StepContext) {
+    func warmStartMotorJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .motorJoint)
 
         let mA = base.invMassA
@@ -121,8 +121,8 @@ extension World {
         let iB = base.invIB
 
         let joint = base.motorJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         let rA = rotateVector(stateA.deltaRotation, joint.frameA.p)
         let rB = rotateVector(stateB.deltaRotation, joint.frameB.p)
@@ -139,14 +139,14 @@ extension World {
             + mulMV(iB, cross(rB, linearImpulse) + angularImpulse)
 
         if joint.indexA >= 0 {
-            solverSets[Int(SetType.awakeSet.rawValue)].bodyStates[Int(joint.indexA)] = stateA
+            states[Int(joint.indexA)] = stateA
         }
         if joint.indexB >= 0 {
-            solverSets[Int(SetType.awakeSet.rawValue)].bodyStates[Int(joint.indexB)] = stateB
+            states[Int(joint.indexB)] = stateB
         }
     }
 
-    func solveMotorJoint(_ base: inout JointSim, _ context: StepContext) {
+    func solveMotorJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .motorJoint)
 
         let mA = base.invMassA
@@ -155,8 +155,8 @@ extension World {
         let iB = base.invIB
 
         var joint = base.motorJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -286,8 +286,8 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
 
         base.motorJoint = joint
     }

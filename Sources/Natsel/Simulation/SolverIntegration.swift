@@ -452,7 +452,9 @@ extension World {
         // Narrow phase: update contacts
         taskContexts[0].recycledContactCount = 0
         if timeStep > 0 {
-            if let e = validateIslands() { print("ISL pre-collide: \(e)") }
+            #if DEBUG
+            b3Assert(validateIslands() == nil)
+            #endif
             collide(&context)
         }
 

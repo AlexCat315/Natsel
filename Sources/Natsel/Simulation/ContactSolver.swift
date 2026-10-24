@@ -4,8 +4,8 @@
 //
 // The C solver batches four independent constraints per SIMD group. Graph coloring guarantees the
 // bodies in a color are disjoint, so the lanes never interact. This port evaluates the same
-// per-lane arithmetic in the same color/contact order, which is bit-equivalent to the 4-wide
-// kernel while staying scalar.
+// per-lane arithmetic in the same color/contact order. WideContactSolver.swift packs disjoint
+// contacts into four SIMD lanes; this file also supplies the sequential overflow and fallback paths.
 
 // MARK: - Symmetric 3x3
 
@@ -162,6 +162,11 @@ extension World {
         /// Number of convex constraints at the front of each color's constraint list. The remaining
         /// constraints are mesh contacts.
         var convexCounts: [Int] = Array(repeating: 0, count: Int(B3.graphColorCount))
+
+        // Packed once per step and reused by every substep. Overflow remains sequential.
+        var wideConstraints: [[ContactConstraintW]] = Array(repeating: [], count: Int(B3.graphColorCount))
+        var wideManifolds: [ManifoldConstraintW] = []
+        var wideConvexCounts: [Int] = Array(repeating: 0, count: Int(B3.graphColorCount))
 
         /// The index range of the convex or mesh constraints for a color.
         func range(_ colorIndex: Int32, _ mesh: Bool) -> Range<Int> {
@@ -447,11 +452,16 @@ extension World {
         for i in 0..<Int(overflowIndex) {
             prepareContacts(Int32(i), contactSoftness, staticSoftness, context)
         }
+        prepareWideContacts()
     }
 
     // MARK: Warm start
 
     func warmStartContacts(_ colorIndex: Int32, _ mesh: Bool) {
+        if usesWideContacts(colorIndex, mesh) {
+            warmStartContactsWide(colorIndex, mesh)
+            return
+        }
         let range = solverContacts.range(colorIndex, mesh)
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
@@ -522,6 +532,10 @@ extension World {
     // MARK: Push (non-penetration with soft bias)
 
     func pushContacts(_ colorIndex: Int32, _ context: StepContext, _ mesh: Bool) {
+        if usesWideContacts(colorIndex, mesh) {
+            pushContactsWide(colorIndex, context, mesh)
+            return
+        }
         let range = solverContacts.range(colorIndex, mesh)
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
@@ -620,6 +634,10 @@ extension World {
     // MARK: Solve (relax)
 
     func solveContacts(_ colorIndex: Int32, _ context: StepContext, _ mesh: Bool) {
+        if usesWideContacts(colorIndex, mesh) {
+            solveContactsWide(colorIndex, context, mesh)
+            return
+        }
         let range = solverContacts.range(colorIndex, mesh)
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
@@ -788,6 +806,10 @@ extension World {
     // MARK: Restitution
 
     func applyRestitution(_ colorIndex: Int32, _ context: StepContext, _ mesh: Bool) {
+        if usesWideContacts(colorIndex, mesh) {
+            applyRestitutionWide(colorIndex, context, mesh)
+            return
+        }
         let range = solverContacts.range(colorIndex, mesh)
         let list = solverContacts.constraints[Int(colorIndex)]
         withSolverStates { states in
@@ -877,44 +899,38 @@ extension World {
     // MARK: Store
 
     func storeImpulses(_ colorIndex: Int32, _ mesh: Bool) {
+        if usesWideContacts(colorIndex, mesh) {
+            storeImpulsesWide(colorIndex, mesh)
+            return
+        }
         let list = solverContacts.constraints[Int(colorIndex)]
         let range = solverContacts.range(colorIndex, mesh)
-        let pool = solverContacts.manifoldPool
-        // Write through the element rather than through a `var contact = contacts[...]` copy: the
-        // copy makes `manifolds` multiply referenced, so every point store would reallocate the
-        // array (copy-on-write) instead of updating it in place.
-        contacts.withUnsafeMutableBufferPointer { store in
-            for constraintIndex in range {
-                let c = list[constraintIndex]
-                let contactId = Int(c.contactId)
-                guard store[contactId].manifoldCount > 0 else {
-                    continue
-                }
-
-                let hitEvents = (store[contactId].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
-
-                for manifoldOffset in 0..<Int(c.manifoldCount) {
-                    let cm = pool[Int(c.manifoldStart) + manifoldOffset]
-                    let pointCount = Int(minInt(store[contactId].manifolds[manifoldOffset].pointCount, cm.pointCount))
-
-                    for pointIndex in 0..<pointCount {
-                        let cp = cm.points[pointIndex]
-                        store[contactId].manifolds[manifoldOffset].points[pointIndex].normalImpulse =
-                            cp.normalImpulse
-                        store[contactId].manifolds[manifoldOffset].points[pointIndex].totalNormalImpulse =
-                            cp.totalNormalImpulse
-
-                        // The hit-event pass reads the approach speed recorded at prepare time.
-                        if hitEvents {
-                            store[contactId].manifolds[manifoldOffset].points[pointIndex].normalVelocity =
-                                cp.relativeVelocity
+        guard !range.isEmpty else { return }
+        solverContacts.manifoldPool.withUnsafeBufferPointer { pool in
+            contacts.withUnsafeMutableBufferPointer { store in
+                for constraintIndex in range {
+                    let c = list[constraintIndex]
+                    let id = Int(c.contactId)
+                    guard store[id].manifoldCount > 0 else { continue }
+                    let hitEvents = (store[id].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
+                    store[id].manifolds.withUnsafeMutableBufferPointer { manifolds in
+                        for offset in 0..<Int(c.manifoldCount) {
+                            let cm = pool.baseAddress! + Int(c.manifoldStart) + offset
+                            let out = manifolds.baseAddress! + offset
+                            let count = Int(minInt(out.pointee.pointCount, cm.pointee.pointCount))
+                            for pi in 0..<count {
+                                out.pointee.points[pi].normalImpulse = cm.pointee.points[pi].normalImpulse
+                                out.pointee.points[pi].totalNormalImpulse = cm.pointee.points[pi].totalNormalImpulse
+                                if hitEvents {
+                                    out.pointee.points[pi].normalVelocity = cm.pointee.points[pi].relativeVelocity
+                                }
+                            }
+                            out.pointee.twistImpulse = cm.pointee.twistImpulse
+                            out.pointee.frictionImpulse = cm.pointee.frictionImpulse.x * cm.pointee.tangent1
+                                + cm.pointee.frictionImpulse.y * cm.pointee.tangent2
+                            out.pointee.rollingImpulse = cm.pointee.rollingImpulse
                         }
                     }
-
-                    store[contactId].manifolds[manifoldOffset].twistImpulse = cm.twistImpulse
-                    store[contactId].manifolds[manifoldOffset].frictionImpulse =
-                        cm.frictionImpulse.x * cm.tangent1 + cm.frictionImpulse.y * cm.tangent2
-                    store[contactId].manifolds[manifoldOffset].rollingImpulse = cm.rollingImpulse
                 }
             }
         }
@@ -922,6 +938,7 @@ extension World {
 
     /// Store impulses for the whole graph.
     func storeAllImpulses() {
+        storeWideJointImpulses()
         for mesh in [false, true] {
             storeImpulses(overflowIndex, mesh)
             for i in 0..<Int(overflowIndex) {
@@ -946,33 +963,13 @@ extension World {
 
     func pushAll(_ context: StepContext) {
         solveJoints(overflowIndex, context, true)
-        pushConvex(overflowIndex, context)
+        pushContacts(overflowIndex, context, false)
         pushContacts(overflowIndex, context, true)
         for i in 0..<Int(overflowIndex) {
             solveJoints(Int32(i), context, true)
-            pushConvex(Int32(i), context)
+            pushContacts(Int32(i), context, false)
             pushContacts(Int32(i), context, true)
         }
-    }
-
-    /// Convex contacts go through the 4-lane path when it is enabled and there are enough of them.
-    @inline(__always)
-    func pushConvex(_ colorIndex: Int32, _ context: StepContext) {
-        if enableWideSolver {
-            pushContactsConvexWide(colorIndex, context)
-        } else {
-            pushContacts(colorIndex, context, false)
-        }
-    }
-
-    /// Push the convex contacts of one color through the 4-lane path, falling back to the scalar
-    /// loop when there are not enough contacts to fill a batch.
-    func pushContactsConvexWide(_ colorIndex: Int32, _ context: StepContext) {
-        guard solverContacts.range(colorIndex, false).count >= 4 else {
-            pushContacts(colorIndex, context, false)
-            return
-        }
-        pushContactsWide(colorIndex, context)
     }
 
     func solveAll(_ context: StepContext) {
@@ -992,241 +989,6 @@ extension World {
         for i in 0..<Int(overflowIndex) {
             applyRestitution(Int32(i), context, false)
             applyRestitution(Int32(i), context, true)
-        }
-    }
-}
-
-// MARK: - Wide contact solve (4 lanes)
-
-extension World {
-    /// Solve four convex contacts per pass, mirroring C's `b3PushContactsW`. Lane `i` runs the same
-    /// scalar expressions as `pushContacts`, so the result is bit-identical; C verifies the same
-    /// equivalence between its NEON path and the scalar fallback.
-    ///
-    /// The three arrays are copied into local `var`s, mutated through one flat pointer each, and
-    /// published back once. Swift's exclusive-access rule forbids nesting `withUnsafeMutable...`
-    /// over overlapping state, so the pointers are taken explicitly.
-    func pushContactsWide(_ colorIndex: Int32, _ context: StepContext) {
-        let range = solverContacts.range(colorIndex, false)
-        guard range.count >= 4 else {
-            pushContacts(colorIndex, context, false)
-            return
-        }
-
-        let inv_h = FloatW(repeating: context.inv_h)
-        let contactSpeedW = FloatW(repeating: -contactSpeed)
-        let zeroW = FloatW(repeating: 0)
-        let oneW = FloatW(repeating: 1)
-
-        let dynBias = context.contactSoftness.massScale * context.contactSoftness.biasRate
-        let dynMass = context.contactSoftness.massScale
-        let dynImpulse = context.contactSoftness.impulseScale
-        let statBias = context.staticSoftness.massScale * context.staticSoftness.biasRate
-        let statMass = context.staticSoftness.massScale
-        let statImpulse = context.staticSoftness.impulseScale
-
-        let awakeSet = Int(SetType.awakeSet.rawValue)
-
-        var colorConstraints = solverContacts.constraints[Int(colorIndex)]
-        var poolArray = solverContacts.manifoldPool
-        var stateArray = solverSets[awakeSet].bodyStates
-
-        let constraintCount = colorConstraints.count
-        let poolCount = poolArray.count
-        let stateCount = stateArray.count
-
-        colorConstraints.withUnsafeMutableBufferPointer { csBuf in
-            poolArray.withUnsafeMutableBufferPointer { poolBuf in
-                stateArray.withUnsafeMutableBufferPointer { stateBuf in
-                    widePushBody(
-                        csBuf, constraintCount, poolBuf, poolCount,
-                        stateBuf, stateCount, range,
-                        inv_h, contactSpeedW, zeroW, oneW,
-                        dynBias, dynMass, dynImpulse,
-                        statBias, statMass, statImpulse)
-                }
-            }
-        }
-
-        solverContacts.constraints[Int(colorIndex)] = colorConstraints
-        solverContacts.manifoldPool = poolArray
-        solverSets[awakeSet].bodyStates = stateArray
-    }
-
-    /// The 4-lane push loop, split out so the closure nesting stays shallow.
-    private func widePushBody(
-        _ cs: UnsafeMutableBufferPointer<ContactConstraint>, _ csCount: Int,
-        _ pool: UnsafeMutableBufferPointer<ManifoldConstraint>, _ poolCount: Int,
-        _ states: UnsafeMutableBufferPointer<BodyState>, _ stateCount: Int,
-        _ range: Range<Int>,
-        _ inv_h: FloatW, _ contactSpeedW: FloatW, _ zeroW: FloatW, _ oneW: FloatW,
-        _ dynBias: Float, _ dynMass: Float, _ dynImpulse: Float,
-        _ statBias: Float, _ statMass: Float, _ statImpulse: Float
-    ) {
-        _ = csCount
-        _ = poolCount
-        _ = stateCount
-
-        var batch = range.lowerBound
-        while batch < range.upperBound {
-            let lanes = min(4, range.upperBound - batch)
-
-            var invMassA = FloatW(repeating: 0)
-            var invMassB = FloatW(repeating: 0)
-            var invIA = SymMatrix3W()
-            var invIB = SymMatrix3W()
-            var softMask = FloatW(repeating: 0)
-            var idxA = SIMD4<Int32>(repeating: 0)
-            var idxB = SIMD4<Int32>(repeating: 0)
-            var bA = BodyStateW()
-            var bB = BodyStateW()
-
-            for lane in 0..<lanes {
-                let c = cs[batch + lane]
-                idxA[lane] = c.indexA + 1
-                idxB[lane] = c.indexB + 1
-                invMassA[lane] = c.invMassA
-                invMassB[lane] = c.invMassB
-                invIA.xx[lane] = c.invIA.cxx
-                invIA.yy[lane] = c.invIA.cyy
-                invIA.zz[lane] = c.invIA.czz
-                invIA.xy[lane] = c.invIA.cxy
-                invIA.xz[lane] = c.invIA.cxz
-                invIA.yz[lane] = c.invIA.cyz
-                invIB.xx[lane] = c.invIB.cxx
-                invIB.yy[lane] = c.invIB.cyy
-                invIB.zz[lane] = c.invIB.czz
-                invIB.xy[lane] = c.invIB.cxy
-                invIB.xz[lane] = c.invIB.cxz
-                invIB.yz[lane] = c.invIB.cyz
-                softMask[lane] = c.indexA < 0 ? 1 : 0
-
-                let sa = idxA[lane] == 0 ? BodyState.identity : states[Int(idxA[lane] - 1)]
-                let sb = idxB[lane] == 0 ? BodyState.identity : states[Int(idxB[lane] - 1)]
-                bA.v.x[lane] = sa.linearVelocity.x
-                bA.v.y[lane] = sa.linearVelocity.y
-                bA.v.z[lane] = sa.linearVelocity.z
-                bA.w.x[lane] = sa.angularVelocity.x
-                bA.w.y[lane] = sa.angularVelocity.y
-                bA.w.z[lane] = sa.angularVelocity.z
-                bA.dp.x[lane] = sa.deltaPosition.x
-                bA.dp.y[lane] = sa.deltaPosition.y
-                bA.dp.z[lane] = sa.deltaPosition.z
-                bA.dq.v.x[lane] = sa.deltaRotation.v.x
-                bA.dq.v.y[lane] = sa.deltaRotation.v.y
-                bA.dq.v.z[lane] = sa.deltaRotation.v.z
-                bA.dq.s[lane] = sa.deltaRotation.s
-
-                bB.v.x[lane] = sb.linearVelocity.x
-                bB.v.y[lane] = sb.linearVelocity.y
-                bB.v.z[lane] = sb.linearVelocity.z
-                bB.w.x[lane] = sb.angularVelocity.x
-                bB.w.y[lane] = sb.angularVelocity.y
-                bB.w.z[lane] = sb.angularVelocity.z
-                bB.dp.x[lane] = sb.deltaPosition.x
-                bB.dp.y[lane] = sb.deltaPosition.y
-                bB.dp.z[lane] = sb.deltaPosition.z
-                bB.dq.v.x[lane] = sb.deltaRotation.v.x
-                bB.dq.v.y[lane] = sb.deltaRotation.v.y
-                bB.dq.v.z[lane] = sb.deltaRotation.v.z
-                bB.dq.s[lane] = sb.deltaRotation.s
-            }
-
-            let biasRate = selectW(softMask, FloatW(repeating: statBias), FloatW(repeating: dynBias))
-            let massScale = selectW(softMask, FloatW(repeating: statMass), FloatW(repeating: dynMass))
-            let impulseScale = selectW(
-                softMask, FloatW(repeating: statImpulse), FloatW(repeating: dynImpulse))
-
-            let dp = subW(bB.dp, bA.dp)
-            let invMass = invMassA + invMassB
-
-            var normalW = Vec3W()
-            var pointCount = 0
-            for lane in 0..<lanes {
-                let cm = pool[Int(cs[batch + lane].manifoldStart)]
-                normalW.x[lane] = cm.normal.x
-                normalW.y[lane] = cm.normal.y
-                normalW.z[lane] = cm.normal.z
-                pointCount = max(pointCount, Int(cm.pointCount))
-            }
-
-            let normalSeparation = dotW(normalW, dp)
-            let normalA = invRotateVecW(bA.dq, normalW)
-            let normalB = invRotateVecW(bB.dq, normalW)
-            var linearNormalVelocity = dotW(normalW, subW(bB.v, bA.v))
-            var manifoldImpulse = zeroW
-
-            for pointIndex in 0..<pointCount {
-                var rA = Vec3W(), rB = Vec3W()
-                var baseSep = FloatW(repeating: 0)
-                var normalMass = FloatW(repeating: 0)
-                var normalImpulse = FloatW(repeating: 0)
-
-                for lane in 0..<lanes {
-                    let base = Int(cs[batch + lane].manifoldStart)
-                    guard pointIndex < Int(pool[base].pointCount) else { continue }
-                    let cp = pool[base].points[pointIndex]
-                    rA[lane] = cp.rA
-                    rB[lane] = cp.rB
-                    baseSep[lane] = cp.baseSeparation
-                    normalMass[lane] = cp.normalMass
-                    normalImpulse[lane] = cp.normalImpulse
-                }
-
-                let s = normalSeparation + (dotW(normalB, rB) - dotW(normalA, rA)) + baseSep
-                let separated = greaterW(s, zeroW)
-                let specBias = s * inv_h
-                let overlapBias = maxW(biasRate * s, contactSpeedW)
-                let velocityBias = selectW(separated, specBias, overlapBias)
-                let pointMassScale = selectW(separated, oneW, massScale)
-                let pointImpulseScale = selectW(separated, zeroW, impulseScale)
-
-                let uA = crossW(rA, normalW)
-                let uB = crossW(rB, normalW)
-                let gA = mulMVW(invIA, uA)
-                let gB = mulMVW(invIB, uB)
-
-                let vn = linearNormalVelocity + (dotW(uB, bB.w) - dotW(uA, bA.w))
-                let negImpulse =
-                    normalMass * (pointMassScale * vn + velocityBias)
-                    + pointImpulseScale * normalImpulse
-                let impulse = maxW(-negImpulse, -normalImpulse)
-                let newImpulse = normalImpulse + impulse
-
-                linearNormalVelocity = linearNormalVelocity + invMass * impulse
-                manifoldImpulse = manifoldImpulse + impulse
-                bA.w = subW(bA.w, mulW(impulse, gA))
-                bB.w = addW(bB.w, mulW(impulse, gB))
-
-                for lane in 0..<lanes {
-                    let base = Int(cs[batch + lane].manifoldStart)
-                    guard pointIndex < Int(pool[base].pointCount) else { continue }
-                    pool[base].points[pointIndex].normalImpulse = newImpulse[lane]
-                }
-            }
-
-            let P = mulSVW(manifoldImpulse, normalW)
-            bA.v = subW(bA.v, mulW(invMassA, P))
-            bB.v = addW(bB.v, mulW(invMassB, P))
-
-            for lane in 0..<lanes {
-                if idxA[lane] != 0 {
-                    let local = Int(idxA[lane] - 1)
-                    if (states[local].flags & BodyFlags.dynamicFlag.rawValue) != 0 {
-                        states[local].linearVelocity = bA.v[lane]
-                        states[local].angularVelocity = bA.w[lane]
-                    }
-                }
-                if idxB[lane] != 0 {
-                    let local = Int(idxB[lane] - 1)
-                    if (states[local].flags & BodyFlags.dynamicFlag.rawValue) != 0 {
-                        states[local].linearVelocity = bB.v[lane]
-                        states[local].angularVelocity = bB.w[lane]
-                    }
-                }
-            }
-
-            batch += lanes
         }
     }
 }

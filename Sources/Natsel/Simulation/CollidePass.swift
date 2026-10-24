@@ -222,152 +222,158 @@ extension World {
         store: inout ContactStore,
         _ recycledCount: UnsafeMutablePointer<Int32>?
     ) {
-        var contact = store.get(contactId)
-        b3Assert(contact.contactId == contactId)
+        // Borrow the stored contact so recycling does not retain and then copy its manifolds.
+        let update = store.withContact(contactId) { contact -> (BodySim, BodySim, Bool)? in
+            b3Assert(contact.contactId == contactId)
 
-        let shapeIdA = contact.shapeIdA
-        let shapeIdB = contact.shapeIdB
+            let shapeIdA = contact.shapeIdA
+            let shapeIdB = contact.shapeIdB
 
-        // Do proxies still overlap?
-        let overlap = aabbOverlaps(fatAABBs[Int(shapeIdA)], fatAABBs[Int(shapeIdB)])
-        if overlap == false {
-            // This contact will be destroyed
-            contact.flags |= ContactFlags.simDisjoint.rawValue
-            contact.flags &= ~ContactFlags.simTouching.rawValue
-            store.set(contactId, contact)
-            stateBits.setBit(UInt32(contactId))
-            return
-        }
+            // Do proxies still overlap?
+            let overlap = aabbOverlaps(fatAABBs[Int(shapeIdA)], fatAABBs[Int(shapeIdB)])
+            if overlap == false {
+                // This contact will be destroyed
+                contact.flags |= ContactFlags.simDisjoint.rawValue
+                contact.flags &= ~ContactFlags.simTouching.rawValue
+                stateBits.setBit(UInt32(contactId))
+                return nil
+            }
 
-        // Update contact respecting shape/body order (A,B)
-        let encodedA = contact.encodedBodySimA
-        let encodedB = contact.encodedBodySimB
-        let locA = resolveContactBodySimIndex(encodedA, contact.edges[0].bodyId)
-        let locB = resolveContactBodySimIndex(encodedB, contact.edges[1].bodyId)
-        let bodySimA = bodySimAt(locA.set, locA.local)
-        let bodySimB = bodySimAt(locB.set, locB.local)
+            // Update contact respecting shape/body order (A,B)
+            let encodedA = contact.encodedBodySimA
+            let encodedB = contact.encodedBodySimB
+            let locA = resolveContactBodySimIndex(encodedA, contact.edges[0].bodyId)
+            let locB = resolveContactBodySimIndex(encodedB, contact.edges[1].bodyId)
+            let bodySimA = bodySimAt(locA.set, locA.local)
+            let bodySimB = bodySimAt(locB.set, locB.local)
 
-        let wasTouching = (contact.flags & ContactFlags.simTouching.rawValue) != 0
+            let wasTouching = (contact.flags & ContactFlags.simTouching.rawValue) != 0
 
-        let transformA = bodySimA.transform
-        let transformB = bodySimB.transform
+            let transformA = bodySimA.transform
+            let transformB = bodySimB.transform
 
-        let isFast = ((bodySimA.flags | bodySimB.flags) & BodyFlags.isFast.rawValue) != 0
+            let isFast = ((bodySimA.flags | bodySimB.flags) & BodyFlags.isFast.rawValue) != 0
 
-        let recycleDistance = contactRecycleDistance
-        let speculativeDistance = B3.speculativeDistance
-        let recycleDistanceNonTouching = minFloat(recycleDistance, speculativeDistance)
-        let recycleTolerance = wasTouching ? recycleDistance : recycleDistanceNonTouching
+            let recycleDistance = contactRecycleDistance
+            let speculativeDistance = B3.speculativeDistance
+            let recycleDistanceNonTouching = minFloat(recycleDistance, speculativeDistance)
+            let recycleTolerance = wasTouching ? recycleDistance : recycleDistanceNonTouching
 
-        // Contact recycling optimization.
-        if isFast == false && recycleDistance > 0
-            && (contact.flags & ContactFlags.relativeTransformValid.rawValue) != 0
-            && (contact.flags & ContactFlags.recycle.rawValue) != 0
-        {
-            // The scalar part of b3InvMulQuat is just the quaternion dot product.
-            let angleA = dotQuat(transformA.q, contact.cachedRotationA)
-            let angleB = dotQuat(transformB.q, contact.cachedRotationB)
-            let angularDistance = minFloat(angleA * angleA, angleB * angleB)
-
-            let xf = invMulWorldTransforms(transformA, transformB)
-            let xfc = contact.cachedRelativePose
-            let maxExtentA = isStaticSimIndex(encodedA) ? Vec3() : bodySimA.maxExtent
-            let maxExtentB = isStaticSimIndex(encodedB) ? Vec3() : bodySimB.maxExtent
-            let maxExtent = maxVec3(maxExtentA, maxExtentB)
-
-            let distSquared = distanceSquared(xf.p, xfc.p)
-
-            if angularDistance > B3.contactRecycleAngularDistance && distSquared < recycleTolerance * recycleTolerance
+            // Contact recycling optimization.
+            if isFast == false && recycleDistance > 0
+                && (contact.flags & ContactFlags.relativeTransformValid.rawValue) != 0
+                && (contact.flags & ContactFlags.recycle.rawValue) != 0
             {
-                let distance = distSquared.squareRoot()
-                let slack = recycleTolerance - distance
+                // The scalar part of b3InvMulQuat is just the quaternion dot product.
+                let angleA = dotQuat(transformA.q, contact.cachedRotationA)
+                let angleB = dotQuat(transformB.q, contact.cachedRotationB)
+                let angularDistance = minFloat(angleA * angleA, angleB * angleB)
 
-                let qr = invMulQuat(xfc.q, xf.q)
-                let arc = modifiedCross(absVec3(qr.v), maxExtent)
+                let xf = invMulWorldTransforms(transformA, transformB)
+                let xfc = contact.cachedRelativePose
+                let maxExtentA = isStaticSimIndex(encodedA) ? Vec3() : bodySimA.maxExtent
+                let maxExtentB = isStaticSimIndex(encodedB) ? Vec3() : bodySimB.maxExtent
+                let maxExtent = maxVec3(maxExtentA, maxExtentB)
 
-                let arcSq = 4.0 * lengthSquared(arc)
-                if arcSq < slack * slack {
-                    let dqA = mulQuat(transformA.q, conjugate(contact.cachedRotationA))
-                    let dqB = mulQuat(transformB.q, conjugate(contact.cachedRotationB))
-                    let matrixA = makeMatrixFromQuat(dqA)
-                    let matrixB = makeMatrixFromQuat(dqB)
+                let distSquared = distanceSquared(xf.p, xfc.p)
 
-                    // Minimize round-off
-                    let dc = subPos(bodySimB.center, bodySimA.center)
+                if angularDistance > B3.contactRecycleAngularDistance
+                    && distSquared < recycleTolerance * recycleTolerance
+                {
+                    let distance = distSquared.squareRoot()
+                    let slack = recycleTolerance - distance
 
-                    let manifoldCount = contact.manifoldCount
-                    for manifoldIndex in 0..<Int(manifoldCount) {
-                        var manifold = contact.manifolds[manifoldIndex]
-                        let normal = manifold.normal
-                        let pointCount = manifold.pointCount
+                    let qr = invMulQuat(xfc.q, xf.q)
+                    let arc = modifiedCross(absVec3(qr.v), maxExtent)
 
-                        for pointIndex in 0..<Int(pointCount) {
-                            // Keep anchors but update separation, same as sub-stepping.
-                            var mp = manifold.points[pointIndex]
-                            let rA = mulMV(matrixA, mp.anchorA)
-                            let rB = mulMV(matrixB, mp.anchorB)
-                            let dp = dc + (rB - rA)
-                            mp.separation = mp.baseSeparation + dot(dp, normal)
-                            mp.normalVelocity = 0
-                            mp.persisted = true
-                            manifold.points[pointIndex] = mp
+                    let arcSq = 4.0 * lengthSquared(arc)
+                    if arcSq < slack * slack {
+                        let dqA = mulQuat(transformA.q, conjugate(contact.cachedRotationA))
+                        let dqB = mulQuat(transformB.q, conjugate(contact.cachedRotationB))
+                        let matrixA = makeMatrixFromQuat(dqA)
+                        let matrixB = makeMatrixFromQuat(dqB)
+
+                        // Minimize round-off
+                        let dc = subPos(bodySimB.center, bodySimA.center)
+
+                        let manifoldCount = contact.manifoldCount
+                        for manifoldIndex in 0..<Int(manifoldCount) {
+                            var manifold = contact.manifolds[manifoldIndex]
+                            let normal = manifold.normal
+                            let pointCount = manifold.pointCount
+
+                            for pointIndex in 0..<Int(pointCount) {
+                                // Keep anchors but update separation, same as sub-stepping.
+                                var mp = manifold.points[pointIndex]
+                                let rA = mulMV(matrixA, mp.anchorA)
+                                let rB = mulMV(matrixB, mp.anchorB)
+                                let dp = dc + (rB - rA)
+                                mp.separation = mp.baseSeparation + dot(dp, normal)
+                                mp.normalVelocity = 0
+                                mp.persisted = true
+                                manifold.points[pointIndex] = mp
+                            }
+
+                            contact.manifolds[manifoldIndex] = manifold
                         }
 
-                        contact.manifolds[manifoldIndex] = manifold
+                        // Contact is recycled. This also skips updating other aspects of the contact
+                        // such as material parameters.
+                        if let recycledCount {
+                            recycledCount.pointee += 1
+                        } else {
+                            taskContexts[0].recycledContactCount += 1
+                        }
+                        return nil
                     }
-
-                    // Contact is recycled. This also skips updating other aspects of the contact
-                    // such as material parameters.
-                    store.set(contactId, contact)
-                    if let recycledCount { recycledCount.pointee += 1 } else { taskContexts[0].recycledContactCount += 1 }
-                    return
                 }
             }
-        }
 
-        // Caching for contact recycling.
-        contact.cachedRotationA = transformA.q
-        contact.cachedRotationB = transformB.q
-        contact.cachedRelativePose = invMulWorldTransforms(transformA, transformB)
-        contact.flags |= ContactFlags.relativeTransformValid.rawValue
-        store.set(contactId, contact)
+            // Caching for contact recycling.
+            contact.cachedRotationA = transformA.q
+            contact.cachedRotationB = transformB.q
+            contact.cachedRelativePose = invMulWorldTransforms(transformA, transformB)
+            contact.flags |= ContactFlags.relativeTransformValid.rawValue
+
+            return (bodySimA, bodySimB, wasTouching)
+        }
+        guard let (bodySimA, bodySimB, wasTouching) = update else { return }
 
         // This updates solid contacts
         let touching = updateContact(
-            contactId, bodySimA.localCenter, transformA, bodySimB.localCenter, transformB, isFast,
-            &store
+            contactId, bodySimA.localCenter, bodySimA.transform, bodySimB.localCenter, bodySimB.transform,
+            ((bodySimA.flags | bodySimB.flags) & BodyFlags.isFast.rawValue) != 0, &store
         )
 
-        contact = store.get(contactId)
+        store.withContact(contactId) { contact in
 
-        if touching && wasTouching && contact.flags & ContactFlags.simMeshContact.rawValue != 0 {
-            constraintGraph.colors[Int(contact.colorIndex)].contacts[Int(contact.localIndex)].manifoldCount = UInt16(contact.manifoldCount)
-        }
-
-        if touching && wasTouching == false {
-            contact.flags |= ContactFlags.simStartedTouching.rawValue
-            store.set(contactId, contact)
-            stateBits.setBit(UInt32(contactId))
-        } else if touching == false && wasTouching {
-            contact.flags |= ContactFlags.simStoppedTouching.rawValue
-            store.set(contactId, contact)
-            stateBits.setBit(UInt32(contactId))
-        }
-
-        if touching {
-            let manifoldCount = contact.manifoldCount
-            for manifoldIndex in 0..<Int(manifoldCount) {
-                var manifold = contact.manifolds[manifoldIndex]
-                let pointCount = manifold.pointCount
-                for pointIndex in 0..<Int(pointCount) {
-                    // Cache separation
-                    var mp = manifold.points[pointIndex]
-                    mp.baseSeparation = mp.separation
-                    manifold.points[pointIndex] = mp
-                }
-                contact.manifolds[manifoldIndex] = manifold
+            if touching && wasTouching && contact.flags & ContactFlags.simMeshContact.rawValue != 0 {
+                constraintGraph.colors[Int(contact.colorIndex)].contacts[Int(contact.localIndex)].manifoldCount =
+                    UInt16(contact.manifoldCount)
             }
-            store.set(contactId, contact)
+
+            if touching && wasTouching == false {
+                contact.flags |= ContactFlags.simStartedTouching.rawValue
+                stateBits.setBit(UInt32(contactId))
+            } else if touching == false && wasTouching {
+                contact.flags |= ContactFlags.simStoppedTouching.rawValue
+                stateBits.setBit(UInt32(contactId))
+            }
+
+            if touching {
+                let manifoldCount = contact.manifoldCount
+                for manifoldIndex in 0..<Int(manifoldCount) {
+                    var manifold = contact.manifolds[manifoldIndex]
+                    let pointCount = manifold.pointCount
+                    for pointIndex in 0..<Int(pointCount) {
+                        // Cache separation
+                        var mp = manifold.points[pointIndex]
+                        mp.baseSeparation = mp.separation
+                        manifold.points[pointIndex] = mp
+                    }
+                    contact.manifolds[manifoldIndex] = manifold
+                }
+            }
         }
     }
 

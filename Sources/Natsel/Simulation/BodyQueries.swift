@@ -1399,15 +1399,9 @@ extension World {
                 index1: shapeA.id + 1, world0: worldId, generation: shapeA.generation)
             data.shapeIdB = ShapeID(
                 index1: shapeB.id + 1, world0: worldId, generation: shapeB.generation)
-            data.manifolds = contact.manifolds.withUnsafeBufferPointer {
-                UnsafeBufferPointer(start: $0.baseAddress, count: Int(contact.manifoldCount))
-            }
+            data.manifolds = contact.manifoldBuffer
             result.append(data)
-            // Copy the manifolds out so the buffer does not outlive the contact storage.
-            var owned = contact.manifolds
-            owned.withUnsafeMutableBufferPointer { buffer in
-                data.manifolds = UnsafeBufferPointer(start: buffer.baseAddress, count: Int(contact.manifoldCount))
-            }
+
         }
 
         return result
@@ -1579,12 +1573,7 @@ extension World {
             data.shapeIdB = ShapeID(
                 index1: shapeB.id + 1, world0: worldId, generation: shapeB.generation)
 
-            var manifolds = contact.manifolds
-            let count = Int(contact.manifoldCount)
-            manifolds.withUnsafeMutableBufferPointer { buffer in
-                data.manifolds = UnsafeBufferPointer(
-                    start: buffer.baseAddress, count: count)
-            }
+            data.manifolds = contact.manifoldBuffer
             result.append(data)
         }
 

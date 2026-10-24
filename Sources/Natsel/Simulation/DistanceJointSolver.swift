@@ -36,47 +36,47 @@ extension World {
         }
     }
 
-    func warmStartJoint(_ sim: inout JointSim, _ context: StepContext) {
+    func warmStartJoint(_ sim: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         switch sim.type {
         case .distanceJoint:
-            warmStartDistanceJoint(&sim, context)
+            warmStartDistanceJoint(&sim, context, states)
         case .revoluteJoint:
-            warmStartRevoluteJoint(&sim, context)
+            warmStartRevoluteJoint(&sim, context, states)
         case .weldJoint:
-            warmStartWeldJoint(&sim, context)
+            warmStartWeldJoint(&sim, context, states)
         case .parallelJoint:
-            warmStartParallelJoint(&sim, context)
+            warmStartParallelJoint(&sim, context, states)
         case .motorJoint:
-            warmStartMotorJoint(&sim, context)
+            warmStartMotorJoint(&sim, context, states)
         case .prismaticJoint:
-            warmStartPrismaticJoint(&sim, context)
+            warmStartPrismaticJoint(&sim, context, states)
         case .sphericalJoint:
-            warmStartSphericalJoint(&sim, context)
+            warmStartSphericalJoint(&sim, context, states)
         case .wheelJoint:
-            warmStartWheelJoint(&sim, context)
+            warmStartWheelJoint(&sim, context, states)
         default:
             break
         }
     }
 
-    func solveJoint(_ sim: inout JointSim, _ context: StepContext, _ useBias: Bool) {
+    func solveJoint(_ sim: inout JointSim, _ context: StepContext, _ useBias: Bool, _ states: UnsafeMutableBufferPointer<BodyState>) {
         switch sim.type {
         case .distanceJoint:
-            solveDistanceJoint(&sim, context, useBias)
+            solveDistanceJoint(&sim, context, useBias, states)
         case .revoluteJoint:
-            solveRevoluteJoint(&sim, context, useBias)
+            solveRevoluteJoint(&sim, context, useBias, states)
         case .weldJoint:
-            solveWeldJoint(&sim, context, useBias)
+            solveWeldJoint(&sim, context, useBias, states)
         case .parallelJoint:
-            solveParallelJoint(&sim, context)
+            solveParallelJoint(&sim, context, states)
         case .motorJoint:
-            solveMotorJoint(&sim, context)
+            solveMotorJoint(&sim, context, states)
         case .prismaticJoint:
-            solvePrismaticJoint(&sim, context, useBias)
+            solvePrismaticJoint(&sim, context, useBias, states)
         case .sphericalJoint:
-            solveSphericalJoint(&sim, context, useBias)
+            solveSphericalJoint(&sim, context, useBias, states)
         case .wheelJoint:
-            solveWheelJoint(&sim, context, useBias)
+            solveWheelJoint(&sim, context, useBias, states)
         default:
             break
         }
@@ -88,6 +88,7 @@ extension World {
         for ci in 0..<Int(B3.graphColorCount) {
             prepareJoints(Int32(ci), context)
         }
+        prepareWideJoints()
     }
 
     func warmStartAllJoints(_ context: StepContext) {
@@ -118,18 +119,48 @@ extension World {
 
     /// Warm start the joints of a single graph color.
     func warmStartJoints(_ colorIndex: Int32, _ context: StepContext) {
-        constraintGraph.colors[Int(colorIndex)].jointSims.withUnsafeMutableBufferPointer { list in
-            for i in 0..<list.count {
-                warmStartJoint(&list[i], context)
+        guard !constraintGraph.colors[Int(colorIndex)].jointSims.isEmpty else { return }
+        let ci = Int(colorIndex)
+        let starts = solverJoints.starts[ci]
+        withSolverStates { states in
+            constraintGraph.colors[Int(colorIndex)].jointSims.withUnsafeMutableBufferPointer { list in
+                solverJoints.batches[ci].withUnsafeMutableBufferPointer { batches in
+                    var i = 0
+                    while i < list.count {
+                        if enableWideSolver, !starts.isEmpty, starts[i] >= 0 {
+                            let batch = starts[i]
+                            warmStartSphericalW(batches[batch], states)
+                            i += batches[batch].laneCount
+                        } else {
+                            warmStartJoint(&list[i], context, states)
+                            i += 1
+                        }
+                    }
+                }
             }
         }
     }
 
     /// Solve the joints of a single graph color.
     func solveJoints(_ colorIndex: Int32, _ context: StepContext, _ useBias: Bool) {
-        constraintGraph.colors[Int(colorIndex)].jointSims.withUnsafeMutableBufferPointer { list in
-            for i in 0..<list.count {
-                solveJoint(&list[i], context, useBias)
+        guard !constraintGraph.colors[Int(colorIndex)].jointSims.isEmpty else { return }
+        let ci = Int(colorIndex)
+        let starts = solverJoints.starts[ci]
+        withSolverStates { states in
+            constraintGraph.colors[Int(colorIndex)].jointSims.withUnsafeMutableBufferPointer { list in
+                solverJoints.batches[ci].withUnsafeMutableBufferPointer { batches in
+                    var i = 0
+                    while i < list.count {
+                        if enableWideSolver, !starts.isEmpty, starts[i] >= 0 {
+                            let batch = starts[i]
+                            solveSphericalW(&batches[batch], states, useBias)
+                            i += batches[batch].laneCount
+                        } else {
+                            solveJoint(&list[i], context, useBias, states)
+                            i += 1
+                        }
+                    }
+                }
             }
         }
     }
@@ -192,7 +223,7 @@ extension World {
         base.distanceJoint = joint
     }
 
-    func warmStartDistanceJoint(_ base: inout JointSim, _ context: StepContext) {
+    func warmStartDistanceJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .distanceJoint)
 
         let mA = base.invMassA
@@ -201,8 +232,8 @@ extension World {
         let iB = base.invIB
 
         let joint = base.distanceJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         let rA = rotateVector(stateA.deltaRotation, joint.anchorA)
         let rB = rotateVector(stateB.deltaRotation, joint.anchorB)
@@ -224,11 +255,11 @@ extension World {
             stateB.angularVelocity = stateB.angularVelocity + mulMV(iB, cross(rB, P))
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
     }
 
-    func solveDistanceJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool) {
+    func solveDistanceJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .distanceJoint)
 
         let mA = base.invMassA
@@ -237,8 +268,8 @@ extension World {
         let iB = base.invIB
 
         var joint = base.distanceJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -401,8 +432,8 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
 
         base.distanceJoint = joint
     }

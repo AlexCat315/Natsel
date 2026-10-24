@@ -2,7 +2,7 @@
 
 // Parallel joint (parallel_joint.c). Keeps the bodies aligned along their z-axes.
 
-struct ParallelJointSim {
+struct ParallelJointSim: BitwiseCopyable {
     var hertz: Float = 0
     var dampingRatio: Float = 0
     var maxTorque: Float = 0
@@ -92,15 +92,15 @@ extension World {
         base.parallelJoint = joint
     }
 
-    func warmStartParallelJoint(_ base: inout JointSim, _ context: StepContext) {
+    func warmStartParallelJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .parallelJoint)
 
         let iA = base.invIA
         let iB = base.invIB
 
         let joint = base.parallelJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var wA = stateA.angularVelocity
         var wB = stateB.angularVelocity
@@ -120,17 +120,17 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
     }
 
-    func solveParallelJoint(_ base: inout JointSim, _ context: StepContext) {
+    func solveParallelJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         let iA = base.invIA
         let iB = base.invIB
 
         var joint = base.parallelJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var wA = stateA.angularVelocity
         var wB = stateB.angularVelocity
@@ -205,8 +205,8 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
 
         base.parallelJoint = joint
     }

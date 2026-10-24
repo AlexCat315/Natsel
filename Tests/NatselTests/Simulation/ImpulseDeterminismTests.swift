@@ -35,9 +35,10 @@ struct ImpulseDeterminismTests {
         }
     }
 
-    @Test("rolling resistance mix matches the C impulse hash")
-    func rollingMix() {
+    @Test("rolling resistance mix matches the C impulse hash", arguments: [false, true])
+    func rollingMix(_ wide: Bool) {
         let world = World()
+        world.enableWideSolver = wide
         let ground = world.createBody(BodyDef())
         _ = world.createHullShape(ground, ShapeDef(), makeBoxHull(40, 1, 40))
 
@@ -84,9 +85,28 @@ struct ImpulseDeterminismTests {
         #expect(h == 0x56B2_50F7)
     }
 
-    @Test("mesh mix matches the C velocity and impulse hash")
-    func meshMix() {
+    @Test("mesh mix matches the C velocity and impulse hash", arguments: [false, true])
+    func meshMix(_ wide: Bool) {
+        let (world, bodyIds) = makeMeshMix(wide)
+
+        var h = hashInit
+        for _ in 0..<180 {
+            world.step(1.0 / 60.0, subStepCount: 4)
+            for id in bodyIds {
+                h = hashTransform(h, world.bodyTransform(id))
+                var v = world.bodyLinearVelocity(id)
+                var w = world.bodyAngularVelocity(id)
+                h = hashFloats(h, &v)
+                h = hashFloats(h, &w)
+                hashContacts(world, id, into: &h, capacity: 8)
+            }
+        }
+
+        #expect(h == 0x246C_C2A7)
+    }
+    func makeMeshMix(_ wide: Bool) -> (World, [BodyID]) {
         let world = World()
+        world.enableWideSolver = wide
         let mesh = createWaveMesh(
             xCount: 40, zCount: 40, cellWidth: 0.5, amplitude: 0.3,
             rowFrequency: 0.2, columnFrequency: 0.3
@@ -128,19 +148,33 @@ struct ImpulseDeterminismTests {
             world.setBodyAngularVelocity(id, Vec3(-0.0, sign * 0.5, -0.0))
         }
 
-        var h = hashInit
-        for _ in 0..<180 {
-            world.step(1.0 / 60.0, subStepCount: 4)
-            for id in bodyIds {
-                h = hashTransform(h, world.bodyTransform(id))
-                var v = world.bodyLinearVelocity(id)
-                var w = world.bodyAngularVelocity(id)
-                h = hashFloats(h, &v)
-                h = hashFloats(h, &w)
-                hashContacts(world, id, into: &h, capacity: 8)
+        return (world, bodyIds)
+    }
+
+    @Test("mesh mix preserves every impulse bit")
+    func meshMixPathsAgree() throws {
+        let (scalar, _) = makeMeshMix(false)
+        let (wide, _) = makeMeshMix(true)
+        func bits(_ v: Vec3) -> [UInt32] { [v.x.bitPattern, v.y.bitPattern, v.z.bitPattern] }
+        for step in 0..<180 {
+            scalar.step(1 / 60, subStepCount: 4)
+            wide.step(1 / 60, subStepCount: 4)
+            try #require(scalar.worldStateHash() == wide.worldStateHash(), "state at step \(step)")
+            for id in scalar.contacts.indices {
+                let a = scalar.contacts[id], b = wide.contacts[id]
+                try #require(a.manifoldCount == b.manifoldCount)
+                for mi in 0..<Int(a.manifoldCount) {
+                    let x = a.manifolds[mi], y = b.manifolds[mi]
+                    try #require(bits(x.frictionImpulse) == bits(y.frictionImpulse), "friction step \(step) id \(id) manifold \(mi) \(x.frictionImpulse) != \(y.frictionImpulse)")
+                    try #require(bits(x.rollingImpulse) == bits(y.rollingImpulse), "rolling step \(step) id \(id) manifold \(mi) \(x.rollingImpulse) != \(y.rollingImpulse)")
+                    try #require(x.twistImpulse.bitPattern == y.twistImpulse.bitPattern, "twist step \(step) id \(id) manifold \(mi)")
+                    for pi in 0..<Int(x.pointCount) {
+                        try #require(x.points[pi].normalImpulse.bitPattern == y.points[pi].normalImpulse.bitPattern, "normal step \(step) id \(id) manifold \(mi) point \(pi)")
+                        try #require(x.points[pi].totalNormalImpulse.bitPattern == y.points[pi].totalNormalImpulse.bitPattern, "total step \(step) id \(id) manifold \(mi) point \(pi)")
+                    }
+                }
             }
         }
-
-        #expect(h == 0x246C_C2A7)
     }
+
 }

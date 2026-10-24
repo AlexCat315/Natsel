@@ -2,7 +2,7 @@
 
 // Revolute joint (revolute_joint.c).
 
-struct RevoluteJointSim {
+struct RevoluteJointSim: BitwiseCopyable {
     var linearImpulse = Vec3()
     var perpImpulse = Vec2()
     var springImpulse: Float = 0
@@ -175,7 +175,7 @@ extension World {
         base.revoluteJoint = joint
     }
 
-    func warmStartRevoluteJoint(_ base: inout JointSim, _ context: StepContext) {
+    func warmStartRevoluteJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .revoluteJoint)
 
         let mA = base.invMassA
@@ -184,8 +184,8 @@ extension World {
         let iB = base.invIB
 
         let joint = base.revoluteJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -217,19 +217,19 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
     }
 
-    func solveRevoluteJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool) {
+    func solveRevoluteJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool, _ states: UnsafeMutableBufferPointer<BodyState>) {
         let mA = base.invMassA
         let mB = base.invMassB
         let iA = base.invIA
         let iB = base.invIB
 
         var joint = base.revoluteJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -440,8 +440,8 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
 
         base.revoluteJoint = joint
     }

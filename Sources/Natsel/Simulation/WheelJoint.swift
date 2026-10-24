@@ -3,7 +3,7 @@
 // Wheel joint (wheel_joint.c). Suspension along A's x-axis, spin about B's z-axis, optional
 // steering about A's x-axis.
 
-struct WheelJointSim {
+struct WheelJointSim: BitwiseCopyable {
     var linearImpulse = Vec2()
     var angularImpulse = Vec2()
     var spinImpulse: Float = 0
@@ -181,7 +181,7 @@ extension World {
         base.wheelJoint = joint
     }
 
-    func warmStartWheelJoint(_ base: inout JointSim, _ context: StepContext) {
+    func warmStartWheelJoint(_ base: inout JointSim, _ context: StepContext, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .wheelJoint)
 
         let mA = base.invMassA
@@ -190,8 +190,8 @@ extension World {
         let iB = base.invIB
 
         let joint = base.wheelJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         let rA = rotateVector(stateA.deltaRotation, joint.frameA.p)
         let rB = rotateVector(stateB.deltaRotation, joint.frameB.p)
@@ -263,11 +263,11 @@ extension World {
                 + mulMV(iB, angularImpulseB + angularImpulse)
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
     }
 
-    func solveWheelJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool) {
+    func solveWheelJoint(_ base: inout JointSim, _ context: StepContext, _ useBias: Bool, _ states: UnsafeMutableBufferPointer<BodyState>) {
         b3Assert(base.type == .wheelJoint)
 
         let mA = base.invMassA
@@ -276,8 +276,8 @@ extension World {
         let iB = base.invIB
 
         var joint = base.wheelJoint
-        var stateA = solverState(joint.indexA)
-        var stateB = solverState(joint.indexB)
+        var stateA = World.stateAt(states, joint.indexA)
+        var stateB = World.stateAt(states, joint.indexB)
 
         var vA = stateA.linearVelocity
         var wA = stateA.angularVelocity
@@ -638,8 +638,8 @@ extension World {
             stateB.angularVelocity = wB
         }
 
-        storeSolverState(joint.indexA, stateA)
-        storeSolverState(joint.indexB, stateB)
+        World.setStateAt(states, joint.indexA, stateA)
+        World.setStateAt(states, joint.indexB, stateB)
 
         base.wheelJoint = joint
     }

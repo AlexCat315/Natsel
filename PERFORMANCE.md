@@ -1,5 +1,7 @@
 # Natsel (Swift) vs Box3D (C) 性能报告
 
+> 第一至五节保留原始测量，第六节为首轮优化。当前 10% 目标与后续进展见第七节。
+
 机器：Apple M1，8 核，macOS 27.0.1
 构建：C 为 `-O3 -DNDEBUG`（Release，NEON 4 宽求解器）；Swift 为 `swift build -c release`
 方法：每个场景跑 3 次取最小值，单线程（`workerCount = 1`），`dt = 1/60`，4 子步
@@ -118,3 +120,115 @@ convex_pile）提升 1.7–6x，380 项测试全绿（含全部确定性哈希�
 
 如果只想要单场景达标，`joint_grid` 现在 5.00x 是最差的一个，
 它 100% 是关节求解开销，补完关节的宽路径收益最直接。
+
+
+## 六、四路 SIMD 与碰撞热路径优化（2026-10-23～24）
+
+### 实现
+
+- 新增持久化四路 SoA 接触约束，覆盖 warm start、push、solve、restitution 和冲量回存；
+  凸体和网格多 manifold 接触都使用这条路径，默认开启。每个完整物理步只打包一次，
+  所有子步复用；回存直接从 SIMD lane 写回 Contact，不再每个阶段复制世界数组。
+- 仅对图着色保证动态刚体互不冲突的颜色使用 SIMD。overflow 保持顺序求解，
+  不足四个约束的尾批次用掩码处理；不存在的 manifold lane 与真实的零点 manifold 分开标记。
+- 矩阵乘法保持标量求值括号顺序。SIMD 比较/选择保持 min/max 的操作数规则，
+  取负用符号位翻转，绕过 Swift SIMD 一元负号丢失 signed zero 的行为。
+- 全部八种关节的 warm start/solve 每个颜色只借出一次 bodyStates 缓冲区，
+  避免每个约束反复读取和修改 SolverSet。motor warm start 保持原有运动学刚体写入语义。
+- 接触回收、凸体 manifold 更新及冲量存储借用原地数据，减少 Contact 引用字段的 ARC 和 manifold CoW。
+- 凸体/三角形裁剪的双缓冲区、凸体点归约缓冲区及凸体接触更新的四点 scratch 改用 InlineArray 栈存储。
+  指针仅在借用闭包内使用。
+- island 全量结构检查仅在 Debug 执行。
+
+保持原有 4 子步、求解顺序和浮点运算顺序。可设置 `world.enableWideSolver = false`
+使用标量路径；基准程序支持 `NATSEL_WIDE=0` 与 `NATSEL_WIDE=1` 显式切换，
+`NATSEL_HASH=1` 在计时区间之后输出状态哈希。
+
+### 复测方法
+
+Apple M1、macOS 27.0.1、Swift 6.4.1，标准 `swift build -c release`，单线程、4 子步。
+修改前基于提交 `1600740b69e2ab96bce9fef941a25cc35192a7ef` 保留 Release 可执行文件。
+测试完成后重新执行 `swift build -c release`，避免使用测试构建设置的基准产物。
+逐场景交替执行修改前/后版本，各 3 次取最小值；第二次交换前后顺序。
+世界创建和最终状态哈希均在计时区间之外。
+
+复测脚本：`Tools/Benchmarks/compare.py`。例如：
+
+```sh
+swift build -c release
+python3 Tools/Benchmarks/compare.py /path/to/Benchmarks-before .build/release/Benchmarks \
+  --repeats 3 --output /tmp/natsel-comparison
+```
+
+脚本保存每次完整输出与 `comparison.json`。本机存在其他并行编译任务，绝对耗时有波动；
+因此不把第一节历史 C 时间与本轮 Swift 时间混算成新的 C/Swift 倍数。
+
+### 第一轮实测（不含后续 POD 存储改动）
+
+| 场景 | 修改前 ms | 第一轮后 ms | 提速 |
+|---|---:|---:|---:|
+| large_pyramid | 3667.8 | 2925.5 | 1.25x |
+| many_pyramids | 3649.8 | 2796.9 | 1.30x |
+| joint_grid | 3943.4 | 4014.5 | 0.98x |
+| spinner | 13688.6 | 13235.6 | 1.03x |
+| sleep | 2587.4 | 1911.2 | 1.35x |
+| trees25 | 1817.0 | 1656.9 | 1.10x |
+| trees50 | 757.8 | 705.6 | 1.07x |
+| trees100 | 403.2 | 396.7 | 1.02x |
+| washer | 67907.6 | 56681.3 | 1.20x |
+| convex_pile | 18621.7 | 15284.5 | 1.22x |
+| **合计** | **117044.2** | **99608.6** | **1.18x** |
+
+全量原始数值见 `Tools/Benchmarks/Results/round1-2026-10-24.json`。
+同日 C 四宽参考合计 **25878.8 ms**，见 `c-reference-2026-10-24.json`。
+第一轮 Swift/C 为 **3.85x**；继续优化的验收上限为同机 C 耗时的 **1.10x**，尚未达到。
+
+### 验证与边界
+
+`swift test` 和 `swift test -c release` 均通过 **386 项测试、110 个 suite**。
+
+原有 C 参考确定性测试保留，包括波浪地形、网格、ragdoll、滚动阻力与冲量哈希。
+新增逐步 scalar/SIMD 对照、各求解阶段对照、混合反弹与运动学接触、warm starting 开关、
+尾批次、overflow 顺序，以及 signed zero/NaN 操作数位模式回归。
+
+第一轮时 Contact 仍含引用字段，关节数学求解仍为标量；后续进展见第七节。
+当前准备阶段也保留标量约束和 SIMD 约束两份数据，以复用准备逻辑及标量回退，
+代价是额外的约束内存与一次打包。尚不能据此宣称达到 C 的 5% 以内目标。
+
+
+## 七、继续优化：Swift/C ≤ 1.10（进行中）
+
+同机 C 四宽参考总计 25878.8 ms，因此完整十场景的 Swift 验收上限为 **28466.6 ms**。
+第一轮 Swift 总计 99608.6 ms，尚未达到。当前目标保持不变，不能用单场景或局部测试代替全量达标。
+
+新增实现：
+
+- JointSim 通过 POD 枚举共享八种关节的有效载荷，stride 降至 **444 字节**。
+- Contact 元数据为 **200 字节的 BitwiseCopyable 值**。世界持有稳定地址的 payload slab；
+  单 manifold 内联，多 manifold 才使用数组，Contact 复制不再保留数组。热点视图直接返回稳定地址，
+  避免自定义 `_read` / `_modify` 下标的协程帧分配。查询视图沿用 C 的下一次世界修改前有效的语义。
+- 树查询的 512 项遍历栈使用未初始化的临时存储；默认材质混合内联，仍支持自定义回调。
+- SAT 支持点查询和 face dots 使用四路 SIMD；索引的低位嵌入、近似并列选择及求值顺序保持一致。
+  SAT 的 25 组 scratch 共用未初始化临时 slab，逐项先写后读。
+- 无角向弹簧、马达和限制的球形关节使用四路 point-to-point 求解，按连续独立约束分组，
+  overflow 与复杂关节保留标量路径；仍保留关闭角向功能之后的缓存 warm-start 冲量。
+- 网格候选三角形的三个变换顶点内联；局部接触点填入一份 arena，全部写完后再生成共享只读切片，
+  避免每个三角形单独分配点数组以及写入期间的 arena CoW。
+
+已完成的 POD/SAT 生产版单次检查（**不含随后新增的关节 SIMD 与网格 arena**）：
+
+| 场景 | Swift ms | 状态哈希 |
+|---|---:|---|
+| large_pyramid | 2814.7 | 6cff0dc45097a74b |
+| joint_grid | 2270.7 | ee8b3ae184f13ac5 |
+| convex_pile | 14015.4 | dea6ead80e6871d7 |
+| washer | 51137.4 | 467e0d32bfbea71c |
+
+这些哈希与第一轮对应场景一致，原始数值见
+`Tools/Benchmarks/Results/storage-sat-checkpoint-2026-10-24.json`。这是阶段检查，不能当作十场景总计。
+
+POD/SAT 版本 Release 全量 391 项测试通过。关节 SIMD 与网格 arena 加入后 Debug 全量
+392 项测试通过；最新版本的 Release、Address Sanitizer 和生产性能测量正在验证。
+
+后续重点是去掉标量约束再打包为 SIMD 的双重准备成本，并继续压低网格处理及窄相开销。
+在十场景复测证明 Swift/C ≤ 1.10 之前，目标不算完成。

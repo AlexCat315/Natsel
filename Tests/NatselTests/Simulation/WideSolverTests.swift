@@ -70,6 +70,19 @@ struct WideSolverTests {
         }
     }
 
+    @Test("SIMD negation and selections preserve IEEE operand bits")
+    func signedZeroAndNaN() {
+        let a = FloatW(0, -0.0, Float(bitPattern: 0x7fc0_1234), -3)
+        let b = FloatW(-0.0, 0, 1, Float(bitPattern: 0x7fc0_5678))
+        let negative = negW(a)
+        let maximum = maxW(a, b), minimum = minW(a, b)
+        for lane in 0..<4 {
+            #expect(negative[lane].bitPattern == (-a[lane]).bitPattern)
+            #expect(maximum[lane].bitPattern == maxFloat(a[lane], b[lane]).bitPattern)
+            #expect(minimum[lane].bitPattern == minFloat(a[lane], b[lane]).bitPattern)
+        }
+    }
+
     /// A stack run through the scalar path twice must agree, establishing the baseline the wide
     /// path has to match.
     @Test("stack settles deterministically")

@@ -1,5 +1,3 @@
-
-
 // Broad-phase pair generation and structural contact creation
 // (broad_phase.c pair update and the bookkeeping part of contact.c).
 
@@ -175,6 +173,7 @@ extension World {
         }
 
         var contact = Contact()
+        contact.payload = contactPayloads.initialize(Int(contactId))
         contact.contactId = contactId
         contact.generation = contact.generation &+ 1
         contact.setIndex = setIndex
@@ -193,7 +192,8 @@ extension World {
         }
 
         if case .compound(let compound) = shapeA.geometry,
-           case .mesh = compound.child(at: Int(childIndex)).geometry {
+            case .mesh = compound.child(at: Int(childIndex)).geometry
+        {
             contact.flags |= ContactFlags.simMeshContact.rawValue
         }
 
@@ -396,8 +396,9 @@ extension World {
 
             solverSets[Int(contact.setIndex)] = set
         } else {
-            removeContactFromGraph(bodyIdA, bodyIdB, contact.colorIndex, contact.localIndex,
-                                   (flags & ContactFlags.simMeshContact.rawValue) != 0)
+            removeContactFromGraph(
+                bodyIdA, bodyIdB, contact.colorIndex, contact.localIndex,
+                (flags & ContactFlags.simMeshContact.rawValue) != 0)
         }
 
         // Free contact and id (preserve generation)
@@ -473,11 +474,14 @@ extension World {
         let a = minInt(shapeIdA, shapeIdB)
         let b = maxInt(shapeIdA, shapeIdB)
 
-        if case .compound(let compound) = shapes[Int(a)].geometry {
+        // Metadata rejects same-body pairs before touching reference-counted geometry or
+        // probing the pair table. The filter has the same early rejection in shouldCreatePair.
+        if shapes[Int(a)].bodyId == shapes[Int(b)].bodyId { return }
+        if shapes[Int(a)].type == .compoundShape, case .compound(let compound) = shapes[Int(a)].geometry {
             emitCompoundPairs(a, b, compound, &pairKeys)
             return
         }
-        if case .compound(let compound) = shapes[Int(b)].geometry {
+        if shapes[Int(b)].type == .compoundShape, case .compound(let compound) = shapes[Int(b)].geometry {
             emitCompoundPairs(b, a, compound, &pairKeys)
             return
         }
@@ -491,51 +495,53 @@ extension World {
 
     func collideProxyAndSubtree(
         _ proxy: TreeNode,
-        _ nodes: [TreeNode],
+        _ nodes: UnsafeBufferPointer<TreeNode>,
         _ pairStart: Int32,
         _ pairKeys: inout [UInt64]
     ) {
         let proxyMark = proxy.flagIndex & movedNodeFlag
         let shapeId = proxy.shapeIndex
 
-        var stack = [Int32](repeating: 0, count: treeStackSize)
-        var stackCount = 0
-        stack[stackCount] = pairStart
-        stackCount += 1
+        withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
+            var stackCount = 0
+            stack[stackCount] = pairStart
+            stackCount += 1
 
-        while stackCount > 0 {
-            stackCount -= 1
-            let pair = stack[stackCount]
-            for i in 0..<2 {
-                let node = nodes[Int(pair) + i]
-                if ((node.flagIndex | proxyMark) & movedNodeFlag) == 0 {
-                    continue
-                }
+            while stackCount > 0 {
+                stackCount -= 1
+                let pair = stack[stackCount]
+                for i in 0..<2 {
+                    let node = nodes[Int(pair) + i]
+                    if ((node.flagIndex | proxyMark) & movedNodeFlag) == 0 {
+                        continue
+                    }
 
-                if aabbOverlaps(proxy.aabb, node.aabb) == false {
-                    continue
-                }
+                    if aabbOverlaps(proxy.aabb, node.aabb) == false {
+                        continue
+                    }
 
-                if isLeaf(node) {
-                    addCandidatePair(shapeId, node.shapeIndex, &pairKeys)
-                } else {
-                    if stackCount < treeStackSize {
-                        stack[stackCount] = leftChild(node)
-                        stackCount += 1
+                    if isLeaf(node) {
+                        addCandidatePair(shapeId, node.shapeIndex, &pairKeys)
                     } else {
-                        b3Assert(stackCount < treeStackSize)
+                        if stackCount < treeStackSize {
+                            stack[stackCount] = leftChild(node)
+                            stackCount += 1
+                        } else {
+                            b3Assert(stackCount < treeStackSize)
+                        }
                     }
                 }
             }
         }
     }
 
+    @inline(__always)
     func visitPair(
-        _ arrayA: [TreeNode],
-        _ arrayB: [TreeNode],
+        _ arrayA: UnsafeBufferPointer<TreeNode>,
+        _ arrayB: UnsafeBufferPointer<TreeNode>,
         _ nodeA: TreeNode,
         _ nodeB: TreeNode,
-        _ stack: inout [(a: Int32, b: Int32)],
+        _ stack: UnsafeMutableBufferPointer<(a: Int32, b: Int32)>,
         _ stackCount: inout Int,
         _ pairKeys: inout [UInt64]
     ) {
@@ -562,26 +568,28 @@ extension World {
     }
 
     func collideCrossPairs(
-        _ arrayA: [TreeNode],
-        _ arrayB: [TreeNode],
+        _ arrayA: UnsafeBufferPointer<TreeNode>,
+        _ arrayB: UnsafeBufferPointer<TreeNode>,
         _ subtreeA: TreeNode,
         _ subtreeB: TreeNode,
         _ pairKeys: inout [UInt64]
     ) {
-        var stack = [(a: Int32, b: Int32)](repeating: (0, 0), count: treeStackSize)
-        var stackCount = 0
+        withUnsafeTemporaryAllocation(of: (a: Int32, b: Int32).self, capacity: treeStackSize) { stack in
+            var stackCount = 0
 
-        // Seed the stack.
-        visitPair(arrayA, arrayB, subtreeA, subtreeB, &stack, &stackCount, &pairKeys)
+            // Seed the stack.
+            visitPair(arrayA, arrayB, subtreeA, subtreeB, stack, &stackCount, &pairKeys)
 
-        while stackCount > 0 {
-            stackCount -= 1
-            let pair = stack[stackCount]
-            for i in 0..<2 {
-                for j in 0..<2 {
-                    visitPair(
-                        arrayA, arrayB, arrayA[Int(pair.a) + i], arrayB[Int(pair.b) + j], &stack, &stackCount, &pairKeys
-                    )
+            while stackCount > 0 {
+                stackCount -= 1
+                let pair = stack[stackCount]
+                for i in 0..<2 {
+                    for j in 0..<2 {
+                        visitPair(
+                            arrayA, arrayB, arrayA[Int(pair.a) + i], arrayB[Int(pair.b) + j], stack, &stackCount,
+                            &pairKeys
+                        )
+                    }
                 }
             }
         }
@@ -668,25 +676,31 @@ extension World {
         let kinematicSeeds = gatherCrossSeeds(dynamicTree, kinematicTree)
         b3Assert(kinematicSeeds.count <= 64)
 
-        let dynamicNodes = dynamicTree.nodes
-        let staticNodes = staticTree.nodes
-        let kinematicNodes = kinematicTree.nodes
+        // End all read borrows before rebuilding the trees.
+        dynamicTree.nodes.withUnsafeBufferPointer { dynamicNodes in
+            staticTree.nodes.withUnsafeBufferPointer { staticNodes in
+                kinematicTree.nodes.withUnsafeBufferPointer { kinematicNodes in
 
-        // Collide the dynamic body tree against the static and kinematic trees.
-        for seed in staticSeeds {
-            collideCrossPairs(dynamicNodes, staticNodes, seed.a, seed.b, &pairKeys)
-        }
+                    // Collide the dynamic body tree against the static and kinematic trees.
+                    for seed in staticSeeds {
+                        collideCrossPairs(dynamicNodes, staticNodes, seed.a, seed.b, &pairKeys)
+                    }
 
-        for seed in kinematicSeeds {
-            collideCrossPairs(dynamicNodes, kinematicNodes, seed.a, seed.b, &pairKeys)
-        }
+                    for seed in kinematicSeeds {
+                        collideCrossPairs(dynamicNodes, kinematicNodes, seed.a, seed.b, &pairKeys)
+                    }
 
-        // Collide the dynamic body tree against itself.
-        for i in 0..<Int(dynamicMoveCount) {
-            let nodeIndex = movedSiblings[i]
-            collideCrossPairs(
-                dynamicNodes, dynamicNodes, dynamicNodes[Int(nodeIndex)], dynamicNodes[Int(nodeIndex) + 1], &pairKeys
-            )
+                    // Collide the dynamic body tree against itself.
+                    for i in 0..<Int(dynamicMoveCount) {
+                        let nodeIndex = movedSiblings[i]
+                        collideCrossPairs(
+                            dynamicNodes, dynamicNodes, dynamicNodes[Int(nodeIndex)], dynamicNodes[Int(nodeIndex) + 1],
+                            &pairKeys
+                        )
+                    }
+
+                }
+            }
         }
 
         staticTree.clearMoved()

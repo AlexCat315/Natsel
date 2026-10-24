@@ -23,7 +23,7 @@ func selectMeshManifolds(_ manifolds: [MeshTriangleManifold], sphere: Bool) -> [
             if dot(manifold.triangleNormal, manifold.normal) > 0.5 {
                 accept = true
             } else {
-                var separation = manifold.points[0].separation
+                var separation = manifold.points.first!.separation
                 for point in manifold.points.dropFirst() { separation = minFloat(separation, point.separation) }
                 accept = separation < -2 * B3.linearSlop
             }
