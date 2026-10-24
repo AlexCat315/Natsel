@@ -21,6 +21,8 @@ public enum JointType: Int32, Sendable, CaseIterable, BitwiseCopyable {
     /// Configurable joint: each translation and rotation axis is free, limited, or locked, with
     /// optional motors and friction.
     case sixDOFJoint
+    /// A point on body B follows a spline fixed in body A.
+    case pathJoint
 }
 
 /// Base joint definition used by all joint types. The local frames are measured from the body's

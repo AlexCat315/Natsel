@@ -354,6 +354,7 @@ private enum JointPayload: BitwiseCopyable {
     case rackAndPinion(RackAndPinionJointSim)
     case pulley(PulleyJointSim)
     case sixDOF(SixDOFJointSim)
+    case path(PathJointSim)
 }
 
 /// Solver data for a joint.
@@ -471,6 +472,14 @@ struct JointSim: BitwiseCopyable {
             return PulleyJointSim()
         }
         @inline(__always) set { payload = .pulley(newValue) }
+    }
+
+    var path: PathJointSim {
+        @inline(__always) get {
+            if case .path(let value) = payload { return value }
+            return PathJointSim()
+        }
+        @inline(__always) set { payload = .path(newValue) }
     }
 
     var sixDOF: SixDOFJointSim {
@@ -711,6 +720,11 @@ public final class World {
     /// Six DOF joint state, kept out of `JointSim` so other joints stay small.
     let sixDOFStore = StableStorage<SixDOFJointData>()
     var sixDOFPool = IDPool()
+
+    /// Path joint state and the paths it points into, by slot.
+    let pathJointStore = StableStorage<PathJointData>()
+    var pathJointPaths: [ConstraintPath?] = []
+    var pathJointPool = IDPool()
 
     /// Position based soft bodies. Simulated after rigid body finalization (SoftBody/).
     var softBodies: [SoftBodyRecord] = []

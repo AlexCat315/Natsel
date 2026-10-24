@@ -39,6 +39,8 @@ extension World {
             preparePulleyJoint(&sim, context)
         case .sixDOFJoint:
             prepareSixDOFJoint(&sim, context)
+        case .pathJoint:
+            preparePathJoint(&sim, context)
         default:
             break
         }
@@ -70,6 +72,8 @@ extension World {
             warmStartPulleyJoint(&sim, states)
         case .sixDOFJoint:
             warmStartSixDOFJoint(&sim, states)
+        case .pathJoint:
+            warmStartPathJoint(&sim, states)
         default:
             break
         }
@@ -101,6 +105,8 @@ extension World {
             solvePulleyJoint(&sim, context, useBias, states)
         case .sixDOFJoint:
             solveSixDOFJoint(&sim, context, useBias, states)
+        case .pathJoint:
+            solvePathJoint(&sim, context, useBias, states)
         default:
             break
         }

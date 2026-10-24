@@ -122,6 +122,7 @@ extension World {
 
         var eventBits = BitSet(bitCapacity: UInt32(maxInt(Int32(sensorCount), 8)))
         eventBits.setBitCountAndClear(UInt32(maxInt(Int32(sensorCount), 8)))
+        defer { eventBits.destroy() }
 
         for sensorIndex in 0..<sensorCount {
             var sensor = sensors[sensorIndex]

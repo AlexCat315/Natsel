@@ -307,7 +307,7 @@ extension World {
             case .filterJoint:
                 drawSegment(pA, pB, DebugColors.gold)
 
-            case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+            case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint, .pathJoint:
                 drawCouplingJoint(sim, xfA, xfB, pA, pB, scale, drawSegment, drawPoint)
             }
 

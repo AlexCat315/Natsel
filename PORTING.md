@@ -391,9 +391,10 @@ characters, buoyancy, and joints, including finite-difference checks of the dihe
 serial/parallel equivalence for soft bodies and wheel casts). The unsigned arm64 iOS 26 device
 build succeeds. Benchmarks for the new systems are in `PERFORMANCE.md`, section 9.
 
-Remaining Jolt features not covered here (the multithreaded constraint solver has since been
-added, see below): path constraints, skeletal ragdoll/animation utilities, state save/restore, soft
-body self collision and soft–soft contact, and double precision large worlds.
+Remaining Jolt features not covered here at the time: a multithreaded constraint solver, path
+constraints, skeletal ragdoll/animation utilities, state save/restore, soft body self collision and
+soft–soft contact, and double precision large worlds. All but the last were added later; see
+"Multithreaded constraint solver" and "Second gap pass".
 
 ## Multithreaded constraint solver — 2026-10-24
 
@@ -437,3 +438,54 @@ restitution, mixed joint types (revolute, six-DOF, weld, distance), ragdolls, an
 640 sleeping boxes plus fast bodies and bullets fired into static walls; it also checks changing
 the worker count between steps and vehicles plus soft bodies with workers. Timings are in
 `PERFORMANCE.md`, section 10.
+
+## Second gap pass — 2026-10-24
+
+| Gap | Implementation | Files |
+|---|---|---|
+| Path constraint | `PathJointDef` / `createPathJoint`: a point on body B follows a cubic Hermite `ConstraintPath` (open or looping; Catmull-Rom convenience initializer) fixed in body A. Perpendicular to the path the point is held as a 2x2 block; along it the joint is free, has friction, a velocity motor, or a soft position motor measured in arc length; open paths stop at their ends. Rotation: free, hinged about the tangent, normal, or binormal (2x2 block), aligned with the path frame, or fixed relative to A (3x3 blocks on the rotation error quaternion). Run time setters for path, motor, targets, friction, rotation mode | `Simulation/PathJoint.swift` |
+| State save/restore | `World.saveState()` / `restoreState(_:)` (Jolt's StateRecorder with every state flag). The snapshot deep copies all state that influences later steps, including the broad-phase trees, pair set, contact manifolds, constraint graph bit sets, islands, id pools, joint side stores, vehicles, soft bodies, pending events, and the simulation settings. Restoring repeats the following steps bit for bit, also after bodies, shapes, joints, vehicles, or soft bodies were created or destroyed in between. `CharacterVirtual.saveState()` / `restoreState(_:)` cover characters | `Simulation/WorldState.swift`, `Character/CharacterVirtual.swift` |
+| Skeletons and ragdolls | `Skeleton`, `SkeletonPose` (local joint states and model space matrices), `SkeletalAnimation` (keyframe tracks, slerp, looping, weighted blending), `SkeletonMapper` (maps between a detailed and a ragdoll skeleton by joint name; joints between two mapped joints form chains that are turned to meet the mapped end), `RagdollSettings` / `Ragdoll`: one body per joint, six DOF joints as swing-twist (cone), pyramid, hinge, or fixed, joint friction and soft limits, mass ratio stabilization, self collision modes (none, connected, overlapping in the creation pose via filter joints, all), posing, motor driving to an animated pose, kinematic driving, whole body impulses | `Skeleton/` |
+| Soft body self and soft–soft contact | Vertex–triangle contacts (vertex–vertex for bodies without faces) found once per step with a sorted cell grid in which each feature is padded by its own vertices' motion and each vertex queries the cells its own motion covers; at most four closest triangles per vertex and body; detection runs in parallel over body pairs. XPBD projection keeps a thickness on the side the vertex started on (always the outside of closed surfaces), shares the correction through the barycentric weights, applies friction, and limits penetration recovery to `contactSpeed`. Self contact skips a vertex's own and edge neighbors' triangles and pairs closer than two average edge lengths in the rest pose. Soft bodies whose swept bounds overlap substep together (at the larger iteration count); their per body work runs on the workers | `SoftBody/SoftBodyContacts.swift`, `SoftBody/SoftBodySolver.swift` |
+
+### Design notes
+
+- Path joint rows are recomputed every solve from the closest point, found by a search that starts at
+  the previous fraction's segment and rejects other segments by the bounds of their Bezier control
+  polygons. The motion of the closest point along the path is orthogonal to the perpendicular
+  rows, so the Jacobians use the frame at the closest point only.
+- World snapshots keep contact payloads by contact id: the payload pool never moves its slabs, so
+  restored contacts point at valid slots. Shape geometry objects (hulls, meshes, height fields,
+  compounds, paths) are shared, not copied; they must not be edited in place between a save and a
+  restore. A state only restores into the world that saved it.
+- A ragdoll part's body origin and rotation are its joint's model transform, so reading a pose is a
+  copy of body transforms. Motor driving sets six DOF rotation position motors with the target
+  rotation of frame B relative to frame A taken from the animated pose.
+- Soft contact margins use each vertex's speed plus what gravity adds over the step.
+  A relative velocity bound was tried and rejected: when one body stops on the ground mid step the
+  other keeps falling, contacts were missed, and piles of soft cubes tangled.
+- Without a recovery limit, a vertex that started a substep inside the thickness was pushed out in
+  one projection, which XPBD turns into velocity; a pile of 27 soft cubes gained energy until it
+  exploded after about 240 steps.
+
+### Port fixes found on the way
+
+- The collide pass and the sensor pass allocated a bit set every step and never freed it
+  (8 bytes per step each in small scenes, growing with the contact and sensor counts).
+- `DynamicTree.proxyCount` is settable internally for restores.
+
+### Verification
+
+Debug and release: 480 tests in 126 suites pass. New tests cover path geometry against brute force
+sampling, a sliding bead's constraint force, end stops, friction, a looping velocity motor with the
+body turning with the path frame, the position motor, every rotation mode, paths on a moving body,
+and slot reuse; rollback after 40 steps repeated twice over 90 steps on a scene with every system
+(pyramid with a sensor, ragdolls, revolute, six DOF, and path joints, vehicles, cloth, a bullet, and
+a character), rollback across structural changes, rollback with worker threads, and repeated
+save/restore cycles; skeleton spaces, animation sampling and blending, mapper chains and reverse
+mapping, a falling ragdoll staying connected within limits, motor and kinematic driving, mass
+stabilization and collision modes; and a folding strip with and without self collision, cloth on
+cloth, crossing ropes, worker count independence, and waking. `ParallelSolverTests` gained a scene
+with 192 path joints. Remaining from the Jolt comparison: double precision large worlds, and edge–
+edge continuous collision for cloth (very fast cloth can still pass through thin features).
+

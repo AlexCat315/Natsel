@@ -175,6 +175,53 @@ public final class CharacterVirtual {
         _ = world.createCapsuleShape(innerBodyId, shapeDef, capsule(radius: radius))
     }
 
+    // MARK: State
+
+    /// Everything a character carries between updates. Save it together with
+    /// `World.saveState` (the inner body lives in the world) to roll both back.
+    public struct State: Sendable {
+        fileprivate var position: Pos
+        fileprivate var rotation: Quat
+        fileprivate var linearVelocity: Vec3
+        fileprivate var up: Vec3
+        fileprivate var radius: Float
+        fileprivate var height: Float
+        fileprivate var groundState: CharacterGroundState
+        fileprivate var groundNormal: Vec3
+        fileprivate var groundPosition: Pos
+        fileprivate var groundVelocity: Vec3
+        fileprivate var groundBodyId: BodyID
+        fileprivate var groundShapeId: ShapeID
+        fileprivate var groundUserMaterialId: UInt64
+        fileprivate var contacts: [CharacterContact]
+        fileprivate var innerBodyId: BodyID
+    }
+
+    public func saveState() -> State {
+        State(position: position, rotation: rotation, linearVelocity: linearVelocity, up: up, radius: radius,
+              height: height, groundState: groundState, groundNormal: groundNormal, groundPosition: groundPosition,
+              groundVelocity: groundVelocity, groundBodyId: groundBodyId, groundShapeId: groundShapeId,
+              groundUserMaterialId: groundUserMaterialId, contacts: contacts, innerBodyId: innerBodyId)
+    }
+
+    public func restoreState(_ state: State) {
+        position = state.position
+        rotation = state.rotation
+        linearVelocity = state.linearVelocity
+        up = state.up
+        radius = state.radius
+        height = state.height
+        groundState = state.groundState
+        groundNormal = state.groundNormal
+        groundPosition = state.groundPosition
+        groundVelocity = state.groundVelocity
+        groundBodyId = state.groundBodyId
+        groundShapeId = state.groundShapeId
+        groundUserMaterialId = state.groundUserMaterialId
+        contacts = state.contacts
+        innerBodyId = state.innerBodyId
+    }
+
     /// Remove the inner body. Call before discarding the character if the world lives on.
     public func destroy() {
         if innerBodyId.isNull == false && world.bodyIsValid(innerBodyId) {

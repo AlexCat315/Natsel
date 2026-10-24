@@ -11,6 +11,7 @@ enum ParallelScene: String, CaseIterable {
     case mixedJoints
     case ragdolls
     case fastAndSleepy
+    case paths
 
     func make(_ workers: Int32) -> World {
         let world: World
@@ -29,6 +30,7 @@ enum ParallelScene: String, CaseIterable {
         case .mixedJoints: buildMixedJoints(world)
         case .ragdolls: buildRagdolls(world)
         case .fastAndSleepy: buildFastAndSleepy(world)
+        case .paths: buildPaths(world)
         }
         return world
     }
@@ -196,6 +198,49 @@ private func buildFastAndSleepy(_ world: World) {
         def.linearVelocity = Vec3(i % 2 == 0 ? 300 : -300, 0, Float(i % 3) - 1)
         let body = world.createBody(def)
         _ = world.createSphereShape(body, ShapeDef(), Sphere(center: Vec3(), radius: 0.1))
+    }
+}
+
+/// Beads on tilted loops with every rotation mode and motor kind; neighbors collide.
+private func buildPaths(_ world: World) {
+    let anchor = ground(world)
+    let modes: [PathRotationConstraint] = [.free, .constrainAroundTangent, .constrainAroundNormal,
+                                           .constrainAroundBinormal, .constrainToPath, .fullyConstrained]
+    for loop in 0..<24 {
+        let center = Vec3(Float(loop % 6) * 7 - 17, 4, Float(loop / 6) * 7 - 10)
+        let positions = (0..<10).map { i -> Vec3 in
+            let cs = computeCosSin(2 * Float.pi * Float(i) / 10)
+            return Vec3(2.5 * cs.cosine, 0.8 * cs.sine, 2.5 * cs.sine)
+        }
+        let path = ConstraintPath(through: positions, isLooping: true)!
+        for bead in 0..<8 {
+            let at = path.point(at: Float(bead) * 1.25).position
+            var def = BodyDef()
+            def.type = .dynamicBody
+            def.position = center + at
+            let body = world.createBody(def)
+            _ = world.createHullShape(body, ShapeDef(), makeCubeHull(0.3))
+            var joint = PathJointDef()
+            joint.base.bodyIdA = anchor
+            joint.base.bodyIdB = body
+            joint.base.localFrameA = Transform(center, .identity)
+            joint.base.collideConnected = true
+            joint.path = path
+            joint.pathFraction = Float(bead) * 1.25
+            joint.rotationConstraint = modes[(loop + bead) % modes.count]
+            switch bead % 3 {
+            case 0: joint.maxFrictionForce = 2
+            case 1:
+                joint.motorMode = .velocity
+                joint.targetVelocity = Float(loop % 4) - 1.5
+                joint.maxMotorForce = 30
+            default:
+                joint.motorMode = .position
+                joint.targetFraction = Float(loop % 10)
+                joint.maxMotorForce = 20
+            }
+            _ = world.createPathJoint(joint)
+        }
     }
 }
 

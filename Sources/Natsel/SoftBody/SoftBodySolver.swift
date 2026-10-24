@@ -14,6 +14,7 @@ extension World {
         guard softBodyIdPool.idCount > 0, dt > 0 else { return }
 
         wakeTouchedSoftBodies()
+        wakeSoftBodiesTouchedBySoftBodies(dt)
 
         var active: [Int] = []
         for i in softBodies.indices where softBodies[i].id != B3.nullIndex && softBodies[i].awake {
@@ -21,29 +22,31 @@ extension World {
         }
         guard active.isEmpty == false else { return }
 
+        let groups = softContactGroups(active, dt)
         let gravity = gravity
         let workers = Int(maxInt(1, minInt(workerCount, 8)))
         let parallelWork = active.reduce(0) { $0 + softBodies[$1].vertexCount }
 
+        // Lone bodies run in parallel; bodies in contact run together, each substep's per body work
+        // spread over the workers.
+        let singles = groups.filter { $0.count == 1 }
+        let clusters = groups.filter { $0.count > 1 }
         softBodies.withUnsafeMutableBufferPointer { buffer in
-            if workers > 1 && active.count > 1 && parallelWork >= 512 {
-                nonisolated(unsafe) let records = buffer.baseAddress!
-                nonisolated(unsafe) let world = self
-                active.withUnsafeBufferPointer { list in
-                    nonisolated(unsafe) let indices = list
-                    DispatchQueue.concurrentPerform(iterations: indices.count) { k in
-                        let record = records + indices[k]
-                        world.detectSoftBodyCollisions(&record.pointee, dt)
-                        record.pointee.simulate(dt, gravity)
-                        record.pointee.finishStep()
+            nonisolated(unsafe) let records = buffer.baseAddress!
+            nonisolated(unsafe) let world = self
+            if workers > 1 && singles.count > 1 && parallelWork >= 512 {
+                singles.withUnsafeBufferPointer { list in
+                    nonisolated(unsafe) let groups = list
+                    DispatchQueue.concurrentPerform(iterations: groups.count) { k in
+                        world.simulateSoftBodyGroup(records, groups[k], dt, gravity, parallel: false)
                     }
                 }
             } else {
-                for i in active {
-                    detectSoftBodyCollisions(&buffer[i], dt)
-                    buffer[i].simulate(dt, gravity)
-                    buffer[i].finishStep()
-                }
+                for group in singles { simulateSoftBodyGroup(records, group, dt, gravity, parallel: false) }
+            }
+            for group in clusters {
+                let work = group.reduce(0) { $0 + records[$1].vertexCount }
+                simulateSoftBodyGroup(records, group, dt, gravity, parallel: workers > 1 && work >= 512)
             }
         }
 
@@ -51,6 +54,127 @@ extension World {
         for i in active {
             applySoftBodyImpulses(i)
             softBodies[i].updateSleep(dt)
+        }
+    }
+
+    /// Simulate soft bodies that may touch each other substep by substep, projecting their contacts
+    /// between the constraints and the rigid body collisions. Runs on any thread; touches only the
+    /// group's records.
+    func simulateSoftBodyGroup(
+        _ records: UnsafeMutablePointer<SoftBodyRecord>, _ group: [Int], _ dt: Float, _ gravity: Vec3, parallel: Bool
+    ) {
+        nonisolated(unsafe) let records = records
+        nonisolated(unsafe) let world = self
+        /// Run per body work, on the workers when allowed. Bodies only touch their own records.
+        func forEachBody(_ body: @escaping (Int, Int) -> Void) {
+            if parallel {
+                group.withUnsafeBufferPointer { list in
+                    nonisolated(unsafe) let list = list
+                    DispatchQueue.concurrentPerform(iterations: list.count) { k in body(k, list[k]) }
+                }
+            } else {
+                for (k, index) in group.enumerated() { body(k, index) }
+            }
+        }
+
+        forEachBody { _, index in world.detectSoftBodyCollisions(&records[index], dt) }
+
+        var contacts: [SoftContact] = []
+        let needsContacts = group.count > 1 || records[group[0]].enableSelfCollision
+        if needsContacts { detectSoftContacts(records, group, dt, &contacts, parallel: parallel) }
+
+        if contacts.isEmpty {
+            forEachBody { _, index in
+                records[index].simulate(dt, gravity)
+                records[index].finishStep()
+            }
+            return
+        }
+
+        // Bodies in contact substep together, at the largest iteration count among them.
+        let iterations = group.reduce(Int32(1)) { max($0, records[$1].iterationCount) }
+        var substepList: [SoftBodySubstep] = []
+        for index in group { substepList.append(records[index].beginStep(dt, gravity, iterations)) }
+        let substeps = substepList
+
+        // Arrays keep their storage for the whole step.
+        var views: [SoftContactBody] = []
+        for index in group {
+            let record = records + index
+            views.append(SoftContactBody(
+                x: record.pointee.positions.withUnsafeMutableBufferPointer { $0 },
+                x0: record.pointee.previousPositions.withUnsafeMutableBufferPointer { $0 },
+                w: record.pointee.invMasses.withUnsafeBufferPointer { $0 }))
+        }
+
+        let count = substeps[0].count
+        contacts.withUnsafeBufferPointer { contactList in
+            views.withUnsafeBufferPointer { bodyList in
+                for iteration in 0..<count {
+                    let last = iteration == count - 1
+                    forEachBody { k, index in records[index].solveSubstep(substeps[k]) }
+                    solveSoftContacts(contactList, bodyList, maxRecovery: contactSpeed * substeps[0].h)
+                    forEachBody { k, index in records[index].collideSubstep(substeps[k], last: last) }
+                }
+            }
+        }
+        forEachBody { _, index in records[index].finishStep() }
+    }
+
+    /// Connected components of soft bodies whose swept bounds overlap, in index order.
+    private func softContactGroups(_ active: [Int], _ dt: Float) -> [[Int]] {
+        var parent = Array(0..<active.count)
+        func find(_ i: Int) -> Int {
+            var i = i
+            while parent[i] != i {
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            }
+            return i
+        }
+        let boxes = active.map { i -> AABB in
+            let record = softBodies[i]
+            return aabbInflate(record.bounds, record.maxSpeed * dt + record.contactThickness)
+        }
+        for a in 0..<active.count where softBodies[active[a]].collideWithSoftBodies {
+            for b in (a + 1)..<active.count where softBodies[active[b]].collideWithSoftBodies {
+                guard aabbOverlaps(boxes[a], boxes[b]),
+                    shouldShapesCollide(softBodies[active[a]].filter, softBodies[active[b]].filter)
+                else { continue }
+                let ra = find(a)
+                let rb = find(b)
+                if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
+            }
+        }
+        var groups: [[Int]] = []
+        var groupOfRoot = [Int: Int]()
+        for k in 0..<active.count {
+            let root = find(k)
+            if let g = groupOfRoot[root] {
+                groups[g].append(active[k])
+            } else {
+                groupOfRoot[root] = groups.count
+                groups.append([active[k]])
+            }
+        }
+        return groups
+    }
+
+    /// A sleeping soft body wakes when a moving soft body reaches it.
+    private func wakeSoftBodiesTouchedBySoftBodies(_ dt: Float) {
+        for i in softBodies.indices
+        where softBodies[i].id != B3.nullIndex && softBodies[i].awake == false && softBodies[i].collideWithSoftBodies {
+            let bounds = aabbInflate(softBodies[i].bounds, softBodies[i].contactThickness)
+            for j in softBodies.indices
+            where j != i && softBodies[j].id != B3.nullIndex && softBodies[j].awake && softBodies[j].collideWithSoftBodies {
+                let mover = softBodies[j]
+                guard mover.maxSpeed > mover.sleepThreshold,
+                    aabbOverlaps(bounds, aabbInflate(mover.bounds, mover.maxSpeed * dt)),
+                    shouldShapesCollide(softBodies[i].filter, mover.filter)
+                else { continue }
+                wakeSoftBody(i)
+                break
+            }
         }
     }
 
@@ -101,6 +225,17 @@ extension World {
 
 // MARK: - XPBD
 
+/// Constants of one substep.
+struct SoftBodySubstep {
+    var count = 1
+    var h: Float = 0
+    var invH2: Float = 0
+    var damping: Float = 1
+    var maxSpeedSquared: Float = 0
+    var g = Vec3()
+    var restitutionThreshold: Float = 0
+}
+
 extension SoftBodyRecord {
     /// Largest vertex speed after the last step.
     var maxSpeed: Float {
@@ -112,10 +247,16 @@ extension SoftBodyRecord {
     }
 
     mutating func simulate(_ dt: Float, _ gravity: Vec3) {
-        let iterations = Int(max(1, iterationCount))
-        let h = dt / Float(iterations)
-        let invH2 = 1 / (h * h)
+        let substep = beginStep(dt, gravity, iterationCount)
+        for iteration in 0..<substep.count {
+            solveSubstep(substep)
+            collideSubstep(substep, last: iteration == substep.count - 1)
+        }
+    }
 
+    /// Per step constants and the skinning update. `iterations` may exceed the body's own count
+    /// when it substeps together with other soft bodies.
+    mutating func beginStep(_ dt: Float, _ gravity: Vec3, _ iterations: Int32) -> SoftBodySubstep {
         // Kinematic skinned vertices follow the skin.
         if hasSkinPose && settings.skinned.isEmpty == false {
             updateSkin()
@@ -123,17 +264,74 @@ extension SoftBodyRecord {
                 positions[Int(s.vertex)] = skinnedPositions[k]
             }
         }
-
         for i in colliders.indices { colliders[i].contactCount = 0 }
 
+        var substep = SoftBodySubstep()
+        substep.count = Int(max(1, iterations))
+        substep.h = dt / Float(substep.count)
+        substep.invH2 = 1 / (substep.h * substep.h)
+        substep.damping = maxFloat(0, 1 - linearDamping * substep.h)
+        substep.maxSpeedSquared = maxLinearVelocity * maxLinearVelocity
+        substep.g = gravityScale * gravity
+        substep.restitutionThreshold = -2 * length(gravity) * substep.h
+        return substep
+    }
+
+    /// Pressure, integration, and the constraints of one substep.
+    mutating func solveSubstep(_ substep: SoftBodySubstep) {
         let settings = self.settings
-        let damping = maxFloat(0, 1 - linearDamping * h)
-        let maxSpeedSquared = maxLinearVelocity * maxLinearVelocity
-        let g = gravityScale * gravity
-        let restitutionThreshold = -2 * length(gravity) * h
+        let h = substep.h
+        let damping = substep.damping
+        let maxSpeedSquared = substep.maxSpeedSquared
+        let g = substep.g
 
         // Move the mutable state out so the buffers are uniquely referenced and the helpers below
         // can read the rest of the record.
+        var xs: [Vec3] = []
+        var x0s: [Vec3] = []
+        var vs: [Vec3] = []
+        swap(&xs, &positions)
+        swap(&x0s, &previousPositions)
+        swap(&vs, &velocities)
+        defer {
+            swap(&xs, &positions)
+            swap(&x0s, &previousPositions)
+            swap(&vs, &velocities)
+        }
+
+        xs.withUnsafeMutableBufferPointer { x in
+        x0s.withUnsafeMutableBufferPointer { x0 in
+        vs.withUnsafeMutableBufferPointer { v in
+        invMasses.withUnsafeBufferPointer { w in
+            let n = x.count
+            if pressure > 0 && settings.faces.isEmpty == false {
+                applyPressure(x, v, w, h)
+            }
+
+            // Integrate.
+            for i in 0..<n {
+                x0[i] = x[i]
+                guard w[i] > 0 else { continue }
+                var vi = damping * mulAdd(v[i], h, g)
+                let s2 = lengthSquared(vi)
+                if s2 > maxSpeedSquared { vi = (maxLinearVelocity / s2.squareRoot()) * vi }
+                v[i] = vi
+                x[i] = mulAdd(x[i], h, vi)
+            }
+
+            solveBendBatches(x, w, substep.invH2)
+            solveVolumeBatches(x, w, substep.invH2)
+            applySkin(settings.skinned, x, w)
+            solveEdgeBatches(x, w, substep.invH2)
+            applyLongRangeAttachments(settings.longRangeAttachments, x, w)
+        }
+        }
+        }
+        }
+    }
+
+    /// Rigid body collisions of one substep, and velocities from the position change.
+    mutating func collideSubstep(_ substep: SoftBodySubstep, last: Bool) {
         var xs: [Vec3] = []
         var x0s: [Vec3] = []
         var vs: [Vec3] = []
@@ -158,30 +356,7 @@ extension SoftBodyRecord {
         contacts.withUnsafeMutableBufferPointer { contact in
         colliderState.withUnsafeMutableBufferPointer { cs in
         invMasses.withUnsafeBufferPointer { w in
-            let n = x.count
-            for iteration in 0..<iterations {
-                if pressure > 0 && settings.faces.isEmpty == false {
-                    applyPressure(x, v, w, h)
-                }
-
-                // Integrate.
-                for i in 0..<n {
-                    x0[i] = x[i]
-                    guard w[i] > 0 else { continue }
-                    var vi = damping * mulAdd(v[i], h, g)
-                    let s2 = lengthSquared(vi)
-                    if s2 > maxSpeedSquared { vi = (maxLinearVelocity / s2.squareRoot()) * vi }
-                    v[i] = vi
-                    x[i] = mulAdd(x[i], h, vi)
-                }
-
-                solveBendBatches(x, w, invH2)
-                solveVolumeBatches(x, w, invH2)
-                applySkin(settings.skinned, x, w)
-                solveEdgeBatches(x, w, invH2)
-                applyLongRangeAttachments(settings.longRangeAttachments, x, w)
-                applyCollisions(x, x0, v, w, contact, cs, h, restitutionThreshold, last: iteration == iterations - 1)
-            }
+            applyCollisions(x, x0, v, w, contact, cs, substep.h, substep.restitutionThreshold, last: last)
         }
         }
         }

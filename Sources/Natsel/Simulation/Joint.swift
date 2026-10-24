@@ -513,6 +513,8 @@ extension World {
         var joint = joints[Int(jointId)]
         if joint.type == .sixDOFJoint {
             releaseSixDOFData(readJointSim(jointId).sixDOF.slot)
+        } else if joint.type == .pathJoint {
+            releasePathData(readJointSim(jointId).path.slot)
         }
 
         let edgeA = joint.edges[0]
@@ -1380,7 +1382,7 @@ extension World {
         switch sim.type {
         case .parallelJoint, .filterJoint:
             return Vec3()
-        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint, .pathJoint:
             return couplingJointForce(sim)
         case .distanceJoint:
             let joint = sim.distance
@@ -1430,7 +1432,7 @@ extension World {
         switch sim.type {
         case .distanceJoint, .filterJoint:
             return Vec3()
-        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint, .pathJoint:
             return couplingJointTorque(sim)
         case .parallelJoint:
             return inv_h * Vec3(0, 0, sim.parallel.maxTorque)
@@ -1976,7 +1978,7 @@ extension World {
         case .filterJoint:
             break
 
-        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint, .pathJoint:
             (linearImpulse, angularImpulse) = couplingJointImpulses(sim)
         }
 

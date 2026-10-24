@@ -174,6 +174,8 @@ extension World {
             satCallCount += meshContactScratch.satCalls
             satCacheHitCount += meshContactScratch.satCacheHits
             collideStatePass(stateBits)
+            stateBits.destroy()
+            for i in 0..<Int(workers) { bits[i].destroy() }
             return
         }
 
@@ -196,6 +198,7 @@ extension World {
         satCallCount += meshContactScratch.satCalls
         satCacheHitCount += meshContactScratch.satCacheHits
         collideStatePass(stateBits)
+        stateBits.destroy()
     }
 
     /// Below this contact count the dispatch cost dominates and the pass stays serial.

@@ -150,7 +150,7 @@ public final class DynamicTree {
     var pairFreeList: Int32
 
     /// Number of proxies created.
-    public private(set) var proxyCount: Int32
+    public internal(set) var proxyCount: Int32
 
     /// The allocated proxy space.
     var proxyCapacity: Int32

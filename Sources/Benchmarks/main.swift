@@ -26,6 +26,10 @@ var benchmarks: [Benchmark] = [
     Benchmark(name: "vehicles", create: createVehicles, step: stepVehicles, destroy: destroyVehicles, totalStepCount: 600),
     Benchmark(name: "cloth", create: createCloth, step: nil, destroy: nil, totalStepCount: 300),
     Benchmark(name: "soft_cubes", create: createSoftCubes, step: nil, destroy: nil, totalStepCount: 300),
+    Benchmark(name: "cloth_stack", create: createClothStack, step: nil, destroy: nil, totalStepCount: 300),
+    Benchmark(name: "path_beads", create: createPathBeads, step: nil, destroy: nil, totalStepCount: 300),
+    Benchmark(name: "ragdoll_motors", create: createRagdollMotors, step: stepRagdollMotors, destroy: destroyRagdollMotors, totalStepCount: 300),
+    Benchmark(name: "rollback", create: createRollback, step: stepRollback, destroy: destroyRollback, totalStepCount: 200),
 ]
 
 var singleBenchmark: Int = -1

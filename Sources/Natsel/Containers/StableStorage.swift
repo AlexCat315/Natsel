@@ -38,4 +38,20 @@ final class StableStorage<Element: BitwiseCopyable> {
             base[index] = newValue
         }
     }
+
+    /// The elements as an array, for snapshots.
+    var elements: [Element] { Array(UnsafeBufferPointer(start: base, count: count)) }
+
+    /// Replace all elements. Only on one thread with no readers.
+    func replace(with elements: [Element]) {
+        if elements.count > capacity {
+            base.deallocate()
+            capacity = max(elements.count, 2 * capacity)
+            base = .allocate(capacity: capacity)
+        }
+        elements.withUnsafeBufferPointer {
+            if let source = $0.baseAddress { base.update(from: source, count: $0.count) }
+        }
+        count = elements.count
+    }
 }

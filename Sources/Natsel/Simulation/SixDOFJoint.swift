@@ -144,7 +144,7 @@ struct SixDOFJointData: BitwiseCopyable {
 /// Derivative of relQ.v[i] with respect to the relative angular velocity:
 /// d(relQ.v_i)/dt = dot(J_i, wB - wA).
 @inline(__always)
-private func quaternionJacobian(_ frame: Quat, _ rel: Quat, _ axis: Vec3) -> Vec3 {
+func quaternionJacobian(_ frame: Quat, _ rel: Quat, _ axis: Vec3) -> Vec3 {
     0.5 * rotateVector(frame, rel.s * axis + cross(rel.v, axis))
 }
 

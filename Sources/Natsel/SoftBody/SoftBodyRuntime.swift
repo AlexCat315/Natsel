@@ -63,6 +63,16 @@ public struct SoftBodyDef {
     /// Ray casts hit both sides of the faces.
     public var facesDoubleSided = false
 
+    /// Keep the body's own surfaces apart (cloth folding onto itself, a rope crossing itself).
+    public var enableSelfCollision = false
+
+    /// Collide with other soft bodies.
+    public var collideWithSoftBodies = true
+
+    /// Distance kept between surfaces in self and soft body contact. Zero picks a quarter of the
+    /// average edge length, or twice the vertex radius if larger.
+    public var collisionThickness: Float = 0
+
     public var userData: UnsafeMutableRawPointer?
 
     public init() {}
@@ -167,6 +177,16 @@ struct SoftBodyRecord {
     var enableSleep = true
     var sleepThreshold: Float = 0.03
     var facesDoubleSided = false
+    var enableSelfCollision = false
+    var collideWithSoftBodies = true
+    var collisionThickness: Float = 0
+    var averageEdgeLength: Float = 0
+    /// Edge neighbors of each vertex in compressed rows, for self contact.
+    var neighborStarts: [Int32] = []
+    var neighbors: [UInt32] = []
+    /// Vertices referenced by faces, for soft contact.
+    var surfaceVertices: [Int32] = []
+    var closedSurface = false
 
     // State
     var awake = true
@@ -211,6 +231,12 @@ struct SoftBodyRecord {
         enableSleep = def.enableSleep
         sleepThreshold = def.sleepThreshold
         facesDoubleSided = def.facesDoubleSided
+        enableSelfCollision = def.enableSelfCollision
+        collideWithSoftBodies = def.collideWithSoftBodies
+        collisionThickness = max(0, def.collisionThickness)
+        if settings.edges.isEmpty == false {
+            averageEdgeLength = settings.edges.reduce(0) { $0 + $1.restLength } / Float(settings.edges.count)
+        }
         buildBatches()
         updateBounds()
     }
@@ -489,6 +515,30 @@ extension World {
     public func setSoftBodyLinearDamping(_ softBodyId: SoftBodyID, _ damping: Float) {
         guard let i = softBodyIndex(softBodyId) else { return }
         softBodies[i].linearDamping = max(0, damping)
+    }
+
+    public func setSoftBodySelfCollision(_ softBodyId: SoftBodyID, _ enabled: Bool) {
+        guard let i = softBodyIndex(softBodyId) else { return }
+        softBodies[i].enableSelfCollision = enabled
+        wakeSoftBody(i)
+    }
+
+    public func setSoftBodyCollideWithSoftBodies(_ softBodyId: SoftBodyID, _ enabled: Bool) {
+        guard let i = softBodyIndex(softBodyId) else { return }
+        softBodies[i].collideWithSoftBodies = enabled
+        wakeSoftBody(i)
+    }
+
+    /// Zero restores the automatic thickness.
+    public func setSoftBodyCollisionThickness(_ softBodyId: SoftBodyID, _ thickness: Float) {
+        guard let i = softBodyIndex(softBodyId) else { return }
+        softBodies[i].collisionThickness = max(0, thickness)
+        wakeSoftBody(i)
+    }
+
+    /// Thickness used for self and soft body contact.
+    public func softBodyCollisionThickness(_ softBodyId: SoftBodyID) -> Float {
+        softBodyIndex(softBodyId).map { softBodies[$0].contactThickness } ?? 0
     }
 
     public func setSoftBodyGravityScale(_ softBodyId: SoftBodyID, _ scale: Float) {

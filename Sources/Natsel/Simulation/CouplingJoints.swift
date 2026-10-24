@@ -554,6 +554,8 @@ extension World {
         switch sim.type {
         case .sixDOFJoint:
             return inv_h * sixDOFImpulses(sim).linear
+        case .pathJoint:
+            return inv_h * pathJointImpulses(sim).linear
         case .rackAndPinionJoint:
             let xfB = bodyTransformQuick(sim.bodyIdB)
             let axis = rotateVector(xfB.q, rotateVector(sim.localFrameB.q, .axisX))
@@ -572,6 +574,8 @@ extension World {
         switch sim.type {
         case .sixDOFJoint:
             return inv_h * sixDOFImpulses(sim).angular
+        case .pathJoint:
+            return inv_h * pathJointImpulses(sim).angular
         case .gearJoint:
             let xfA = bodyTransformQuick(sim.bodyIdA)
             let axis = rotateVector(xfA.q, rotateVector(sim.localFrameA.q, .axisZ))
@@ -588,6 +592,9 @@ extension World {
     /// Linear and angular impulse magnitudes for joint events.
     func couplingJointImpulses(_ sim: JointSim) -> (Float, Float) {
         switch sim.type {
+        case .pathJoint:
+            let impulses = pathJointImpulses(sim)
+            return (length(impulses.linear), length(impulses.angular))
         case .sixDOFJoint:
             let impulses = sixDOFImpulses(sim)
             return (length(impulses.linear), length(impulses.angular))
@@ -629,6 +636,8 @@ extension World {
                 drawSegment(frameB.p, offsetPos(frameB.p, 0.6 * length * rotateVector(frameB.q, axis)), color)
             }
             drawSegment(pA, pB, DebugColors.gray)
+        case .pathJoint:
+            drawPathJoint(sim, xfA, pB, scale, drawSegment, drawPoint)
         case .pulleyJoint:
             let joint = sim.pulley
             drawSegment(pA, joint.groundAnchorA, DebugColors.lightBlue)

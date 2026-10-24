@@ -75,6 +75,13 @@ final class HullDatabase {
     var count: Int {
         entries.values.reduce(0) { $0 + $1.count }
     }
+
+    /// Opaque copy of the reference counts, for world state snapshots. Hulls are shared, not copied.
+    var snapshot: Any { entries }
+
+    func restore(_ snapshot: Any) {
+        if let saved = snapshot as? [UInt64: [Entry]] { entries = saved }
+    }
 }
 
 extension World {
