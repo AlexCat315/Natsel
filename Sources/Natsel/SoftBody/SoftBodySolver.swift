@@ -80,10 +80,15 @@ extension World {
         forEachBody { _, index in world.detectSoftBodyCollisions(&records[index], dt) }
 
         var contacts: [SoftContact] = []
+        var edgeContacts: [SoftEdgeContact] = []
         let needsContacts = group.count > 1 || records[group[0]].enableSelfCollision
-        if needsContacts { detectSoftContacts(records, group, dt, &contacts, parallel: parallel) }
+        if needsContacts {
+            detectSoftContacts(records, group, dt, &contacts, &edgeContacts, parallel: parallel)
+        } else {
+            records[group[0]].faceSides.removeAll(keepingCapacity: true)
+        }
 
-        if contacts.isEmpty {
+        if contacts.isEmpty && edgeContacts.isEmpty {
             forEachBody { _, index in
                 records[index].simulate(dt, gravity)
                 records[index].finishStep()
@@ -109,14 +114,17 @@ extension World {
 
         let count = substeps[0].count
         contacts.withUnsafeBufferPointer { contactList in
+        edgeContacts.withUnsafeBufferPointer { edgeList in
             views.withUnsafeBufferPointer { bodyList in
                 for iteration in 0..<count {
                     let last = iteration == count - 1
                     forEachBody { k, index in records[index].solveSubstep(substeps[k]) }
                     solveSoftContacts(contactList, bodyList, maxRecovery: contactSpeed * substeps[0].h)
+                    solveSoftEdgeContacts(edgeList, bodyList, maxRecovery: contactSpeed * substeps[0].h)
                     forEachBody { k, index in records[index].collideSubstep(substeps[k], last: last) }
                 }
             }
+        }
         }
         forEachBody { _, index in records[index].finishStep() }
     }
@@ -264,7 +272,11 @@ extension SoftBodyRecord {
                 positions[Int(s.vertex)] = skinnedPositions[k]
             }
         }
-        for i in colliders.indices { colliders[i].contactCount = 0 }
+        for i in colliders.indices {
+            colliders[i].contactCount = 0
+            colliders[i].displacement = Vec3()
+            colliders[i].rotation = Vec3()
+        }
 
         var substep = SoftBodySubstep()
         substep.count = Int(max(1, iterations))
@@ -356,6 +368,7 @@ extension SoftBodyRecord {
         contacts.withUnsafeMutableBufferPointer { contact in
         colliderState.withUnsafeMutableBufferPointer { cs in
         invMasses.withUnsafeBufferPointer { w in
+            applyEdgeCollisions(x, x0, w, contact, cs, substep.h, last: last)
             applyCollisions(x, x0, v, w, contact, cs, substep.h, substep.restitutionThreshold, last: last)
         }
         }

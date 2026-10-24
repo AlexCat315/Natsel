@@ -32,6 +32,7 @@ extension World {
         record.colliders.removeAll(keepingCapacity: true)
         record.colliderIndices.withUnsafeMutableBufferPointer { $0.update(repeating: B3.nullIndex) }
         record.hasContact.withUnsafeMutableBufferPointer { $0.update(repeating: false) }
+        record.edgeContacts.removeAll(keepingCapacity: true)
         guard record.collideWithRigidBodies, count > 0 else { return }
 
         // Speculative margin: a vertex can move at most this far in one step.
@@ -76,6 +77,19 @@ extension World {
         var best = [Float](repeating: margin, count: count)
         var scratch = PatchScratch()
         let radius = record.vertexRadius
+
+        // Edge bounds for the edge planes.
+        if record.enableEdgeCollision { record.buildMeshEdges() }
+        let edgeCount = record.enableEdgeCollision ? record.meshEdges.count : 0
+        var edgeBounds = [AABB](repeating: AABB(), count: edgeCount)
+        for e in 0..<edgeCount {
+            let edge = record.meshEdges[e]
+            let p0 = record.positions[Int(edge.x)]
+            let p1 = record.positions[Int(edge.y)]
+            edgeBounds[e] = aabbInflate(AABB(minVec3(p0, p1), maxVec3(p0, p1)), margin)
+        }
+        var edgeBest = [Float](repeating: margin, count: edgeCount)
+        var edgePlanes = [SoftEdgePlane?](repeating: nil, count: edgeCount)
 
         for shapeIndex in candidates {
             let shape = shapes[Int(shapeIndex)]
@@ -133,7 +147,16 @@ extension World {
                 }
             }
 
+            if edgeCount > 0 && detectEdgePlanes(&record, shape.geometry, transform, shapeBounds, edgeBounds, margin,
+                                                 colliderIndex, &edgeBest, &edgePlanes)
+            {
+                used = true
+            }
+
             if used { record.colliders.append(collider) }
+        }
+        for plane in edgePlanes {
+            if let plane { record.edgeContacts.append(plane) }
         }
     }
 

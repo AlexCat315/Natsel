@@ -69,6 +69,11 @@ public struct SoftBodyDef {
     /// Collide with other soft bodies.
     public var collideWithSoftBodies = true
 
+    /// Edge contacts: edges against rigid features that fit between two vertices (thin rods, blade
+    /// edges), and edges against edges of soft bodies (crossing threads, narrow strips), on top of
+    /// the vertex contacts.
+    public var enableEdgeCollision = true
+
     /// Distance kept between surfaces in self and soft body contact. Zero picks a quarter of the
     /// average edge length, or twice the vertex radius if larger.
     public var collisionThickness: Float = 0
@@ -124,6 +129,10 @@ struct SoftBodyCollider {
     var restitution: Float = 0
     var updated = false
     var contactCount: Int32 = 0
+    /// Motion of the body since the start of the soft body step, from its tracked velocity, so
+    /// edge planes follow a body the soft body pushes away.
+    var displacement = Vec3()
+    var rotation = Vec3()
 
     @inline(__always)
     func pointVelocity(_ r: Vec3) -> Vec3 {
@@ -179,6 +188,7 @@ struct SoftBodyRecord {
     var facesDoubleSided = false
     var enableSelfCollision = false
     var collideWithSoftBodies = true
+    var enableEdgeCollision = true
     var collisionThickness: Float = 0
     var averageEdgeLength: Float = 0
     /// Edge neighbors of each vertex in compressed rows, for self contact.
@@ -187,6 +197,18 @@ struct SoftBodyRecord {
     /// Vertices referenced by faces, for soft contact.
     var surfaceVertices: [Int32] = []
     var closedSurface = false
+    /// Surface edges, and the edges touching rigid features this step.
+    var meshEdges: [SIMD2<UInt32>] = []
+    /// Self contact exclusions in compressed rows, for `selfExclusionDistance`.
+    var excludedFaceStarts: [Int32] = []
+    var excludedFaces: [Int32] = []
+    var excludedEdgeStarts: [Int32] = []
+    var excludedEdges: [Int32] = []
+    var selfExclusionDistance: Float = 0
+    /// Contact history: the side of each vertex-face pair this body touched last step, keyed by
+    /// `softContactKey`.
+    var faceSides: [UInt64: Float] = [:]
+    var edgeContacts: [SoftEdgePlane] = []
 
     // State
     var awake = true
@@ -233,6 +255,7 @@ struct SoftBodyRecord {
         facesDoubleSided = def.facesDoubleSided
         enableSelfCollision = def.enableSelfCollision
         collideWithSoftBodies = def.collideWithSoftBodies
+        enableEdgeCollision = def.enableEdgeCollision
         collisionThickness = max(0, def.collisionThickness)
         if settings.edges.isEmpty == false {
             averageEdgeLength = settings.edges.reduce(0) { $0 + $1.restLength } / Float(settings.edges.count)
@@ -273,6 +296,8 @@ extension World {
         }
 
         var record = SoftBodyRecord(def)
+        // Self contact tables are built here rather than on the first step.
+        if record.enableSelfCollision { record.buildSelfExclusions() }
         let id = softBodyIdPool.alloc()
         if Int(id) == softBodies.count {
             softBodies.append(record)
@@ -520,6 +545,7 @@ extension World {
     public func setSoftBodySelfCollision(_ softBodyId: SoftBodyID, _ enabled: Bool) {
         guard let i = softBodyIndex(softBodyId) else { return }
         softBodies[i].enableSelfCollision = enabled
+        if enabled { softBodies[i].buildSelfExclusions() }
         wakeSoftBody(i)
     }
 
@@ -529,10 +555,17 @@ extension World {
         wakeSoftBody(i)
     }
 
+    public func setSoftBodyEdgeCollision(_ softBodyId: SoftBodyID, _ enabled: Bool) {
+        guard let i = softBodyIndex(softBodyId) else { return }
+        softBodies[i].enableEdgeCollision = enabled
+        wakeSoftBody(i)
+    }
+
     /// Zero restores the automatic thickness.
     public func setSoftBodyCollisionThickness(_ softBodyId: SoftBodyID, _ thickness: Float) {
         guard let i = softBodyIndex(softBodyId) else { return }
         softBodies[i].collisionThickness = max(0, thickness)
+        if softBodies[i].enableSelfCollision { softBodies[i].buildSelfExclusions() }
         wakeSoftBody(i)
     }
 

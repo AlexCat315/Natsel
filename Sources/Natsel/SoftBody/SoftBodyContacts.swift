@@ -25,6 +25,8 @@ struct SoftContact: BitwiseCopyable {
     var c: Int32 = 0
     /// Side of the triangle the vertex started on (+1 or -1); zero marks a vertex-vertex contact.
     var side: Float = 0
+    /// Face index in the triangle body, for the contact history.
+    var face: Int32 = 0
     var thickness: Float = 0
     var friction: Float = 0
 }
@@ -164,6 +166,123 @@ extension SoftBodyRecord {
         neighborStarts.append(Int32(neighbors.count))
     }
 
+    /// For self contact: the faces each vertex ignores and the edges each edge ignores, found once
+    /// in the rest pose. A vertex ignores its own faces, its edge neighbors' faces, and faces closer
+    /// than the exclusion distance at rest (the surface's own neighborhood, not a fold); an edge
+    /// likewise. Detection then rejects these candidates with a binary search.
+    mutating func buildSelfExclusions() {
+        let exclusion = max(contactThickness, 2 * averageEdgeLength)
+        guard exclusion != selfExclusionDistance || excludedFaceStarts.isEmpty else { return }
+        selfExclusionDistance = exclusion
+        buildNeighbors()
+        buildMeshEdges()
+        let rest = settings.vertices.map { $0.position }
+        let faces = settings.faces
+        let pad = Vec3(exclusion, exclusion, exclusion)
+        let cell = max(1.5 * averageEdgeLength, exclusion, 1.0e-3)
+
+        excludedFaceStarts.removeAll()
+        excludedFaces.removeAll()
+        if faces.isEmpty == false {
+            // Unpadded features in the grid, padded queries: each feature sits in few cells.
+            var grid = CellGrid(cellSize: cell)
+            for (f, face) in faces.enumerated() {
+                let a = rest[Int(face.vertex.x)]
+                let b = rest[Int(face.vertex.y)]
+                let c = rest[Int(face.vertex.z)]
+                grid.insert(AABB(minVec3(a, minVec3(b, c)), maxVec3(a, maxVec3(b, c))), Int32(f))
+            }
+            grid.finish()
+            var list: [Int32] = []
+            var stamp = [Int32](repeating: -1, count: faces.count)
+            for v in 0..<vertexCount {
+                list.removeAll(keepingCapacity: true)
+                let r = rest[v]
+                let vertex = Int32(v)
+                grid.visit(AABB(r - pad, r + pad)) { f in
+                    if stamp[Int(f)] == vertex { return }
+                    stamp[Int(f)] = vertex
+                    let face = faces[Int(f)]
+                    let ia = Int32(face.vertex.x)
+                    let ib = Int32(face.vertex.y)
+                    let ic = Int32(face.vertex.z)
+                    var excluded = areNeighbors(vertex, ia) || areNeighbors(vertex, ib) || areNeighbors(vertex, ic)
+                    if excluded == false {
+                        let ra = rest[Int(ia)]
+                        let rb = rest[Int(ib)]
+                        let rc = rest[Int(ic)]
+                        let bary = closestTriangleBarycentric(ra, rb, rc, r)
+                        excluded = lengthSquared(r - (bary.u * ra + bary.v * rb + bary.w * rc)) < exclusion * exclusion
+                    }
+                    if excluded { list.append(f) }
+                }
+                excludedFaceStarts.append(Int32(excludedFaces.count))
+                excludedFaces.append(contentsOf: list.sorted())
+            }
+            excludedFaceStarts.append(Int32(excludedFaces.count))
+        }
+
+        excludedEdgeStarts.removeAll()
+        excludedEdges.removeAll()
+        var grid = CellGrid(cellSize: cell)
+        for (e, edge) in meshEdges.enumerated() {
+            let a = rest[Int(edge.x)]
+            let b = rest[Int(edge.y)]
+            grid.insert(AABB(minVec3(a, b), maxVec3(a, b)), Int32(e))
+        }
+        grid.finish()
+        var list: [Int32] = []
+        var stamp = [Int32](repeating: -1, count: meshEdges.count)
+        for (e, edge) in meshEdges.enumerated() {
+            list.removeAll(keepingCapacity: true)
+            let i0 = Int32(edge.x)
+            let i1 = Int32(edge.y)
+            let a = rest[Int(i0)]
+            let b = rest[Int(i1)]
+            let box = AABB(minVec3(a, b) - pad, maxVec3(a, b) + pad)
+            grid.visit(box) { f in
+                if stamp[Int(f)] == Int32(e) { return }
+                stamp[Int(f)] = Int32(e)
+                let other = meshEdges[Int(f)]
+                let j0 = Int32(other.x)
+                let j1 = Int32(other.y)
+                let c = rest[Int(j0)]
+                let d = rest[Int(j1)]
+                guard aabbOverlaps(box, AABB(minVec3(c, d), maxVec3(c, d))) else { return }
+                var excluded = areNeighbors(i0, j0) || areNeighbors(i0, j1) || areNeighbors(i1, j0) || areNeighbors(i1, j1)
+                if excluded == false {
+                    let result = segmentDistance(a, b, c, d)
+                    excluded = lengthSquared(result.point1 - result.point2) < exclusion * exclusion
+                }
+                if excluded { list.append(f) }
+            }
+            excludedEdgeStarts.append(Int32(excludedEdges.count))
+            excludedEdges.append(contentsOf: list.sorted())
+        }
+        excludedEdgeStarts.append(Int32(excludedEdges.count))
+    }
+
+    @inline(__always)
+    private static func contains(_ list: [Int32], _ start: Int32, _ end: Int32, _ value: Int32) -> Bool {
+        var low = Int(start)
+        var high = Int(end)
+        while low < high {
+            let mid = (low + high) / 2
+            if list[mid] < value { low = mid + 1 } else { high = mid }
+        }
+        return low < Int(end) && list[low] == value
+    }
+
+    @inline(__always)
+    func excludesFace(_ vertex: Int32, _ face: Int32) -> Bool {
+        Self.contains(excludedFaces, excludedFaceStarts[Int(vertex)], excludedFaceStarts[Int(vertex) + 1], face)
+    }
+
+    @inline(__always)
+    func excludesEdge(_ edge: Int32, _ other: Int32) -> Bool {
+        Self.contains(excludedEdges, excludedEdgeStarts[Int(edge)], excludedEdgeStarts[Int(edge) + 1], other)
+    }
+
     @inline(__always)
     func areNeighbors(_ i: Int32, _ j: Int32) -> Bool {
         if i == j { return true }
@@ -214,12 +333,19 @@ extension SoftBodyRecord {
 private struct DetectionBody {
     /// How far each vertex can move in the step.
     var vertexMargins: [Float] = []
+    /// Where each vertex can be during the step: from its position along its velocity, padded by
+    /// what gravity and velocity changes can add.
+    var vertexBoxes: [AABB] = []
     /// Bounds of each face padded by its vertices' margins and the largest thickness into it.
     var faceBoxes: [AABB] = []
     var faceMargins: [Float] = []
     var grid: CellGrid?
     /// +1 or -1 for a closed surface wound outward or inward, 0 for an open one.
     var closedSide: Float = 0
+    /// Edge bounds padded like the faces, and their grid.
+    var edgeBoxes: [AABB] = []
+    var edgeMargins: [Float] = []
+    var edgeGrid: CellGrid?
 }
 
 extension World {
@@ -232,9 +358,10 @@ extension World {
     /// motion box covers, so slow vertices test few candidates.
     func detectSoftContacts(
         _ records: UnsafeMutablePointer<SoftBodyRecord>, _ group: [Int], _ dt: Float, _ contacts: inout [SoftContact],
-        parallel: Bool = false
+        _ edgeContacts: inout [SoftEdgeContact], parallel: Bool = false
     ) {
         contacts.removeAll(keepingCapacity: true)
+        edgeContacts.removeAll(keepingCapacity: true)
 
         struct Pair {
             var slotP: Int
@@ -249,7 +376,12 @@ extension World {
         }
         var targetThickness = [Float](repeating: 0, count: group.count)
         for (slotP, indexP) in group.enumerated() {
-            if records[indexP].enableSelfCollision { records[indexP].buildNeighbors() }
+            if records[indexP].enableSelfCollision {
+                records[indexP].buildNeighbors()
+                if records[indexP].enableEdgeCollision || records[indexP].settings.faces.isEmpty == false {
+                    records[indexP].buildSelfExclusions()
+                }
+            }
             records[indexP].buildSurfaceVertices()
             for (slotT, indexT) in group.enumerated() {
                 let p = records + indexP
@@ -274,12 +406,42 @@ extension World {
                 targetThickness[slotT] = max(targetThickness[slotT], thickness)
             }
         }
-        guard pairs.isEmpty == false else { return }
+        // Edge-edge pairs, unordered: an edge passing between two vertices of the other surface
+        // touches no vertex or face there.
+        var edgePairs: [Pair] = []
+        for (slotP, indexP) in group.enumerated() {
+            for slotT in slotP..<group.count {
+                let p = records + indexP
+                let t = records + group[slotT]
+                if slotP == slotT {
+                    guard p.pointee.enableSelfCollision else { continue }
+                } else {
+                    guard p.pointee.collideWithSoftBodies, t.pointee.collideWithSoftBodies,
+                        shouldShapesCollide(p.pointee.filter, t.pointee.filter)
+                    else { continue }
+                }
+                guard p.pointee.enableEdgeCollision, t.pointee.enableEdgeCollision else { continue }
+                p.pointee.buildMeshEdges()
+                t.pointee.buildMeshEdges()
+                guard p.pointee.meshEdges.isEmpty == false, t.pointee.meshEdges.isEmpty == false else { continue }
+                let thickness = max(p.pointee.contactThickness, t.pointee.contactThickness)
+                let reach = thickness + bodyMargins[slotP] + bodyMargins[slotT]
+                guard aabbOverlaps(aabbInflate(p.pointee.bounds, reach), t.pointee.bounds) else { continue }
+                edgePairs.append(Pair(slotP: slotP, slotT: slotT, thickness: thickness))
+            }
+        }
+        guard pairs.isEmpty == false || edgePairs.isEmpty == false else {
+            // Nothing in reach: forget the old sides.
+            for index in group {
+                records[index].faceSides.removeAll(keepingCapacity: true)
+                }
+            return
+        }
 
         // Margins of every body in a pair, and a grid per target.
         var data = [DetectionBody](repeating: DetectionBody(), count: group.count)
         var needed = [Bool](repeating: false, count: group.count)
-        for pair in pairs {
+        for pair in pairs + edgePairs {
             needed[pair.slotP] = true
             needed[pair.slotT] = true
         }
@@ -287,6 +449,13 @@ extension World {
             let record = records + index
             let gain = length(gravity) * abs(record.pointee.gravityScale) * dt * dt
             data[slot].vertexMargins = record.pointee.velocities.map { length($0) * dt + gain }
+            let x = record.pointee.positions
+            data[slot].vertexBoxes = record.pointee.velocities.enumerated().map { i, v in
+                let end = mulAdd(x[i], dt, v)
+                // A quarter of the step's travel in any direction covers turns and pushes.
+                let slack = gain + 0.25 * length(v) * dt
+                return aabbInflate(AABB(minVec3(x[i], end), maxVec3(x[i], end)), slack)
+            }
         }
         for pair in pairs where data[pair.slotT].grid == nil {
             let slot = pair.slotT
@@ -296,10 +465,9 @@ extension World {
             let thickness = targetThickness[slot]
             if t.pointee.settings.faces.isEmpty {
                 var grid = CellGrid(cellSize: max(t.pointee.averageEdgeLength, thickness, 1.0e-3))
-                for (j, p) in x.enumerated() {
-                    let pad = margins[j] + thickness
-                    grid.insert(AABB(p - Vec3(pad, pad, pad), p + Vec3(pad, pad, pad)), Int32(j))
-                }
+                let sweeps = data[slot].vertexBoxes
+                _ = margins
+                for j in 0..<x.count { grid.insert(aabbInflate(sweeps[j], thickness), Int32(j)) }
                 grid.finish()
                 data[slot].grid = grid
             } else {
@@ -312,9 +480,9 @@ extension World {
                     let ib = Int(face.vertex.y)
                     let ic = Int(face.vertex.z)
                     let margin = max(margins[ia], max(margins[ib], margins[ic]))
-                    let pad = Vec3(margin + thickness, margin + thickness, margin + thickness)
+                    let sweeps = data[slot].vertexBoxes
                     faceMargins[f] = margin
-                    boxes[f] = AABB(minVec3(x[ia], minVec3(x[ib], x[ic])) - pad, maxVec3(x[ia], maxVec3(x[ib], x[ic])) + pad)
+                    boxes[f] = aabbInflate(aabbUnion(sweeps[ia], aabbUnion(sweeps[ib], sweeps[ic])), thickness)
                     if face.isDegenerate == false { grid.insert(boxes[f], Int32(f)) }
                 }
                 grid.finish()
@@ -331,6 +499,29 @@ extension World {
                     data[slot].closedSide = sixVolume >= 0 ? 1 : -1
                 }
             }
+        }
+
+        // Edge grids of the edge pair targets.
+        for pair in edgePairs where data[pair.slotT].edgeGrid == nil {
+            let slot = pair.slotT
+            let t = records + group[slot]
+            let x = t.pointee.positions
+            let margins = data[slot].vertexMargins
+            let thickness = edgePairs.filter { $0.slotT == slot }.reduce(Float(0)) { max($0, $1.thickness) }
+            var grid = CellGrid(cellSize: max(1.5 * t.pointee.averageEdgeLength, 2 * thickness, 1.0e-3))
+            var boxes = [AABB](repeating: AABB(), count: t.pointee.meshEdges.count)
+            var edgeMargins = [Float](repeating: 0, count: t.pointee.meshEdges.count)
+            for (e, edge) in t.pointee.meshEdges.enumerated() {
+                let margin = max(margins[Int(edge.x)], margins[Int(edge.y)])
+                edgeMargins[e] = margin
+                boxes[e] = aabbInflate(aabbUnion(data[slot].vertexBoxes[Int(edge.x)], data[slot].vertexBoxes[Int(edge.y)]),
+                                       thickness)
+                grid.insert(boxes[e], Int32(e))
+            }
+            grid.finish()
+            data[slot].edgeGrid = grid
+            data[slot].edgeBoxes = boxes
+            data[slot].edgeMargins = edgeMargins
         }
 
         // Each pair fills its own list; the lists are joined in pair order, so the result does not
@@ -360,6 +551,37 @@ extension World {
             for k in 0..<pairs.count { detect(k, &lists[k]) }
         }
         for list in lists { contacts.append(contentsOf: list) }
+
+        var edgeLists = [[SoftEdgeContact]](repeating: [], count: edgePairs.count)
+        func detectEdges(_ k: Int, _ list: inout [SoftEdgeContact]) {
+            let pair = edgePairs[k]
+            let p = records + group[pair.slotP]
+            let t = records + group[pair.slotT]
+            let friction = (p.pointee.friction * t.pointee.friction).squareRoot()
+            findEdgeEdgeContacts(p, t, Int32(pair.slotP), Int32(pair.slotT), pair.thickness, friction,
+                                 pair.slotP == pair.slotT, shared[pair.slotP], shared[pair.slotT], &list)
+        }
+        if parallel && edgePairs.count > 1 {
+            edgeLists.withUnsafeMutableBufferPointer { buffer in
+                nonisolated(unsafe) let buffer = buffer
+                DispatchQueue.concurrentPerform(iterations: buffer.count) { k in detectEdges(k, &buffer[k]) }
+            }
+        } else {
+            for k in 0..<edgePairs.count { detectEdges(k, &edgeLists[k]) }
+        }
+        for list in edgeLists { edgeContacts.append(contentsOf: list) }
+
+        // Remember the sides for the next step.
+        for index in group {
+            records[index].faceSides.removeAll(keepingCapacity: true)
+        }
+        for contact in contacts where contact.side != 0 {
+            let p = records + group[Int(contact.vertexBody)]
+            let t = records + group[Int(contact.triangleBody)]
+            guard t.pointee.closedSurface == false || t.pointee.settings.faces.isEmpty else { continue }
+            p.pointee.faceSides[softContactKey(t.pointee.id, contact.vertex, contact.face)] = contact.side
+        }
+
     }
 }
 
@@ -392,7 +614,7 @@ private func findVertexTriangleContacts(
         let vertex = Int(vertex32)
         let x = px[vertex]
         let margin = vertexMargins[vertex]
-        let query = AABB(x - Vec3(margin, margin, margin), x + Vec3(margin, margin, margin))
+        let query = pData.vertexBoxes[vertex]
         guard aabbOverlaps(query, targetBounds) else { continue }
         best.removeAll(keepingCapacity: true)
         grid.visit(query) { f in
@@ -403,14 +625,7 @@ private func findVertexTriangleContacts(
             let ia = Int32(face.vertex.x)
             let ib = Int32(face.vertex.y)
             let ic = Int32(face.vertex.z)
-            if selfPair {
-                if vertex32 == ia || vertex32 == ib || vertex32 == ic { return }
-                if p.pointee.areNeighbors(vertex32, ia) || p.pointee.areNeighbors(vertex32, ib)
-                    || p.pointee.areNeighbors(vertex32, ic)
-                {
-                    return
-                }
-            }
+            if selfPair && p.pointee.excludesFace(vertex32, f) { return }
             // Static against static never moves.
             if pw[vertex] == 0 && tw[Int(ia)] == 0 && tw[Int(ib)] == 0 && tw[Int(ic)] == 0 { return }
             let a = tx[Int(ia)]
@@ -425,18 +640,22 @@ private func findVertexTriangleContacts(
                 let worst = best[maxTrianglesPerVertex - 1]
                 guard distanceSquared < worst.0 || (distanceSquared == worst.0 && f < worst.1) else { return }
             }
-            if selfPair {
-                let r = rest[vertex].position
-                let ra = rest[Int(ia)].position
-                let rb = rest[Int(ib)].position
-                let rc = rest[Int(ic)].position
-                let rbary = closestTriangleBarycentric(ra, rb, rc, r)
-                let rq = rbary.u * ra + rbary.v * rb + rbary.w * rc
-                if lengthSquared(r - rq) < restExclusion * restExclusion { return }
+            // The outside of a closed surface is always the valid side. On an open surface the side
+            // is the one the vertex is on now; a vertex can legitimately pass round a free border to
+            // the other side. Only when it rests too close to tell does a pair in contact last step
+            // keep its side, since a pair squeezed slightly inside the thickness can read the wrong
+            // one and be pushed through.
+            var side = tData.closedSide
+            if side == 0 {
+                let normal = cross(b - a, c - a)
+                let gap = dot(d, normal) / max(length(normal), 1.0e-12)
+                side = gap >= 0 ? 1 : -1
+                if abs(gap) < ambiguousGap * thickness,
+                    let remembered = p.pointee.faceSides[softContactKey(t.pointee.id, vertex32, f)]
+                {
+                    side = remembered
+                }
             }
-            // The outside of a closed surface is always the valid side; for open surfaces the side
-            // the vertex is on now.
-            let side: Float = tData.closedSide != 0 ? tData.closedSide : (dot(d, cross(b - a, c - a)) >= 0 ? 1 : -1)
             // Insert sorted by distance, then face index.
             var k = best.count
             best.append((distanceSquared, f, side))
@@ -456,6 +675,7 @@ private func findVertexTriangleContacts(
             contact.b = Int32(face.vertex.y)
             contact.c = Int32(face.vertex.z)
             contact.side = side
+            contact.face = f
             contact.thickness = thickness
             contact.friction = friction
             contacts.append(contact)
@@ -478,7 +698,7 @@ private func findVertexVertexContacts(
     var stamp = [Int32](repeating: -1, count: tx.count)
     for (i, x) in px.enumerated() {
         let margin = pData.vertexMargins[i]
-        let query = AABB(x - Vec3(margin, margin, margin), x + Vec3(margin, margin, margin))
+        let query = pData.vertexBoxes[i]
         grid.visit(query) { j in
             if stamp[Int(j)] == Int32(i) { return }
             stamp[Int(j)] = Int32(i)
@@ -594,3 +814,192 @@ func solveSoftContacts(
         tb.x[ic] = mulSub(tb.x[ic], wc, correction)
     }
 }
+
+// MARK: - Edge-edge
+
+/// Two edges kept apart: the closest points of the segments stay `thickness` apart on the side
+/// they started on, along the normal of the plane both edges span.
+struct SoftEdgeContact: BitwiseCopyable {
+    var bodyP: Int32 = 0
+    var p0: Int32 = 0
+    var p1: Int32 = 0
+    var bodyT: Int32 = 0
+    var t0: Int32 = 0
+    var t1: Int32 = 0
+    var side: Float = 1
+    var thickness: Float = 0
+    var friction: Float = 0
+    /// Both bodies have faces: when the closest points reach an edge end the vertex-face contacts
+    /// own the configuration and this contact rests.
+    var interiorOnly = false
+}
+
+/// Closer than this fraction of the thickness along its normal, a pair's side cannot be read.
+private let ambiguousGap: Float = 0.5
+
+/// Key of a pair in a body's contact history: the other body's id and both feature indices.
+@inline(__always)
+func softContactKey(_ otherBody: Int32, _ feature: Int32, _ otherFeature: Int32) -> UInt64 {
+    (UInt64(UInt16(truncatingIfNeeded: otherBody)) << 48) | (UInt64(UInt32(bitPattern: feature) & 0xff_ffff) << 24)
+        | UInt64(UInt32(bitPattern: otherFeature) & 0xff_ffff)
+}
+
+/// Most edges kept per edge and body.
+private let maxEdgesPerEdge = 4
+
+/// Edges this close to parallel have no stable common normal; vertex contacts cover them.
+private let parallelSine: Float = 0.05
+
+private func findEdgeEdgeContacts(
+    _ p: UnsafeMutablePointer<SoftBodyRecord>, _ t: UnsafeMutablePointer<SoftBodyRecord>, _ slotP: Int32,
+    _ slotT: Int32, _ thickness: Float, _ friction: Float, _ selfPair: Bool, _ pData: DetectionBody,
+    _ tData: DetectionBody, _ contacts: inout [SoftEdgeContact]
+) {
+    guard let grid = tData.edgeGrid else { return }
+    let pEdges = p.pointee.meshEdges
+    let tEdges = t.pointee.meshEdges
+    let px = p.pointee.positions
+    let tx = t.pointee.positions
+    let pw = p.pointee.invMasses
+    let tw = t.pointee.invMasses
+    let rest = p.pointee.settings.vertices
+    let restExclusion = max(thickness, 2 * p.pointee.averageEdgeLength)
+    // Both with faces: an edge's end points are covered by the vertex-face contacts.
+    let interiorOnly = p.pointee.settings.faces.isEmpty == false && t.pointee.settings.faces.isEmpty == false
+    let boxes = tData.edgeBoxes
+    let edgeMargins = tData.edgeMargins
+    var stamp = [Int32](repeating: -1, count: tEdges.count)
+    let limit = maxEdgesPerEdge
+    var best: [(Float, Int32, Float)] = []
+    best.reserveCapacity(limit + 1)
+
+    for (e, edge) in pEdges.enumerated() {
+        let i0 = Int(edge.x)
+        let i1 = Int(edge.y)
+        let a0 = px[i0]
+        let a1 = px[i1]
+        let margin = max(pData.vertexMargins[i0], pData.vertexMargins[i1])
+        let query = aabbUnion(pData.vertexBoxes[i0], pData.vertexBoxes[i1])
+        best.removeAll(keepingCapacity: true)
+        grid.visit(query) { f in
+            if stamp[Int(f)] == Int32(e) { return }
+            stamp[Int(f)] = Int32(e)
+            // Each unordered self pair once.
+            if selfPair && Int(f) <= e { return }
+            guard aabbOverlaps(query, boxes[Int(f)]) else { return }
+            let other = tEdges[Int(f)]
+            let j0 = Int(other.x)
+            let j1 = Int(other.y)
+            if pw[i0] == 0 && pw[i1] == 0 && tw[j0] == 0 && tw[j1] == 0 { return }
+            if selfPair && p.pointee.excludesEdge(Int32(e), f) { return }
+            let b0 = tx[j0]
+            let b1 = tx[j1]
+            let result = segmentDistance(a0, a1, b0, b1)
+            if interiorOnly {
+                let s = result.fraction1
+                let u = result.fraction2
+                if s <= 0.02 || s >= 0.98 || u <= 0.02 || u >= 0.98 { return }
+            }
+            let d = result.point1 - result.point2
+            let distanceSquared = lengthSquared(d)
+            let reach = thickness + margin + edgeMargins[Int(f)]
+            guard distanceSquared < reach * reach else { return }
+            let normal = cross(a1 - a0, b1 - b0)
+            let sine2 = lengthSquared(normal) / max(lengthSquared(a1 - a0) * lengthSquared(b1 - b0), 1.0e-18)
+            guard sine2 > parallelSine * parallelSine else { return }
+            if best.count == limit {
+                let worst = best[limit - 1]
+                guard distanceSquared < worst.0 || (distanceSquared == worst.0 && f < worst.1) else { return }
+            }
+            // Edges closer than half the thickness along their common normal have no readable side,
+            // and a wrong side pushes them through each other: leave such pairs to the vertex-face
+            // contacts this step. (A remembered side does not help: the common normal flips as edges
+            // turn past parallel, which folds do all the time.)
+            let gap = dot(d, normal) / max(length(normal), 1.0e-12)
+            if abs(gap) < ambiguousGap * thickness { return }
+            let side: Float = gap >= 0 ? 1 : -1
+            var k = best.count
+            best.append((distanceSquared, f, side))
+            while k > 0 && (best[k - 1].0 > distanceSquared || (best[k - 1].0 == distanceSquared && best[k - 1].1 > f)) {
+                best.swapAt(k, k - 1)
+                k -= 1
+            }
+            if best.count > limit { best.removeLast() }
+        }
+        for (_, f, side) in best {
+            let other = tEdges[Int(f)]
+            contacts.append(SoftEdgeContact(bodyP: slotP, p0: Int32(i0), p1: Int32(i1), bodyT: slotT,
+                                            t0: Int32(other.x), t1: Int32(other.y), side: side,
+                                            thickness: thickness, friction: friction, interiorOnly: interiorOnly))
+        }
+    }
+}
+
+/// One Gauss-Seidel pass over the edge contacts, with the same recovery limit as the vertex
+/// contacts.
+func solveSoftEdgeContacts(
+    _ contacts: UnsafeBufferPointer<SoftEdgeContact>, _ bodies: UnsafeBufferPointer<SoftContactBody>, maxRecovery: Float
+) {
+    for contact in contacts {
+        let pb = bodies[Int(contact.bodyP)]
+        let tb = bodies[Int(contact.bodyT)]
+        let i0 = Int(contact.p0)
+        let i1 = Int(contact.p1)
+        let j0 = Int(contact.t0)
+        let j1 = Int(contact.t1)
+        let a0 = pb.x[i0]
+        let a1 = pb.x[i1]
+        let b0 = tb.x[j0]
+        let b1 = tb.x[j1]
+        let result = segmentDistance(a0, a1, b0, b1)
+        let s = result.fraction1
+        let u = result.fraction2
+        let d = result.point1 - result.point2
+
+        // Crossing configuration: both closest points inside their edges and the edges not near
+        // parallel. Then the side is the one remembered along the common normal. Otherwise the
+        // common normal says nothing about the gap: fall back to the plain distance, or leave the
+        // pair to the vertex-face contacts.
+        let crossing = cross(a1 - a0, b1 - b0)
+        let sine2 = lengthSquared(crossing) / max(lengthSquared(a1 - a0) * lengthSquared(b1 - b0), 1.0e-18)
+        let interior = s > 0 && s < 1 && u > 0 && u < 1 && sine2 > parallelSine * parallelSine
+        var n: Vec3
+        var separation: Float
+        if interior {
+            n = contact.side * normalize(crossing)
+            separation = dot(d, n)
+        } else {
+            if contact.interiorOnly { continue }
+            separation = length(d)
+            guard separation > 1.0e-9 else { continue }
+            n = (1 / separation) * d
+        }
+
+        // Where the same points were at the start of the substep.
+        let start = ((1 - s) * pb.x0[i0] + s * pb.x0[i1]) - ((1 - u) * tb.x0[j0] + u * tb.x0[j1])
+        let target = minFloat(contact.thickness, dot(start, n) + maxRecovery)
+        let violation = separation - target
+        guard violation < 0 else { continue }
+
+        let wa0 = pb.w[i0] * (1 - s)
+        let wa1 = pb.w[i1] * s
+        let wb0 = tb.w[j0] * (1 - u)
+        let wb1 = tb.w[j1] * u
+        let total = wa0 * (1 - s) + wa1 * s + wb0 * (1 - u) + wb1 * u
+        guard total > 0 else { continue }
+        var correction = (-violation / total) * n
+
+        let motion = (result.point1 - result.point2) - start
+        let tangent = motion - dot(motion, n) * n
+        let tangentLength = length(tangent)
+        if tangentLength > 1.0e-9 {
+            correction = correction - (minFloat(contact.friction * (-violation) / tangentLength, 1) / total) * tangent
+        }
+
+        pb.x[i0] = mulAdd(pb.x[i0], wa0, correction)
+        pb.x[i1] = mulAdd(pb.x[i1], wa1, correction)
+        tb.x[j0] = mulSub(tb.x[j0], wb0, correction)
+        tb.x[j1] = mulSub(tb.x[j1], wb1, correction)
+    }
+}
+

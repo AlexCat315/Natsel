@@ -486,6 +486,48 @@ save/restore cycles; skeleton spaces, animation sampling and blending, mapper ch
 mapping, a falling ragdoll staying connected within limits, motor and kinematic driving, mass
 stabilization and collision modes; and a folding strip with and without self collision, cloth on
 cloth, crossing ropes, worker count independence, and waking. `ParallelSolverTests` gained a scene
-with 192 path joints. Remaining from the Jolt comparison: double precision large worlds, and edge–
-edge continuous collision for cloth (very fast cloth can still pass through thin features).
+with 192 path joints. Remaining from the Jolt comparison: double precision large worlds (edge contacts were added
+later, see "Soft body edge collision").
+
+## Soft body edge collision — 2026-10-25
+
+Vertex–face contacts and vertex planes alone let edges pass through each other and through thin
+rigid features: two crossing threads or narrow strips touch only between their vertices, and a rod
+thinner than the cloth spacing slips between two vertices. Vertex–face plus edge–edge is the
+complete set (two triangle meshes first touch in one or the other), so both are now handled.
+`SoftBodyDef.enableEdgeCollision` (default on) and `setSoftBodyEdgeCollision` switch it.
+
+| Part | Implementation | Files |
+|---|---|---|
+| Edge vs rigid features | Once per step every surface edge (face edges, or the constraint edges of bodies without faces) finds the closest feature of each nearby shape: closed form for spheres and capsules, GJK of the segment against hulls and mesh or height field triangles, compound children recursively. When that point lies strictly inside the edge (an end point is the vertex's job) the edge gets a plane through the feature. Each substep keeps the edge point above its plane, splitting the correction by the barycentric weights, with friction; dynamic bodies receive the edge's momentum change and their planes move with their tracked velocity, including within the substep, so Gauss–Seidel over many edges does not overshoot | `SoftBody/SoftBodyEdgeCollision.swift`, `SoftBody/SoftBodyCollision.swift` |
+| Edge vs edge (self and soft–soft) | Edge pairs found with the same per-step grid as the vertex contacts, at most four closest per edge and body; self pairs skip edges sharing a vertex or edge neighbor and pairs close in the rest pose (precomputed once per body). Each substep keeps the closest points of a crossing pair `thickness` apart along the common normal on the side they started on; outside the crossing configuration (an end point closest, or near parallel edges) ropes keep the plain distance and faced surfaces leave the pair to the vertex–face contacts | `SoftBody/SoftBodyContacts.swift` |
+
+### Design notes
+
+- Candidates use swept boxes: from a vertex's position along its velocity for the step, padded by
+  a quarter of that travel and what gravity adds, instead of a sphere of the full travel. For a
+  falling cloth this cut the candidates several fold.
+- A rigid edge whose two vertices already rest on the same shape with normals within about 8
+  degrees is skipped: the surface between them is flat at that scale. This removed over 90% of the
+  rigid edge contacts in cloth piles.
+- Sides. Re-reading a pair's side every step from a pair resting slightly inside the thickness can
+  pick the wrong side, and the contact then pushes the surfaces through each other; a stack of six
+  cloths kept vertices at 6–19 m/s and detection grew to 900 ms per step. Vertex–face pairs now
+  remember their side and use it only when the current reading is ambiguous (closer than half the
+  thickness); a clear reading always wins, since on an open surface a vertex can legitimately pass
+  round a free border to the other side. Edge–edge pairs cannot use history: their common normal
+  flips whenever the edges turn past parallel, which folds do constantly, and a remembered side
+  (as a sign or as a world direction) let a folding strip pass through itself. Ambiguous edge pairs
+  are skipped for that step instead, leaving them to the vertex–face contacts.
+- Self contact exclusion lists (faces per vertex, edges per edge) are built at creation, or when
+  self collision or the thickness changes, so the first step has no hitch.
+
+### Verification
+
+Debug and release: 484 tests in 127 suites pass. New tests: a narrow strip dropped across a pinned
+narrow strip (no vertex of either lies over the other's triangles) hangs on it with edge collision
+and falls 3 m without; two crossing ropes catch each other between their vertices; a cloth with
+0.25 m spacing falling on a 1 cm rod between its vertices is caught, and a free light rod is carried
+down at the speed momentum conservation gives (about 5.4 m/s); results are bit identical for 1 and
+6 workers. The earlier self collision, cloth on cloth, rope, waking, and rollback tests still pass.
 
