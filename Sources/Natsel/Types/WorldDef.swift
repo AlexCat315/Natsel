@@ -197,6 +197,10 @@ public struct Profile: Sendable, Equatable {
     public var bullets: Float = 0
     public var sleepIslands: Float = 0
     public var sensors: Float = 0
+    /// Soft body collision and simulation.
+    public var softBodies: Float = 0
+    /// Vehicle wheel casts and drivetrain preparation (the constraint solve is in the solver phases).
+    public var vehicles: Float = 0
 
     public init() {}
 }

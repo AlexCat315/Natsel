@@ -121,7 +121,8 @@ extension World {
         var joint = Joint()
         joint.jointId = jointId
         joint.userData = def.userData
-        joint.generation = joint.generation &+ 1
+        // A recycled slot keeps its revision so stale ids stay invalid (b3CreateJointInternal).
+        joint.generation = joints[Int(jointId)].generation &+ 1
         joint.setIndex = B3.nullIndex
         joint.colorIndex = B3.nullIndex
         joint.localIndex = B3.nullIndex
@@ -510,6 +511,9 @@ extension World {
     /// Destroy a joint and remove it from its body lists, island, and solver set.
     public func destroyJoint(_ jointId: Int32, _ wakeAttached: Bool) {
         var joint = joints[Int(jointId)]
+        if joint.type == .sixDOFJoint {
+            releaseSixDOFData(readJointSim(jointId).sixDOF.slot)
+        }
 
         let edgeA = joint.edges[0]
         let edgeB = joint.edges[1]
@@ -637,9 +641,9 @@ extension World {
     /// The type of a joint, or nil if the id is invalid.
     public func jointType(_ jointId: JointID) -> JointType? {
         let index = jointId.index1 - 1
-        guard index >= 0, Int(index) < joints.count else { return nil }
+        guard jointId.world0 == worldId, index >= 0, Int(index) < joints.count else { return nil }
         let joint = joints[Int(index)]
-        guard joint.jointId != B3.nullIndex else { return nil }
+        guard joint.jointId != B3.nullIndex, joint.generation == jointId.generation else { return nil }
         return joint.type
     }
 
@@ -1376,6 +1380,8 @@ extension World {
         switch sim.type {
         case .parallelJoint, .filterJoint:
             return Vec3()
+        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+            return couplingJointForce(sim)
         case .distanceJoint:
             let joint = sim.distance
             let xfA = bodyTransformQuick(sim.bodyIdA)
@@ -1424,6 +1430,8 @@ extension World {
         switch sim.type {
         case .distanceJoint, .filterJoint:
             return Vec3()
+        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+            return couplingJointTorque(sim)
         case .parallelJoint:
             return inv_h * Vec3(0, 0, sim.parallel.maxTorque)
         case .motorJoint:
@@ -1967,6 +1975,9 @@ extension World {
 
         case .filterJoint:
             break
+
+        case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+            (linearImpulse, angularImpulse) = couplingJointImpulses(sim)
         }
 
         return (linearImpulse * invTimeStep, angularImpulse * invTimeStep)

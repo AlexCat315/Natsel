@@ -31,6 +31,14 @@ extension World {
             prepareSphericalJoint(&sim, context)
         case .wheelJoint:
             prepareWheelJoint(&sim, context)
+        case .gearJoint:
+            prepareGearJoint(&sim, context)
+        case .rackAndPinionJoint:
+            prepareRackAndPinionJoint(&sim, context)
+        case .pulleyJoint:
+            preparePulleyJoint(&sim, context)
+        case .sixDOFJoint:
+            prepareSixDOFJoint(&sim, context)
         default:
             break
         }
@@ -54,6 +62,14 @@ extension World {
             warmStartSphericalJoint(&sim, context, states)
         case .wheelJoint:
             warmStartWheelJoint(&sim, context, states)
+        case .gearJoint:
+            warmStartGearJoint(&sim, states)
+        case .rackAndPinionJoint:
+            warmStartRackAndPinionJoint(&sim, states)
+        case .pulleyJoint:
+            warmStartPulleyJoint(&sim, states)
+        case .sixDOFJoint:
+            warmStartSixDOFJoint(&sim, states)
         default:
             break
         }
@@ -77,6 +93,14 @@ extension World {
             solveSphericalJoint(&sim, context, useBias, states)
         case .wheelJoint:
             solveWheelJoint(&sim, context, useBias, states)
+        case .gearJoint:
+            solveGearJoint(&sim, context, useBias, states)
+        case .rackAndPinionJoint:
+            solveRackAndPinionJoint(&sim, context, useBias, states)
+        case .pulleyJoint:
+            solvePulleyJoint(&sim, context, useBias, states)
+        case .sixDOFJoint:
+            solveSixDOFJoint(&sim, context, useBias, states)
         default:
             break
         }

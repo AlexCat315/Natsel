@@ -770,6 +770,11 @@ extension World {
 extension World {
     /// Change a body's type, moving it between solver sets and rebuilding its contacts, joints,
     /// and broad-phase proxies. Not supported for bodies with compound or height-field shapes.
+    /// The body type: static, kinematic, or dynamic.
+    public func bodyType(_ bodyId: BodyID) -> BodyType {
+        body(bodyId).type
+    }
+
     public func setBodyType(_ bodyId: BodyID, _ type: BodyType) {
         let index = bodyIndex(bodyId)
         var body = bodies[Int(index)]

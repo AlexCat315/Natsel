@@ -12,6 +12,15 @@ public enum JointType: Int32, Sendable, CaseIterable, BitwiseCopyable {
     case sphericalJoint
     case weldJoint
     case wheelJoint
+    /// Couples the rotation of two bodies about their hinge axes.
+    case gearJoint
+    /// Couples the rotation of a pinion to the translation of a rack.
+    case rackAndPinionJoint
+    /// Two bodies hanging from fixed points by one rope.
+    case pulleyJoint
+    /// Configurable joint: each translation and rotation axis is free, limited, or locked, with
+    /// optional motors and friction.
+    case sixDOFJoint
 }
 
 /// Base joint definition used by all joint types. The local frames are measured from the body's
@@ -369,6 +378,50 @@ public struct WheelJointDef {
 
     /// The upper steering angle in radians
     public var upperSteeringLimit: Float = 0
+
+    public init() {}
+}
+
+/// Gear joint definition. Body A and body B turn about the z axes of their local frames, coupled
+/// by `angleA + ratio * angleB = constant`. For two meshing gears `ratio` is the tooth count of B
+/// over the tooth count of A; use a negative ratio for a belt or chain (same direction).
+/// The bodies are usually held by revolute joints. Passing those as references measures the angles
+/// relative to the gear mounts, which keeps the coupling exact when the mounts move.
+public struct GearJointDef {
+    public var base = JointDef()
+    public var ratio: Float = 1
+    /// Optional revolute joint holding body A (angle drift correction).
+    public var referenceJointA = JointID()
+    /// Optional revolute joint holding body B (angle drift correction).
+    public var referenceJointB = JointID()
+
+    public init() {}
+}
+
+/// Rack and pinion joint definition. Body A (the pinion) turns about the z axis of its local frame,
+/// body B (the rack) slides along the x axis of its local frame, coupled by
+/// `translationB = ratio * angleA + constant`. `ratio` is the pinion pitch radius.
+public struct RackAndPinionJointDef {
+    public var base = JointDef()
+    public var ratio: Float = 1
+    /// Optional revolute joint holding the pinion (angle drift correction).
+    public var referencePinionJoint = JointID()
+    /// Optional prismatic joint holding the rack (translation drift correction).
+    public var referenceRackJoint = JointID()
+
+    public init() {}
+}
+
+/// Pulley joint definition. The anchors (local frame origins) hang from fixed ground points by
+/// one rope: `lengthA + ratio * lengthB` stays within [minLength, maxLength].
+public struct PulleyJointDef {
+    public var base = JointDef()
+    public var groundAnchorA = Pos()
+    public var groundAnchorB = Pos()
+    public var ratio: Float = 1
+    /// Rope length bounds. Zero (the default) uses the length at creation, making the rope taut.
+    public var minLength: Float = 0
+    public var maxLength: Float = 0
 
     public init() {}
 }

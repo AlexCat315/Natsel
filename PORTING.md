@@ -332,3 +332,65 @@ box stack settles through `0x37cb0b80904ac026`, `0x949b12937583efcd`, `0x59d9228
 The physics port is complete: 120 source files, 35,069 lines against the C engine's 51,191, with
 361 tests in 104 suites covering 28 of the 29 upstream C test files. `test_recording.c` is the
 one omission, by design.
+
+## Systems beyond the Box3D port — 2026-10-24
+
+A gap review against Jolt found Natsel complete as a Box3D port but missing several systems Jolt
+users expect. These are now implemented as first class world systems. None of them change the
+behavior of existing scenes: every stage returns immediately when its objects are absent, and all
+determinism hashes and the 395 earlier tests still pass.
+
+| Gap | Implementation | Files |
+|---|---|---|
+| Vehicles | `VehicleDef` / `createVehicle`: suspension (frequency or stiffness, preload, bump stop, force point), tire friction curves vs slip ratio and slip angle with a friction ellipse, engine torque curve, automatic/manual gearbox with clutch timing, limited slip differentials (axle and center), brakes and hand brake, anti-roll bars, pitch/roll limit; wheeled, tracked, and motorcycle (lean spring and lean steering limit) controllers; ray, sphere, and rounded cylinder wheel casts | `Vehicle/` |
+| Soft bodies / cloth | Small-step XPBD: edges, shear, distance or dihedral bending, tetrahedral volume, long range attachments (euclidean or geodesic), skinning with max distance and back stop, pressure; two way coupling with rigid bodies on every geometry type; sleeping; ray casts; cloth, cube, sphere, and rope factories | `SoftBody/` |
+| Character controller | `CharacterVirtual`: collide and slide, ground states, slope limit, stair walking with forward test, stick to floor, moving platforms, pushing bodies, kinematic inner body, crouch with overlap check | `Character/` |
+| Buoyancy | Exact submerged volume for spheres, hulls (face clipping), closed meshes, compounds; Gauss-Legendre quadrature for capsules; Archimedes force at the center of buoyancy, quadratic drag, angular drag, currents | `Simulation/Buoyancy.swift` |
+| Gear, rack and pinion, pulley | Two-body coupling joints in the constraint graph; unwrapped angle and translation tracking, optionally through the revolute/prismatic joints holding the bodies | `Simulation/CouplingJoints.swift` |
+| Six DOF joint | Per axis free/limited/locked, soft limits, velocity and position motors, friction, pyramid or cone swing limits, block solves when fully locked | `Simulation/SixDOFJoint.swift` |
+
+### Placement in the step
+
+- Wheel casts run after the narrow phase and before the awake set is sized, because they wake the
+  bodies under the wheels (waking is legal there, as in `b3UpdateContacts`). Casts only read the
+  world and run in parallel across vehicles when `workerCount > 1`.
+- The vehicle constraint is prepared with the contacts and solved after the joints and contacts of
+  every substep: warm start (engine torque, implicit viscous clutch, anti-roll bars, accumulated
+  impulses), then a biased and a relax pass. A braked tire is solved together with its brake as an
+  exact 2x2 block; separate Gauss-Seidel steps converged slowly because a wheel's rotational mass
+  (I/r^2, about 7 kg) is tiny next to the chassis.
+- Soft bodies run after body finalization and the bullet pass. Collision planes are taken at the
+  rigid bodies' end-of-step poses, and the impulses exchanged with dynamic bodies change their
+  velocities for the next step. Soft bodies simulate in parallel; rigid velocity changes are merged
+  in soft body order, so results do not depend on the worker count.
+
+### Design notes
+
+- Soft body constraints are solved in four wide batches of vertex disjoint constraints, built
+  greedily in the settings' order with a 64 constraint window. `optimize()` sorts vertices along a
+  Morton curve (collision patches of 32 vertices) and edges by graph distance from the kinematic
+  vertices, so one sweep carries corrections outward from the anchors. Alternating sweep direction
+  was measured and rejected: it doubled the worst stretch.
+- Six DOF rotation limits act on the components of the relative rotation quaternion (exact for a
+  single axis), with the same Jacobians the revolute joint uses for its collinearity constraint. Its
+  per axis state lives in `World.sixDOFStore`, keeping `JointSim` at 444 bytes.
+- Joint springs follow Box3D/Jolt: frequency is relative to the axis' own effective mass. A six DOF
+  rotation spring on an anchor far from the center of mass is therefore softer than its hertz.
+
+### Port fixes found on the way
+
+- `createJoint` reset a recycled slot's generation to 1, so stale `JointID`s aliased new joints;
+  it now increments the slot's revision as `b3CreateJointInternal` does, and `jointType` /
+  `jointIsValid` check the world and generation like `b3Joint_IsValid`.
+- Added `World.bodyType(_:)` (`b3Body_GetType`).
+
+### Verification
+
+Debug and release: 451 tests in 121 suites pass (56 new tests across vehicles, soft bodies,
+characters, buoyancy, and joints, including finite-difference checks of the dihedral gradients and
+serial/parallel equivalence for soft bodies and wheel casts). The unsigned arm64 iOS 26 device
+build succeeds. Benchmarks for the new systems are in `PERFORMANCE.md`, section 9.
+
+Remaining Jolt features not covered here: a multithreaded constraint solver (the solver is still
+serial by color), path constraints, skeletal ragdoll/animation utilities, state save/restore, soft
+body self collision and soft–soft contact, and double precision large worlds.

@@ -23,6 +23,9 @@ var benchmarks: [Benchmark] = [
     Benchmark(name: "washer", create: createWasher, step: nil, destroy: nil, totalStepCount: 1000),
     Benchmark(name: "convex_pile", create: createConvexPile, step: nil, destroy: nil, totalStepCount: 500),
     Benchmark(name: "paddle", create: createPaddle, step: nil, destroy: nil, totalStepCount: 50),
+    Benchmark(name: "vehicles", create: createVehicles, step: stepVehicles, destroy: destroyVehicles, totalStepCount: 600),
+    Benchmark(name: "cloth", create: createCloth, step: nil, destroy: nil, totalStepCount: 300),
+    Benchmark(name: "soft_cubes", create: createSoftCubes, step: nil, destroy: nil, totalStepCount: 300),
 ]
 
 var singleBenchmark: Int = -1
@@ -80,6 +83,9 @@ for (index, benchmark) in benchmarks.enumerated() {
         let world = World()
         if let wide = benchmarkEnvironment["NATSEL_WIDE"] {
             world.enableWideSolver = wide == "1"
+        }
+        if let workers = benchmarkEnvironment["NATSEL_WORKERS"].flatMap(Int32.init) {
+            world.workerCount = workers
         }
         if benchmarkEnvironment["NATSEL_CCD"] == "0" {
             world.enableContinuous = false

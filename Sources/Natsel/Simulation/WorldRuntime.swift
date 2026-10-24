@@ -350,6 +350,10 @@ private enum JointPayload: BitwiseCopyable {
     case prismatic(PrismaticJointSim)
     case spherical(SphericalJointSim)
     case wheel(WheelJointSim)
+    case gear(GearJointSim)
+    case rackAndPinion(RackAndPinionJointSim)
+    case pulley(PulleyJointSim)
+    case sixDOF(SixDOFJointSim)
 }
 
 /// Solver data for a joint.
@@ -443,6 +447,38 @@ struct JointSim: BitwiseCopyable {
             return WheelJointSim()
         }
         @inline(__always) set { payload = .wheel(newValue) }
+    }
+
+    var gear: GearJointSim {
+        @inline(__always) get {
+            if case .gear(let value) = payload { return value }
+            return GearJointSim()
+        }
+        @inline(__always) set { payload = .gear(newValue) }
+    }
+
+    var rackAndPinion: RackAndPinionJointSim {
+        @inline(__always) get {
+            if case .rackAndPinion(let value) = payload { return value }
+            return RackAndPinionJointSim()
+        }
+        @inline(__always) set { payload = .rackAndPinion(newValue) }
+    }
+
+    var pulley: PulleyJointSim {
+        @inline(__always) get {
+            if case .pulley(let value) = payload { return value }
+            return PulleyJointSim()
+        }
+        @inline(__always) set { payload = .pulley(newValue) }
+    }
+
+    var sixDOF: SixDOFJointSim {
+        @inline(__always) get {
+            if case .sixDOF(let value) = payload { return value }
+            return SixDOFJointSim()
+        }
+        @inline(__always) set { payload = .sixDOF(newValue) }
     }
     init() {}
 }
@@ -648,6 +684,18 @@ public final class World {
     var inv_dt: Float = 0
     var splitIslandId: Int32 = B3.nullIndex
     var compoundShapeCount: Int32 = 0
+
+    /// Vehicle constraints. Solved with the joints of each substep (Vehicle/).
+    var vehicles: [VehicleRecord] = []
+    var vehicleIdPool = IDPool()
+
+    /// Six DOF joint state, kept out of `JointSim` so other joints stay small.
+    var sixDOFStore: [SixDOFJointData] = []
+    var sixDOFPool = IDPool()
+
+    /// Position based soft bodies. Simulated after rigid body finalization (SoftBody/).
+    var softBodies: [SoftBodyRecord] = []
+    var softBodyIdPool = IDPool()
 
     var locked = false
     var inUse = true

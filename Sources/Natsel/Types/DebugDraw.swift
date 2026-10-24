@@ -155,6 +155,10 @@ public struct DebugDraw {
     public var drawContactNormals = false
     public var drawContactForces = false
     public var drawIslands = false
+    /// Wheels, suspension, and tire contacts of vehicles.
+    public var drawVehicles = true
+    /// Soft body edges and the vertices touching rigid shapes.
+    public var drawSoftBodies = true
 
     /// Factory invoked the first time a shape needs a renderable representation. The returned
     /// pointer is cached on the shape and passed to `drawShape`.

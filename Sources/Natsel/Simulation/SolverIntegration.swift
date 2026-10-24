@@ -474,8 +474,13 @@ extension World {
         if timeStep > 0 {
             stepIndex += 1
 
+            // Wheel casts may wake bodies, so they run before the awake set is sized.
+            updateVehicleCollisions()
+            profile.vehicles = getMillisecondsAndReset(&ticks)
+
             let awakeCount = solverSets[Int(SetType.awakeSet.rawValue)].bodySims.count
             if awakeCount == 0 {
+                stepSoftBodies(context.dt)
                 acceptSensorHits()
                 overlapSensors()
                 sensorEndEvents.publish()
@@ -492,6 +497,7 @@ extension World {
             }
 
             prepareAllContacts(context)
+            prepareVehicles(context)
             profile.prepareConstraints = getMillisecondsAndReset(&ticks)
 
             for _ in 0..<Int(context.subStepCount) {
@@ -499,10 +505,12 @@ extension World {
                 profile.integrateVelocities += getMillisecondsAndReset(&ticks)
 
                 warmStartAll(context)
+                warmStartVehicles(context)
                 profile.warmStart += getMillisecondsAndReset(&ticks)
 
                 for _ in 0..<1 {
                     pushAll(context)
+                    solveVehicles(context, true)
                 }
                 profile.solveImpulses += getMillisecondsAndReset(&ticks)
 
@@ -511,6 +519,7 @@ extension World {
 
                 for _ in 0..<1 {
                     solveAll(context)
+                    solveVehicles(context, false)
                 }
                 profile.relaxImpulses += getMillisecondsAndReset(&ticks)
 
@@ -524,6 +533,7 @@ extension World {
             profile.restitution = getMillisecondsAndReset(&ticks)
 
             storeAllImpulses()
+            finalizeVehicles(context)
             profile.storeImpulses = getMillisecondsAndReset(&ticks)
             emitContactHitEvents()
 
@@ -583,6 +593,11 @@ extension World {
             }
 
             profile.bullets = getMillisecondsAndReset(&ticks)
+
+            // Soft bodies see the finalized rigid bodies and feed impulses into the next step.
+            stepSoftBodies(context.dt)
+            profile.softBodies = getMillisecondsAndReset(&ticks)
+
             if enableSleep {
                 processSleep()
             }

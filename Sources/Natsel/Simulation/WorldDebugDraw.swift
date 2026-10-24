@@ -24,6 +24,8 @@ extension World {
         }
 
         drawJointExtrasPass(options)
+        drawVehiclesPass(options)
+        drawSoftBodiesPass(options)
     }
 
     // MARK: Shape
@@ -304,6 +306,9 @@ extension World {
 
             case .filterJoint:
                 drawSegment(pA, pB, DebugColors.gold)
+
+            case .gearJoint, .rackAndPinionJoint, .pulleyJoint, .sixDOFJoint:
+                drawCouplingJoint(sim, xfA, xfB, pA, pB, scale, drawSegment, drawPoint)
             }
 
             if options.drawGraphColors, let drawPoint {
