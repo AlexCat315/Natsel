@@ -73,6 +73,9 @@ for (index, benchmark) in benchmarks.enumerated() {
         if let wide = ProcessInfo.processInfo.environment["NATSEL_WIDE"] {
             world.enableWideSolver = wide == "1"
         }
+        if ProcessInfo.processInfo.environment["NATSEL_CCD"] == "0" {
+            world.enableContinuous = false
+        }
         benchmark.create(world)
 
         if benchmark.step != nil {

@@ -1,6 +1,7 @@
 extension World {
     func updateCompoundContact(_ contactId: Int32, _ shapeA: Shape, _ xfA: WorldTransform,
                                _ shapeB: Shape, _ xfB: WorldTransform, _ isFast: Bool,
+                               _ scratch: UnsafeMutablePointer<MeshContactScratch>,
                                _ cs: inout ContactStore) -> Bool {
         guard case .compound(let compound) = shapeA.geometry else { return false }
         let child = compound.child(at: Int(cs.get(contactId).childIndex))
@@ -12,29 +13,50 @@ extension World {
             temporary.geometry = .capsule(capsule)
             temporary.materials = [shapeA.material(Int32(child.materialIndices[0]))]
             if shapeB.type == .hullShape {
-                touching = updateConvexContact(contactId, shapeB, xfB, temporary, xfA, true, &cs)
+                touching = withUnsafePointer(to: temporary) { temp in
+                    withUnsafePointer(to: shapeB) { other in
+                        updateConvexContact(contactId, other, xfB, temp, xfA, true, scratch, &cs)
+                    }
+                }
             } else {
-                touching = updateConvexContact(contactId, temporary, xfA, shapeB, xfB, false, &cs)
+                touching = withUnsafePointer(to: temporary) { temp in
+                    withUnsafePointer(to: shapeB) { other in
+                        updateConvexContact(contactId, temp, xfA, other, xfB, false, scratch, &cs)
+                    }
+                }
             }
         case .hull(let hull):
             temporary.type = .hullShape
             temporary.geometry = .hull(hull)
             temporary.materials = [shapeA.material(Int32(child.materialIndices[0]))]
-            touching = updateConvexContact(contactId, temporary, mulWorldTransforms(xfA, child.transform), shapeB, xfB, false, &cs)
+            touching = withUnsafePointer(to: temporary) { temp in
+                withUnsafePointer(to: shapeB) { other in
+                    updateConvexContact(
+                        contactId, temp, mulWorldTransforms(xfA, child.transform), other, xfB, false, scratch, &cs)
+                }
+            }
         case .mesh(let mesh):
             temporary.type = .meshShape
             temporary.geometry = .mesh(mesh)
             touching = computeMeshManifolds(contactId, shapeA: temporary, transformA: mulWorldTransforms(xfA, child.transform),
                                              shapeB: shapeB, transformB: xfB, isFast: isFast,
-                                             materialIndices: child.materialIndices, cs: &cs)
+                                             materialIndices: child.materialIndices, scratch, cs: &cs)
         case .sphere(let sphere):
             temporary.type = .sphereShape
             temporary.geometry = .sphere(sphere)
             temporary.materials = [shapeA.material(Int32(child.materialIndices[0]))]
             if shapeB.type == .capsuleShape || shapeB.type == .hullShape {
-                touching = updateConvexContact(contactId, shapeB, xfB, temporary, xfA, true, &cs)
+                touching = withUnsafePointer(to: temporary) { temp in
+                    withUnsafePointer(to: shapeB) { other in
+                        updateConvexContact(contactId, other, xfB, temp, xfA, true, scratch, &cs)
+                    }
+                }
             } else {
-                touching = updateConvexContact(contactId, temporary, xfA, shapeB, xfB, false, &cs)
+                touching = withUnsafePointer(to: temporary) { temp in
+                    withUnsafePointer(to: shapeB) { other in
+                        updateConvexContact(contactId, temp, xfA, other, xfB, false, scratch, &cs)
+                    }
+                }
             }
         }
         if case .mesh = child.geometry {

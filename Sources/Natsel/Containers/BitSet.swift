@@ -83,6 +83,20 @@ struct BitSet: BitwiseCopyable {
         bits![Int(blockIndex)] &= ~(UInt64(1) << (bitIndex % 64))
     }
 
+    /// Visit set bits in ascending order without scanning the whole bit count.
+    @inline(__always)
+    func forEachSetBit(_ body: (Int32) -> Void) {
+        guard let bits else { return }
+        for block in 0..<Int(blockCount) {
+            var word = bits[block]
+            while word != 0 {
+                let lane = word.trailingZeroBitCount
+                body(Int32(block << 6) + Int32(lane))
+                word &= word - 1
+            }
+        }
+    }
+
     @inline(__always)
     func getBit(_ bitIndex: UInt32) -> Bool {
         let blockIndex = bitIndex / 64

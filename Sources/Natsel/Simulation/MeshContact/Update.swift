@@ -1,12 +1,13 @@
 extension World {
     func computeMeshManifolds(_ contactId: Int32, shapeA: Shape, transformA: WorldTransform,
                               shapeB: Shape, transformB: WorldTransform, isFast: Bool,
-                              materialIndices: [UInt16]? = nil, cs: inout ContactStore) -> Bool {
+                              materialIndices: [UInt16]? = nil, _ scratch: UnsafeMutablePointer<MeshContactScratch>,
+                              cs: inout ContactStore) -> Bool {
         guard let surface = TriangleSurface(shapeA.geometry) else { return false }
         var contact = cs.get(contactId)
         contact.meshContact.refresh(surface: surface, transform: transformA, bounds: shapeB.aabb)
         let triangles = collideMeshTriangles(&contact, surface: surface, transformA: transformA,
-                                             shapeB: shapeB, transformB: transformB, isFast: isFast)
+                                             shapeB: shapeB, transformB: transformB, isFast: isFast, scratch)
         let accepted = selectMeshManifolds(triangles, sphere: shapeB.type == .sphereShape)
         if accepted.isEmpty {
             contact.manifolds.removeAll()

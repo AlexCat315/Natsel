@@ -14,9 +14,11 @@ extension World {
         b3Assert(setIndex >= SetType.firstSleepingSet.rawValue)
 
         let set = solverSets[Int(setIndex)]
-        var awakeSet = solverSets[Int(SetType.awakeSet.rawValue)]
-        var disabledSet = solverSets[Int(SetType.disabledSet.rawValue)]
+        let awakeSetIndex = Int(SetType.awakeSet.rawValue)
+        let disabledSetIndex = Int(SetType.disabledSet.rawValue)
 
+        // Append directly into the stored sets. Copying a set to a local variable and writing it
+        // back made every append copy the entire array because both copies shared storage.
         let bodyCount = set.bodySims.count
         for i in 0..<bodyCount {
             let simSrc = set.bodySims[i]
@@ -24,17 +26,17 @@ extension World {
             var body = bodies[Int(simSrc.bodyId)]
             b3Assert(body.setIndex == setIndex)
             body.setIndex = SetType.awakeSet.rawValue
-            body.localIndex = Int32(awakeSet.bodySims.count)
+            body.localIndex = Int32(solverSets[awakeSetIndex].bodySims.count)
 
             // Reset sleep timer
             body.sleepTime = 0
             bodies[Int(simSrc.bodyId)] = body
 
-            awakeSet.bodySims.append(simSrc)
+            solverSets[awakeSetIndex].bodySims.append(simSrc)
 
             var state = BodyState.identity
             state.flags = body.flags
-            awakeSet.bodyStates.append(state)
+            solverSets[awakeSetIndex].bodyStates.append(state)
 
             // Move non-touching contacts from disabled set to awake set.
             let encodedBodySimIndex = body.localIndex
@@ -67,14 +69,14 @@ extension World {
 
                 let localIndex = contact.localIndex
 
-                b3Assert(0 <= localIndex && Int(localIndex) < disabledSet.contactIndices.count)
-                b3Assert(disabledSet.contactIndices[Int(localIndex)] == contactId)
+                b3Assert(0 <= localIndex && Int(localIndex) < solverSets[disabledSetIndex].contactIndices.count)
+                b3Assert(solverSets[disabledSetIndex].contactIndices[Int(localIndex)] == contactId)
 
                 b3Assert((contact.flags & ContactFlags.simTouching.rawValue) == 0 && contact.manifoldCount == 0)
 
                 contact.setIndex = SetType.awakeSet.rawValue
-                contact.localIndex = Int32(awakeSet.contactIndices.count)
-                awakeSet.contactIndices.append(contactId)
+                contact.localIndex = Int32(solverSets[awakeSetIndex].contactIndices.count)
+                solverSets[awakeSetIndex].contactIndices.append(contactId)
 
                 if edgeIndex == 0 {
                     contact.encodedBodySimA = encodedBodySimIndex
@@ -84,10 +86,11 @@ extension World {
 
                 contacts[Int(contactId)] = contact
 
-                let movedLocalIndex = removeSwapArray(&disabledSet.contactIndices, Int(localIndex))
+                let movedLocalIndex = removeSwapArray(
+                    &solverSets[disabledSetIndex].contactIndices, Int(localIndex))
                 if movedLocalIndex != B3.nullIndex {
                     // fix moved element
-                    let movedContactIndex = disabledSet.contactIndices[Int(localIndex)]
+                    let movedContactIndex = solverSets[disabledSetIndex].contactIndices[Int(localIndex)]
                     var movedContact = contacts[Int(movedContactIndex)]
                     b3Assert(movedContact.localIndex == movedLocalIndex)
                     movedContact.localIndex = localIndex
@@ -125,15 +128,11 @@ extension World {
         let islandCount = set.islandSims.count
         for i in 0..<islandCount {
             let islandSrc = set.islandSims[i]
-            var island = islands[Int(islandSrc.islandId)]
-            island.setIndex = SetType.awakeSet.rawValue
-            island.localIndex = Int32(awakeSet.islandSims.count)
-            islands[Int(islandSrc.islandId)] = island
-            awakeSet.islandSims.append(islandSrc)
+            islands[Int(islandSrc.islandId)].setIndex = SetType.awakeSet.rawValue
+            islands[Int(islandSrc.islandId)].localIndex =
+                Int32(solverSets[awakeSetIndex].islandSims.count)
+            solverSets[awakeSetIndex].islandSims.append(islandSrc)
         }
-
-        solverSets[Int(SetType.awakeSet.rawValue)] = awakeSet
-        solverSets[Int(SetType.disabledSet.rawValue)] = disabledSet
 
         // Destroy the sleeping set.
         destroySolverSet(setIndex)
@@ -153,8 +152,8 @@ extension World {
             swap(&bigId, &smallId)
         }
 
-        var set1 = solverSets[Int(bigId)]
         let set2 = solverSets[Int(smallId)]
+        let bigSetIndex = Int(bigId)
 
         // transfer bodies
         for i in 0..<set2.bodySims.count {
@@ -163,10 +162,10 @@ extension World {
             var body = bodies[Int(simSrc.bodyId)]
             b3Assert(body.setIndex == smallId)
             body.setIndex = bigId
-            body.localIndex = Int32(set1.bodySims.count)
+            body.localIndex = Int32(solverSets[bigSetIndex].bodySims.count)
             bodies[Int(simSrc.bodyId)] = body
 
-            set1.bodySims.append(simSrc)
+            solverSets[bigSetIndex].bodySims.append(simSrc)
         }
 
         // transfer contacts
@@ -174,9 +173,9 @@ extension World {
             var contact = contacts[Int(contactId)]
             b3Assert(contact.setIndex == smallId)
             contact.setIndex = bigId
-            contact.localIndex = Int32(set1.contactIndices.count)
+            contact.localIndex = Int32(solverSets[bigSetIndex].contactIndices.count)
             contacts[Int(contactId)] = contact
-            set1.contactIndices.append(contactId)
+            solverSets[bigSetIndex].contactIndices.append(contactId)
         }
 
         // transfer joints
@@ -184,25 +183,22 @@ extension World {
             var joint = joints[Int(jointSim.jointId)]
             b3Assert(joint.setIndex == smallId)
             joint.setIndex = bigId
-            joint.localIndex = Int32(set1.jointSims.count)
+            joint.localIndex = Int32(solverSets[bigSetIndex].jointSims.count)
             joints[Int(jointSim.jointId)] = joint
 
-            set1.jointSims.append(jointSim)
+            solverSets[bigSetIndex].jointSims.append(jointSim)
         }
 
         // transfer islands
         for islandSrc in set2.islandSims {
             let islandId = islandSrc.islandId
 
-            var island = islands[Int(islandId)]
-            island.setIndex = bigId
-            island.localIndex = Int32(set1.islandSims.count)
-            islands[Int(islandId)] = island
+            islands[Int(islandId)].setIndex = bigId
+            islands[Int(islandId)].localIndex =
+                Int32(solverSets[bigSetIndex].islandSims.count)
 
-            set1.islandSims.append(islandSrc)
+            solverSets[bigSetIndex].islandSims.append(islandSrc)
         }
-
-        solverSets[Int(bigId)] = set1
 
         // destroy the merged set
         destroySolverSet(smallId)
@@ -219,25 +215,28 @@ extension World {
         }
 
         var body = bodies[Int(bodyId)]
-        var sourceSet = solverSets[Int(sourceSetIndex)]
-        var targetSet = solverSets[Int(targetSetIndex)]
+        let sourceSetIndex = Int(sourceSetIndex)
+        let targetSetIndex = Int(targetSetIndex)
+        let sourceSet = solverSets[sourceSetIndex]
+        let targetSet = solverSets[targetSetIndex]
 
         let sourceIndex = body.localIndex
         var targetSim = sourceSet.bodySims[Int(sourceIndex)]
 
-        let targetIndex = targetSet.bodySims.count
-        targetSet.bodySims.append(targetSim)
+        let targetIndex = solverSets[targetSetIndex].bodySims.count
+        solverSets[targetSetIndex].bodySims.append(targetSim)
 
         // Clear transient body flags
         body.flags &= ~BodyFlags.bodyTransientFlags.rawValue
         targetSim.flags &= ~(BodyFlags.isFast.rawValue | BodyFlags.bodyTransientFlags.rawValue)
-        targetSet.bodySims[targetIndex] = targetSim
+        solverSets[targetSetIndex].bodySims[targetIndex] = targetSim
 
         // Remove body sim from the solver set that owns it
-        let movedIndex = removeSwapArray(&sourceSet.bodySims, Int(sourceIndex))
+        let movedIndex = removeSwapArray(
+            &solverSets[sourceSetIndex].bodySims, Int(sourceIndex))
         if movedIndex != B3.nullIndex {
             // Fix moved body index
-            let movedId = sourceSet.bodySims[Int(sourceIndex)].bodyId
+            let movedId = solverSets[sourceSetIndex].bodySims[Int(sourceIndex)].bodyId
             var movedBody = bodies[Int(movedId)]
             b3Assert(movedBody.localIndex == movedIndex)
             movedBody.localIndex = sourceIndex
@@ -250,19 +249,16 @@ extension World {
         }
 
         if sourceSet.setIndex == SetType.awakeSet.rawValue {
-            removeSwapArray(&sourceSet.bodyStates, Int(sourceIndex))
+            removeSwapArray(&solverSets[sourceSetIndex].bodyStates, Int(sourceIndex))
         } else if targetSet.setIndex == SetType.awakeSet.rawValue {
             var state = BodyState.identity
             state.flags = body.flags
-            targetSet.bodyStates.append(state)
+            solverSets[targetSetIndex].bodyStates.append(state)
         }
 
         body.setIndex = targetSet.setIndex
         body.localIndex = Int32(targetIndex)
         bodies[Int(bodyId)] = body
-
-        solverSets[Int(sourceSetIndex)] = sourceSet
-        solverSets[Int(targetSetIndex)] = targetSet
     }
 
     /// Move a joint between solver sets.
@@ -272,8 +268,9 @@ extension World {
         }
 
         var joint = joints[Int(jointId)]
-        var sourceSet = solverSets[Int(sourceSetIndex)]
-        var targetSet = solverSets[Int(targetSetIndex)]
+        let targetSetIndex = Int(targetSetIndex)
+        let sourceSet = solverSets[Int(sourceSetIndex)]
+        let targetSet = solverSets[targetSetIndex]
 
         let localIndex = joint.localIndex
         let colorIndex = joint.colorIndex
@@ -296,28 +293,26 @@ extension World {
             joints[Int(jointId)] = joint
         } else {
             joint.setIndex = targetSet.setIndex
-            joint.localIndex = Int32(targetSet.jointSims.count)
+            joint.localIndex = Int32(solverSets[targetSetIndex].jointSims.count)
             joint.colorIndex = B3.nullIndex
             joints[Int(jointId)] = joint
 
-            targetSet.jointSims.append(sourceSim)
+            solverSets[targetSetIndex].jointSims.append(sourceSim)
         }
 
         // Destroy source.
         if sourceSet.setIndex == SetType.awakeSet.rawValue {
             removeJointFromGraph(joint.edges[0].bodyId, joint.edges[1].bodyId, colorIndex, localIndex)
         } else {
-            let movedIndex = removeSwapArray(&sourceSet.jointSims, Int(localIndex))
+            let movedIndex = removeSwapArray(
+                &solverSets[Int(sourceSetIndex)].jointSims, Int(localIndex))
             if movedIndex != B3.nullIndex {
                 // fix swapped element
-                let movedId = sourceSet.jointSims[Int(localIndex)].jointId
+                let movedId = solverSets[Int(sourceSetIndex)].jointSims[Int(localIndex)].jointId
                 var movedJoint = joints[Int(movedId)]
                 movedJoint.localIndex = localIndex
                 joints[Int(movedId)] = movedJoint
             }
         }
-
-        solverSets[Int(sourceSetIndex)] = sourceSet
-        solverSets[Int(targetSetIndex)] = targetSet
     }
 }

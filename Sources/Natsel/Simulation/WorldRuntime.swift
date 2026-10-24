@@ -499,6 +499,17 @@ public final class World {
     var broadPhase: BroadPhase
     let constraintGraph: ConstraintGraph
 
+    /// Reused broad-phase scratch. These arrays stay alive across steps so pair generation does
+    /// not allocate and regrow a fresh list every frame.
+    var pairKeyScratch: [UInt64] = []
+    var movedSiblingScratch: [Int32] = []
+    var crossSeedQueue: [NodePair] = []
+    var staticSeedScratch: [NodePair] = []
+    var kinematicSeedScratch: [NodePair] = []
+    var broadPhasePairStack: [TraversalPair] = []
+    var broadPhaseProxyStack: [Int32] = []
+    var contactIndexScratch: [Int32] = []
+
     var bodies: [Body] = []
     var bodyIdPool = IDPool()
 
@@ -541,6 +552,13 @@ public final class World {
 
     /// Per-thread task storage.
     var taskContexts: [TaskContext] = [TaskContext()]
+
+    /// Reused serial mesh narrow-phase scratch.
+    var meshContactScratch = MeshContactScratch()
+
+    /// Serial CCD query state. Reusing it avoids allocating a class and a sensor-hit array for
+    /// every fast body every step.
+    let continuousContext = ContinuousContext()
 
     /// Number of worker threads for the parallel phases (broad-phase pair generation and the
     /// collide pass). The solver itself runs serially by color, as C does. Results are independent
@@ -934,22 +952,20 @@ public final class World {
         }
 
         let islandId = body.islandId
-        var island = islands[Int(islandId)]
         do {
             let localIndex = Int(body.islandIndex)
-            let movedBodyId = island.bodies[island.bodies.count - 1]
-            island.bodies[localIndex] = movedBodyId
-            b3Validate(bodies[Int(movedBodyId)].islandIndex == Int32(island.bodies.count - 1))
+            let islandBodyCount = islands[Int(islandId)].bodies.count
+            let movedBodyId = islands[Int(islandId)].bodies[islandBodyCount - 1]
+            islands[Int(islandId)].bodies[localIndex] = movedBodyId
+            b3Validate(bodies[Int(movedBodyId)].islandIndex == Int32(islandBodyCount - 1))
             bodies[Int(movedBodyId)].islandIndex = Int32(localIndex)
-            island.bodies.removeLast()
+            islands[Int(islandId)].bodies.removeLast()
         }
 
-        if island.bodies.count == 0 {
-            b3Assert(island.contacts.count == 0)
-            b3Assert(island.joints.count == 0)
+        if islands[Int(islandId)].bodies.count == 0 {
+            b3Assert(islands[Int(islandId)].contacts.count == 0)
+            b3Assert(islands[Int(islandId)].joints.count == 0)
             destroyIsland(islandId)
-        } else {
-            islands[Int(islandId)] = island
         }
 
         body = bodies[Int(bodyId)]

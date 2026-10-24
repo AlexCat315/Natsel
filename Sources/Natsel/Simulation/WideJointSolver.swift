@@ -106,7 +106,9 @@ extension World {
             guard enableWideSolver, ci != Int(overflowIndex) else { continue }
             let list = constraintGraph.colors[ci].jointSims
             guard list.count >= 4 else { continue }
-            solverJoints.starts[ci] = Array(repeating: -1, count: list.count)
+            solverJoints.starts[ci].removeAll(keepingCapacity: true)
+            solverJoints.starts[ci].append(
+                contentsOf: repeatElement(-1, count: list.count))
             var i = 0
             while i < list.count {
                 guard Self.isWideSpherical(list[i]) else {

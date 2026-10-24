@@ -321,36 +321,47 @@ func negativeTransformFromSoA(
 // MARK: - Separating axis
 
 /// Compute the best face and edge separating axes between two hulls, with B in A's frame.
+/// Test/standalone entry point. The production narrow phase supplies a persistent slab because
+/// Swift's temporary allocation falls back to the heap above 1 KB.
 func computeSeparatingAxis(_ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ earlyReturn: Bool) -> AxisQuery {
+    withUnsafeTemporaryAllocation(byteCount: satScratchByteCount, alignment: 16) { scratch in
+        computeSeparatingAxis(hullA, hullB, xfB, earlyReturn, scratch.baseAddress!)
+    }
+}
+
+func computeSeparatingAxis(
+    _ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ earlyReturn: Bool,
+    _ scratch: UnsafeMutableRawPointer
+) -> AxisQuery {
     // Match C's uninitialized scratch: every consumed element is written first. One aligned
-    // temporary slab avoids clearing 25 maximum-sized arrays for each hull pair.
+    // slab avoids clearing 25 maximum-sized arrays for each hull pair.
     precondition(B3.maxHullVertices <= 128 && B3.maxHullFaces <= 128 && B3.maxHullEdges <= 128)
-    return withUnsafeTemporaryAllocation(byteCount: 25 * 132 * 4, alignment: 16) { scratch in
-        let dotA = scratch.baseAddress!.advanced(by: 0).bindMemory(to: Float.self, capacity: 132)
-        let dotB = scratch.baseAddress!.advanced(by: 528).bindMemory(to: Float.self, capacity: 132)
-        let planeDotA = scratch.baseAddress!.advanced(by: 1056).bindMemory(to: Float.self, capacity: 132)
-        let planeDotB = scratch.baseAddress!.advanced(by: 1584).bindMemory(to: Float.self, capacity: 132)
-        let edgeIndicesA = scratch.baseAddress!.advanced(by: 2112).bindMemory(to: Int32.self, capacity: 132)
-        let edgeIndicesB = scratch.baseAddress!.advanced(by: 2640).bindMemory(to: Int32.self, capacity: 132)
-        let bFNx = scratch.baseAddress!.advanced(by: 3168).bindMemory(to: Float.self, capacity: 132)
-        let bFNy = scratch.baseAddress!.advanced(by: 3696).bindMemory(to: Float.self, capacity: 132)
-        let bFNz = scratch.baseAddress!.advanced(by: 4224).bindMemory(to: Float.self, capacity: 132)
-        let bWx = scratch.baseAddress!.advanced(by: 4752).bindMemory(to: Float.self, capacity: 132)
-        let bWy = scratch.baseAddress!.advanced(by: 5280).bindMemory(to: Float.self, capacity: 132)
-        let bWz = scratch.baseAddress!.advanced(by: 5808).bindMemory(to: Float.self, capacity: 132)
-        let aN0x = scratch.baseAddress!.advanced(by: 6336).bindMemory(to: Float.self, capacity: 132)
-        let aN0y = scratch.baseAddress!.advanced(by: 6864).bindMemory(to: Float.self, capacity: 132)
-        let aN0z = scratch.baseAddress!.advanced(by: 7392).bindMemory(to: Float.self, capacity: 132)
-        let aN1x = scratch.baseAddress!.advanced(by: 7920).bindMemory(to: Float.self, capacity: 132)
-        let aN1y = scratch.baseAddress!.advanced(by: 8448).bindMemory(to: Float.self, capacity: 132)
-        let aN1z = scratch.baseAddress!.advanced(by: 8976).bindMemory(to: Float.self, capacity: 132)
-        let aDx = scratch.baseAddress!.advanced(by: 9504).bindMemory(to: Float.self, capacity: 132)
-        let aDy = scratch.baseAddress!.advanced(by: 10032).bindMemory(to: Float.self, capacity: 132)
-        let aDz = scratch.baseAddress!.advanced(by: 10560).bindMemory(to: Float.self, capacity: 132)
-        let aV0x = scratch.baseAddress!.advanced(by: 11088).bindMemory(to: Float.self, capacity: 132)
-        let aV0y = scratch.baseAddress!.advanced(by: 11616).bindMemory(to: Float.self, capacity: 132)
-        let aV0z = scratch.baseAddress!.advanced(by: 12144).bindMemory(to: Float.self, capacity: 132)
-        let aTol = scratch.baseAddress!.advanced(by: 12672).bindMemory(to: Float.self, capacity: 132)
+    do {
+        let dotA = scratch.advanced(by: 0).bindMemory(to: Float.self, capacity: 132)
+        let dotB = scratch.advanced(by: 528).bindMemory(to: Float.self, capacity: 132)
+        let planeDotA = scratch.advanced(by: 1056).bindMemory(to: Float.self, capacity: 132)
+        let planeDotB = scratch.advanced(by: 1584).bindMemory(to: Float.self, capacity: 132)
+        let edgeIndicesA = scratch.advanced(by: 2112).bindMemory(to: Int32.self, capacity: 132)
+        let edgeIndicesB = scratch.advanced(by: 2640).bindMemory(to: Int32.self, capacity: 132)
+        let bFNx = scratch.advanced(by: 3168).bindMemory(to: Float.self, capacity: 132)
+        let bFNy = scratch.advanced(by: 3696).bindMemory(to: Float.self, capacity: 132)
+        let bFNz = scratch.advanced(by: 4224).bindMemory(to: Float.self, capacity: 132)
+        let bWx = scratch.advanced(by: 4752).bindMemory(to: Float.self, capacity: 132)
+        let bWy = scratch.advanced(by: 5280).bindMemory(to: Float.self, capacity: 132)
+        let bWz = scratch.advanced(by: 5808).bindMemory(to: Float.self, capacity: 132)
+        let aN0x = scratch.advanced(by: 6336).bindMemory(to: Float.self, capacity: 132)
+        let aN0y = scratch.advanced(by: 6864).bindMemory(to: Float.self, capacity: 132)
+        let aN0z = scratch.advanced(by: 7392).bindMemory(to: Float.self, capacity: 132)
+        let aN1x = scratch.advanced(by: 7920).bindMemory(to: Float.self, capacity: 132)
+        let aN1y = scratch.advanced(by: 8448).bindMemory(to: Float.self, capacity: 132)
+        let aN1z = scratch.advanced(by: 8976).bindMemory(to: Float.self, capacity: 132)
+        let aDx = scratch.advanced(by: 9504).bindMemory(to: Float.self, capacity: 132)
+        let aDy = scratch.advanced(by: 10032).bindMemory(to: Float.self, capacity: 132)
+        let aDz = scratch.advanced(by: 10560).bindMemory(to: Float.self, capacity: 132)
+        let aV0x = scratch.advanced(by: 11088).bindMemory(to: Float.self, capacity: 132)
+        let aV0y = scratch.advanced(by: 11616).bindMemory(to: Float.self, capacity: 132)
+        let aV0z = scratch.advanced(by: 12144).bindMemory(to: Float.self, capacity: 132)
+        let aTol = scratch.advanced(by: 12672).bindMemory(to: Float.self, capacity: 132)
         let R = makeMatrixFromQuat(xfB.q)
         let invR = transpose(R)
 
@@ -928,6 +939,7 @@ func buildFaceAContact(
     _ hullB: Hull,
     _ transformBtoA: Transform,
     _ query: SeparatingAxis,
+    _ slab: UnsafeMutableRawPointer,
     _ cache: inout SATCache
 ) -> Bool {
     b3Assert(capacity > 0)
@@ -948,13 +960,15 @@ func buildFaceAContact(
     let refNormalInB = invRotateVector(transformBtoA.q, refPlane.normal)
     let incFace = findIncidentFace(hullB, refNormalInB, query.indexB)
 
-    // Build clip polygon from incident face in frame A
-    var buffer1 = InlineArray<64, ClipVertex>(repeating: ClipVertex())
-    var buffer2 = InlineArray<64, ClipVertex>(repeating: ClipVertex())
-    return withInlineBuffer(&buffer1) { buffer1 in
-        return withInlineBuffer(&buffer2) { buffer2 in
+    // Build the clip polygons and reduced points in one uninitialized temporary slab. Initializing
+    // three 64-entry arrays here cleared several kilobytes per face contact, and selecting the
+    // active buffer with a ternary copied an entire InlineArray.
+    let buffer1 = slab.assumingMemoryBound(to: ClipVertex.self)
+    let buffer2 = buffer1 + 64
+    let points = UnsafeMutableRawPointer(buffer2 + 64)
+        .assumingMemoryBound(to: LocalManifoldPoint.self)
 
-            var pointCount = buildPolygon(buffer1.baseAddress!, transformBtoA, hullB, incFace, refPlane)
+            var pointCount = buildPolygon(buffer1, transformBtoA, hullB, incFace, refPlane)
 
             // Clip incident face against side planes of reference face
             let face = facesA + Int(refFace)
@@ -974,9 +988,9 @@ func buildFaceAContact(
                 let clipPlane = makePlaneFromNormalAndPoint(binormal, vertex1)
 
                 if useBuffer1AsInput {
-                    pointCount = clipPolygon(buffer2.baseAddress!, buffer1.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                    pointCount = clipPolygon(buffer2, buffer1, pointCount, clipPlane, edgeIndex, refPlane)
                 } else {
-                    pointCount = clipPolygon(buffer1.baseAddress!, buffer2.baseAddress!, pointCount, clipPlane, edgeIndex, refPlane)
+                    pointCount = clipPolygon(buffer1, buffer2, pointCount, clipPlane, edgeIndex, refPlane)
                 }
                 b3Assert(pointCount <= maxClipPoints)
 
@@ -992,7 +1006,6 @@ func buildFaceAContact(
 
             pointCount = minInt(pointCount, maxClipPoints)
 
-            var points = InlineArray<64, LocalManifoldPoint>(repeating: LocalManifoldPoint())
             var minSeparation = Float.greatestFiniteMagnitude
 
             manifold.normal = refPlane.normal
@@ -1021,9 +1034,7 @@ func buildFaceAContact(
                 return false
             }
 
-            withInlineBuffer(&points) {
-                reduceManifoldPoints(&manifold, capacity, $0.baseAddress!, pointCount)
-            }
+            reduceManifoldPoints(&manifold, capacity, points, pointCount)
 
             // Save cache
             cache.separation = minSeparation
@@ -1032,8 +1043,6 @@ func buildFaceAContact(
             cache.indexB = UInt8(truncatingIfNeeded: query.indexB)
 
             return true
-        }
-    }
 }
 
 /// Build a manifold for a face-B reference axis.
@@ -1044,6 +1053,7 @@ func buildFaceBContact(
     _ hullB: Hull,
     _ transformBtoA: Transform,
     _ query: SeparatingAxis,
+    _ slab: UnsafeMutableRawPointer,
     _ cache: inout SATCache
 ) -> Bool {
     b3Validate(query.type == .faceAxisB)
@@ -1058,7 +1068,7 @@ func buildFaceBContact(
     flippedQuery.type = .faceAxisA
 
     let touching = buildFaceAContact(
-        &manifold, capacity, hullB, hullA, transformAtoB, flippedQuery, &cache
+        &manifold, capacity, hullB, hullA, transformAtoB, flippedQuery, slab, &cache
     )
     if touching == false {
         cache = SATCache()
@@ -1156,7 +1166,23 @@ func isWithinSegments(_ result: SegmentDistanceResult) -> Bool {
 
 // MARK: - Hull collision
 
-/// Compute the contact manifold between two hulls. The transform maps B into A's frame.
+@inline(__always)
+func meshSATScratch(_ scratch: UnsafeMutablePointer<MeshContactScratch>) -> UnsafeMutableRawPointer {
+    if scratch.pointee.satScratch.isEmpty {
+        scratch.pointee.satScratch = Array(repeating: 0, count: satScratchByteCount)
+    }
+    return scratch.pointee.satScratch.withUnsafeMutableBytes { $0.baseAddress! }
+}
+
+@inline(__always)
+func meshFaceScratch(_ scratch: UnsafeMutablePointer<MeshContactScratch>) -> UnsafeMutableRawPointer {
+    if scratch.pointee.faceScratch.isEmpty {
+        scratch.pointee.faceScratch = Array(repeating: 0, count: faceScratchByteCount)
+    }
+    return scratch.pointee.faceScratch.withUnsafeMutableBytes { $0.baseAddress! }
+}
+
+/// Test/standalone entry point.
 func collideHulls(
     _ manifold: inout LocalManifold,
     _ capacity: Int32,
@@ -1165,11 +1191,30 @@ func collideHulls(
     _ transformBtoA: Transform,
     _ cache: inout SATCache
 ) {
+    var scratch = MeshContactScratch()
+    withUnsafeMutablePointer(to: &scratch) { scratch in
+        collideHulls(&manifold, capacity, hullA, hullB, transformBtoA, scratch, &cache)
+    }
+}
+
+/// Compute the contact manifold between two hulls. The transform maps B into A's frame.
+func collideHulls(
+    _ manifold: inout LocalManifold,
+    _ capacity: Int32,
+    _ hullA: Hull,
+    _ hullB: Hull,
+    _ transformBtoA: Transform,
+    _ scratch: UnsafeMutablePointer<MeshContactScratch>,
+    _ cache: inout SATCache
+) {
     manifold.pointCount = 0
 
     if capacity < 4 {
         return
     }
+
+    let satSlab = meshSATScratch(scratch)
+    let faceSlab = meshFaceScratch(scratch)
 
     // Work in shapeA coordinates
     let speculativeDistance = B3.speculativeDistance
@@ -1217,7 +1262,7 @@ func collideHulls(
 
         var localCache = SATCache()
         let touching = buildFaceAContact(
-            &manifold, capacity, hullA, hullB, transformBtoA, faceQuery, &localCache
+            &manifold, capacity, hullA, hullB, transformBtoA, faceQuery, faceSlab, &localCache
         )
         if touching && absFloat(cache.separation - localCache.separation) < linearSlop {
             // Cache hit, contact points generated
@@ -1252,7 +1297,7 @@ func collideHulls(
 
         var localCache = SATCache()
         let touching = buildFaceBContact(
-            &manifold, capacity, hullA, hullB, transformBtoA, faceQuery, &localCache
+            &manifold, capacity, hullA, hullB, transformBtoA, faceQuery, faceSlab, &localCache
         )
         if touching && absFloat(cache.separation - localCache.separation) < linearSlop {
             // Cache hit, contact points generated
@@ -1335,17 +1380,17 @@ func collideHulls(
         }
 
     case .manualFaceAxisA:
-        let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, false)
-        _ = buildFaceAContact(&manifold, capacity, hullA, hullB, transformBtoA, axisQuery.faceA, &cache)
+        let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, false, satSlab)
+        _ = buildFaceAContact(&manifold, capacity, hullA, hullB, transformBtoA, axisQuery.faceA, faceSlab, &cache)
         return
 
     case .manualFaceAxisB:
-        let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, false)
-        _ = buildFaceBContact(&manifold, capacity, hullA, hullB, transformBtoA, axisQuery.faceB, &cache)
+        let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, false, satSlab)
+        _ = buildFaceBContact(&manifold, capacity, hullA, hullB, transformBtoA, axisQuery.faceB, faceSlab, &cache)
         return
 
     case .manualEdgePairAxis:
-        let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, false)
+        let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, false, satSlab)
         let edgeQuery = axisQuery.edge
         if edgeQuery.indexA != B3.nullIndex {
             _ = buildEdgeContact(&manifold, hullA, hullB, transformBtoA, edgeQuery, &cache)
@@ -1359,7 +1404,7 @@ func collideHulls(
     manifold.pointCount = 0
     cache = SATCache()
 
-    let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, true)
+    let axisQuery = computeSeparatingAxis(hullA, hullB, transformBtoA, true, satSlab)
 
     if axisQuery.separatedFeature != .invalidAxis {
         // We found a separating axis
@@ -1396,7 +1441,7 @@ func collideHulls(
         b3Validate(0 <= faceQuery.indexB && faceQuery.indexB < hullB.vertexCount)
 
         // Face contact A
-        _ = buildFaceAContact(&manifold, capacity, hullA, hullB, transformBtoA, faceQuery, &cache)
+        _ = buildFaceAContact(&manifold, capacity, hullA, hullB, transformBtoA, faceQuery, faceSlab, &cache)
 
         b3Validate(Int32(cache.indexA) < hullA.faceCount)
         b3Validate(Int32(cache.indexB) < hullB.vertexCount)
@@ -1406,7 +1451,7 @@ func collideHulls(
         b3Validate(0 <= faceQuery.indexB && faceQuery.indexB < hullB.faceCount)
 
         // Face contact B
-        _ = buildFaceBContact(&manifold, capacity, hullA, hullB, transformBtoA, faceQuery, &cache)
+        _ = buildFaceBContact(&manifold, capacity, hullA, hullB, transformBtoA, faceQuery, faceSlab, &cache)
 
         b3Validate(Int32(cache.indexA) < hullA.vertexCount)
         b3Validate(Int32(cache.indexB) < hullB.faceCount)

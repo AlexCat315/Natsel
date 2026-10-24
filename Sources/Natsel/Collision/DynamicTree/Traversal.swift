@@ -33,7 +33,9 @@ struct TreeView {
             return result
         }
 
-        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
+        // Keep this at 1 KB or less: Swift's temporary allocation falls back to the heap above
+        // 1 KB, and tree traversal depth is logarithmic in the proxy count.
+        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: 256) { stack in
             var stackCount = 0
             stack[stackCount] = rootPairIndex
             stackCount += 1
@@ -101,7 +103,7 @@ struct TreeView {
         }
 
         return withUnsafeTemporaryAllocation(
-            of: (nodeIndex: Int32, distanceToNodeSqr: Float).self, capacity: treeStackSize
+            of: (nodeIndex: Int32, distanceToNodeSqr: Float).self, capacity: 128
         ) { stack in
             var stackCount = 0
 
@@ -201,7 +203,9 @@ struct TreeView {
         // Build a bounding box for the segment.
         var segmentAABB = AABB(minVec3(p1, p2), maxVec3(p1, p2))
 
-        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
+        // Keep this at 1 KB or less: Swift's temporary allocation falls back to the heap above
+        // 1 KB, and tree traversal depth is logarithmic in the proxy count.
+        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: 256) { stack in
             var stackCount = 0
             stack[stackCount] = rootPairIndex
             stackCount += 1
@@ -319,7 +323,9 @@ struct TreeView {
             maxVec3(originAABB.upperBound, originAABB.upperBound + t)
         )
 
-        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
+        // Keep this at 1 KB or less: Swift's temporary allocation falls back to the heap above
+        // 1 KB, and tree traversal depth is logarithmic in the proxy count.
+        return withUnsafeTemporaryAllocation(of: Int32.self, capacity: 256) { stack in
             var stackCount = 0
             stack[stackCount] = rootPairIndex
             stackCount += 1

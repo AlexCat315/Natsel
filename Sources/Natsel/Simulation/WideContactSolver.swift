@@ -78,72 +78,79 @@ extension World {
         for ci in 0..<Int(B3.graphColorCount) {
             solverContacts.wideConstraints[ci].removeAll(keepingCapacity: true)
             solverContacts.wideConvexCounts[ci] = 0
-            for mesh in [false, true] {
+            for meshIndex in 0..<2 {
+                let mesh = meshIndex == 1
                 guard usesWideContacts(Int32(ci), mesh) else { continue }
-                let list = solverContacts.constraints[ci]
                 let range = solverContacts.range(Int32(ci), mesh)
-                for start in stride(from: range.lowerBound, to: range.upperBound, by: 4) {
-                    var c = ContactConstraintW()
-                    for lane in 0..<min(4, range.upperBound - start) {
-                        let s = list[start + lane]
-                        c.scalarIndices[lane] = Int32(start + lane)
-                        c.indexA[lane] = s.indexA
-                        c.indexB[lane] = s.indexB
-                        c.invMassA[lane] = s.invMassA
-                        c.invMassB[lane] = s.invMassB
-                        c.invIA.setLane(lane, s.invIA)
-                        c.invIB.setLane(lane, s.invIB)
-                        c.rollingMass.setLane(lane, s.rollingMass)
-                        c.biasRate[lane] = s.softness.massScale * s.softness.biasRate
-                        c.massScale[lane] = s.softness.massScale
-                        c.impulseScale[lane] = s.softness.impulseScale
-                        c.friction[lane] = s.friction
-                        c.restitution[lane] = s.restitution
-                        c.rollingResistance[lane] = s.rollingResistance
-                        c.anyRolling = c.anyRolling || s.rollingResistance > 0
-                        c.anyRestitution = c.anyRestitution || s.restitution > 0
-                        c.manifoldCount = max(c.manifoldCount, Int(s.manifoldCount))
-                    }
-                    c.manifoldStart = solverContacts.wideManifolds.count
-                    for offset in 0..<c.manifoldCount {
-                        var m = ManifoldConstraintW()
-                        for lane in 0..<4 {
-                            let index = c.scalarIndices[lane]
-                            guard index >= 0 else { continue }
-                            let s = list[Int(index)]
-                            guard offset < s.manifoldCount else { continue }
-                            let sm = solverContacts.manifoldPool[Int(s.manifoldStart) + offset]
-                            m.exists[lane] = 1
-                            m.pointCounts[lane] = sm.pointCount
-                            m.pointCount = max(m.pointCount, Int(sm.pointCount))
-                            m.normal[lane] = sm.normal
-                            m.tangent1[lane] = sm.tangent1
-                            m.tangent2[lane] = sm.tangent2
-                            m.centerA[lane] = sm.centerA
-                            m.centerB[lane] = sm.centerB
-                            m.twistMass[lane] = sm.twistMass
-                            m.twistImpulse[lane] = sm.twistImpulse
-                            m.tangentMass.xx[lane] = sm.tangentMass.cx.x
-                            m.tangentMass.yy[lane] = sm.tangentMass.cy.y
-                            m.tangentMass.xy[lane] = sm.tangentMass.cx.y
-                            m.frictionImpulse[lane] = sm.frictionImpulse
-                            m.rollingImpulse[lane] = sm.rollingImpulse
-                            m.tangentVelocity1[lane] = sm.tangentVelocity1
-                            m.tangentVelocity2[lane] = sm.tangentVelocity2
-                            for pi in 0..<Int(sm.pointCount) {
-                                let sp = sm.points[pi]
-                                m.points[pi].rA[lane] = sp.rA
-                                m.points[pi].rB[lane] = sp.rB
-                                m.points[pi].baseSeparation[lane] = sp.baseSeparation
-                                m.points[pi].relativeVelocity[lane] = sp.relativeVelocity
-                                m.points[pi].normalImpulse[lane] = sp.normalImpulse
-                                m.points[pi].normalMass[lane] = sp.normalMass
-                                m.points[pi].leverArm[lane] = sp.leverArm
+                solverContacts.constraints[ci].withUnsafeBufferPointer { list in
+                    solverContacts.manifoldPool.withUnsafeBufferPointer { pool in
+                        let listBase = list.baseAddress!
+                        let poolBase = pool.baseAddress!
+                        for start in stride(from: range.lowerBound, to: range.upperBound, by: 4) {
+                            var c = ContactConstraintW()
+                            for lane in 0..<min(4, range.upperBound - start) {
+                                let s = listBase + start + lane
+                                c.scalarIndices[lane] = Int32(start + lane)
+                                c.indexA[lane] = s.pointee.indexA
+                                c.indexB[lane] = s.pointee.indexB
+                                c.invMassA[lane] = s.pointee.invMassA
+                                c.invMassB[lane] = s.pointee.invMassB
+                                c.invIA.setLane(lane, s.pointee.invIA)
+                                c.invIB.setLane(lane, s.pointee.invIB)
+                                c.rollingMass.setLane(lane, s.pointee.rollingMass)
+                                c.biasRate[lane] =
+                                    s.pointee.softness.massScale * s.pointee.softness.biasRate
+                                c.massScale[lane] = s.pointee.softness.massScale
+                                c.impulseScale[lane] = s.pointee.softness.impulseScale
+                                c.friction[lane] = s.pointee.friction
+                                c.restitution[lane] = s.pointee.restitution
+                                c.rollingResistance[lane] = s.pointee.rollingResistance
+                                c.anyRolling = c.anyRolling || s.pointee.rollingResistance > 0
+                                c.anyRestitution = c.anyRestitution || s.pointee.restitution > 0
+                                c.manifoldCount = max(c.manifoldCount, Int(s.pointee.manifoldCount))
                             }
+                            c.manifoldStart = solverContacts.wideManifolds.count
+                            for offset in 0..<c.manifoldCount {
+                                var m = ManifoldConstraintW()
+                                for lane in 0..<4 {
+                                    let index = c.scalarIndices[lane]
+                                    guard index >= 0 else { continue }
+                                    let s = listBase + Int(index)
+                                    guard offset < s.pointee.manifoldCount else { continue }
+                                    let sm = poolBase + Int(s.pointee.manifoldStart) + offset
+                                    m.exists[lane] = 1
+                                    m.pointCounts[lane] = sm.pointee.pointCount
+                                    m.pointCount = max(m.pointCount, Int(sm.pointee.pointCount))
+                                    m.normal[lane] = sm.pointee.normal
+                                    m.tangent1[lane] = sm.pointee.tangent1
+                                    m.tangent2[lane] = sm.pointee.tangent2
+                                    m.centerA[lane] = sm.pointee.centerA
+                                    m.centerB[lane] = sm.pointee.centerB
+                                    m.twistMass[lane] = sm.pointee.twistMass
+                                    m.twistImpulse[lane] = sm.pointee.twistImpulse
+                                    m.tangentMass.xx[lane] = sm.pointee.tangentMass.cx.x
+                                    m.tangentMass.yy[lane] = sm.pointee.tangentMass.cy.y
+                                    m.tangentMass.xy[lane] = sm.pointee.tangentMass.cx.y
+                                    m.frictionImpulse[lane] = sm.pointee.frictionImpulse
+                                    m.rollingImpulse[lane] = sm.pointee.rollingImpulse
+                                    m.tangentVelocity1[lane] = sm.pointee.tangentVelocity1
+                                    m.tangentVelocity2[lane] = sm.pointee.tangentVelocity2
+                                    for pi in 0..<Int(sm.pointee.pointCount) {
+                                        let sp = sm.pointee.points[pi]
+                                        m.points[pi].rA[lane] = sp.rA
+                                        m.points[pi].rB[lane] = sp.rB
+                                        m.points[pi].baseSeparation[lane] = sp.baseSeparation
+                                        m.points[pi].relativeVelocity[lane] = sp.relativeVelocity
+                                        m.points[pi].normalImpulse[lane] = sp.normalImpulse
+                                        m.points[pi].normalMass[lane] = sp.normalMass
+                                        m.points[pi].leverArm[lane] = sp.leverArm
+                                    }
+                                }
+                                solverContacts.wideManifolds.append(m)
+                            }
+                            solverContacts.wideConstraints[ci].append(c)
                         }
-                        solverContacts.wideManifolds.append(m)
                     }
-                    solverContacts.wideConstraints[ci].append(c)
                 }
                 if !mesh { solverContacts.wideConvexCounts[ci] = solverContacts.wideConstraints[ci].count }
             }
@@ -154,7 +161,7 @@ extension World {
     private func withWideContacts(
         _ color: Int32, _ mesh: Bool,
         _ body: (
-            ContactConstraintW, UnsafeMutableBufferPointer<BodyState>,
+            UnsafePointer<ContactConstraintW>, UnsafeMutableBufferPointer<BodyState>,
             UnsafeMutablePointer<ManifoldConstraintW>
         ) -> Void
     ) {
@@ -164,18 +171,27 @@ extension World {
         let range = mesh ? split..<list.count : 0..<split
         withSolverStates { states in
             solverContacts.wideManifolds.withUnsafeMutableBufferPointer { pool in
-                for i in range { body(list[i], states, pool.baseAddress!) }
+                list.withUnsafeBufferPointer { listBuffer in
+                    for i in range { body(listBuffer.baseAddress! + i, states, pool.baseAddress!) }
+                }
             }
         }
     }
 
     func warmStartContactsWide(_ color: Int32, _ mesh: Bool) {
         withWideContacts(color, mesh) { c, states, pool in
+            let invIA = c.pointee.invIA
+            let invIB = c.pointee.invIB
+            let invMassA = c.pointee.invMassA
+            let invMassB = c.pointee.invMassB
+            let indexA = c.pointee.indexA
+            let indexB = c.pointee.indexB
+            let anyRolling = c.pointee.anyRolling
             var linear = Vec3W()
             var angularA = Vec3W()
             var angularB = Vec3W()
-            for offset in 0..<c.manifoldCount {
-                let m = pool + c.manifoldStart + offset
+            for offset in 0..<c.pointee.manifoldCount {
+                let m = pool + c.pointee.manifoldStart + offset
                 var total = FloatW.zero
                 var momentA = Vec3W()
                 var momentB = Vec3W()
@@ -191,8 +207,8 @@ extension World {
                 let twist = mulW(m.pointee.twistImpulse, normal)
                 var a = addW(addW(crossW(momentA, normal), crossW(m.pointee.centerA, friction)), twist)
                 var b = addW(addW(crossW(momentB, normal), crossW(m.pointee.centerB, friction)), twist)
-                if c.anyRolling {
-                    let rolling = selectW(c.rollingResistance .> .zero, m.pointee.rollingImpulse, Vec3W())
+                if anyRolling {
+                    let rolling = selectW(c.pointee.rollingResistance .> .zero, m.pointee.rollingImpulse, Vec3W())
                     a = addW(a, rolling)
                     b = addW(b, rolling)
                 }
@@ -203,14 +219,14 @@ extension World {
                 angularA = addW(angularA, selectW(active, a, Vec3W()))
                 angularB = addW(angularB, selectW(active, b, Vec3W()))
             }
-            var a = Self.gatherStatesW(states, c.indexA)
-            var b = Self.gatherStatesW(states, c.indexB)
-            a.w = subW(a.w, mulMVW(c.invIA, angularA))
-            a.v = subW(a.v, mulW(c.invMassA, linear))
-            b.w = addW(b.w, mulMVW(c.invIB, angularB))
-            b.v = addW(b.v, mulW(c.invMassB, linear))
-            Self.scatterStatesW(states, c.indexA, a)
-            Self.scatterStatesW(states, c.indexB, b)
+            var a = Self.gatherStatesW(states, indexA)
+            var b = Self.gatherStatesW(states, indexB)
+            a.w = subW(a.w, mulMVW(invIA, angularA))
+            a.v = subW(a.v, mulW(invMassA, linear))
+            b.w = addW(b.w, mulMVW(invIB, angularB))
+            b.v = addW(b.v, mulW(invMassB, linear))
+            Self.scatterStatesW(states, indexA, a)
+            Self.scatterStatesW(states, indexB, b)
         }
     }
 
@@ -218,12 +234,18 @@ extension World {
         let invH = FloatW(repeating: context.inv_h)
         let minSpeed = FloatW(repeating: -contactSpeed)
         withWideContacts(color, mesh) { c, states, pool in
-            var a = Self.gatherStatesW(states, c.indexA)
-            var b = Self.gatherStatesW(states, c.indexB)
+            let indexA = c.pointee.indexA
+            let indexB = c.pointee.indexB
+            let invMass = c.pointee.invMassA + c.pointee.invMassB
+            let invMassA = c.pointee.invMassA
+            let invMassB = c.pointee.invMassB
+            let invIA = c.pointee.invIA
+            let invIB = c.pointee.invIB
+            var a = Self.gatherStatesW(states, indexA)
+            var b = Self.gatherStatesW(states, indexB)
             let dp = subW(b.dp, a.dp)
-            let invMass = c.invMassA + c.invMassB
-            for offset in 0..<c.manifoldCount {
-                let m = pool + c.manifoldStart + offset
+            for offset in 0..<c.pointee.manifoldCount {
+                let m = pool + c.pointee.manifoldStart + offset
                 let normal = m.pointee.normal
                 let separation = dotW(normal, dp)
                 let normalA = invRotateVecW(a.dq, normal)
@@ -237,9 +259,9 @@ extension World {
                             (separation + (dotW(normalB, p.pointee.rB) - dotW(normalA, p.pointee.rA)))
                             + p.pointee.baseSeparation
                         let separated = s .> .zero
-                        let bias = selectW(separated, s * invH, maxW(c.biasRate * s, minSpeed))
-                        let mass = selectW(separated, FloatW(repeating: 1), c.massScale)
-                        let impulseScale = selectW(separated, .zero, c.impulseScale)
+                        let bias = selectW(separated, s * invH, maxW(c.pointee.biasRate * s, minSpeed))
+                        let mass = selectW(separated, FloatW(repeating: 1), c.pointee.massScale)
+                        let impulseScale = selectW(separated, .zero, c.pointee.impulseScale)
                         let uA = crossW(p.pointee.rA, normal)
                         let uB = crossW(p.pointee.rB, normal)
                         let vn = vnLinear + (dotW(uB, b.w) - dotW(uA, a.w))
@@ -249,17 +271,17 @@ extension World {
                         p.pointee.normalImpulse += impulse
                         vnLinear += invMass * impulse
                         total += impulse
-                        a.w = selectW(active, subW(a.w, mulW(impulse, mulMVW(c.invIA, uA))), a.w)
-                        b.w = selectW(active, addW(b.w, mulW(impulse, mulMVW(c.invIB, uB))), b.w)
+                        a.w = selectW(active, subW(a.w, mulW(impulse, mulMVW(invIA, uA))), a.w)
+                        b.w = selectW(active, addW(b.w, mulW(impulse, mulMVW(invIB, uB))), b.w)
                     }
                 }
                 let active = m.pointee.exists .> .zero
                 let impulse = mulW(total, normal)
-                a.v = selectW(active, subW(a.v, mulW(c.invMassA, impulse)), a.v)
-                b.v = selectW(active, addW(b.v, mulW(c.invMassB, impulse)), b.v)
+                a.v = selectW(active, subW(a.v, mulW(invMassA, impulse)), a.v)
+                b.v = selectW(active, addW(b.v, mulW(invMassB, impulse)), b.v)
             }
-            Self.scatterStatesW(states, c.indexA, a)
-            Self.scatterStatesW(states, c.indexB, b)
+            Self.scatterStatesW(states, indexA, a)
+            Self.scatterStatesW(states, indexB, b)
         }
     }
 
@@ -267,12 +289,18 @@ extension World {
         let invH = FloatW(repeating: context.inv_h)
         let epsilon = FloatW(repeating: Float.ulpOfOne)
         withWideContacts(color, mesh) { c, states, pool in
-            var a = Self.gatherStatesW(states, c.indexA)
-            var b = Self.gatherStatesW(states, c.indexB)
+            let indexA = c.pointee.indexA
+            let indexB = c.pointee.indexB
+            let invMass = c.pointee.invMassA + c.pointee.invMassB
+            let invMassA = c.pointee.invMassA
+            let invMassB = c.pointee.invMassB
+            let invIA = c.pointee.invIA
+            let invIB = c.pointee.invIB
+            var a = Self.gatherStatesW(states, indexA)
+            var b = Self.gatherStatesW(states, indexB)
             let dp = subW(b.dp, a.dp)
-            let invMass = c.invMassA + c.invMassB
-            for offset in 0..<c.manifoldCount {
-                let m = pool + c.manifoldStart + offset
+            for offset in 0..<c.pointee.manifoldCount {
+                let m = pool + c.pointee.manifoldStart + offset
                 let oldA = a
                 let oldB = b
                 let normal = m.pointee.normal
@@ -307,34 +335,34 @@ extension World {
                         twistLimit += p.pointee.leverArm * newImpulse
                         vnLinear += invMass * impulse
                         total += impulse
-                        a.w = selectW(active, subW(a.w, mulW(impulse, mulMVW(c.invIA, uA))), a.w)
-                        b.w = selectW(active, addW(b.w, mulW(impulse, mulMVW(c.invIB, uB))), b.w)
+                        a.w = selectW(active, subW(a.w, mulW(impulse, mulMVW(invIA, uA))), a.w)
+                        b.w = selectW(active, addW(b.w, mulW(impulse, mulMVW(invIB, uB))), b.w)
                     }
                 }
-                if c.anyRolling {
-                    var delta = mulMVW(c.rollingMass, subW(a.w, b.w))
+                if c.pointee.anyRolling {
+                    var delta = mulMVW(c.pointee.rollingMass, subW(a.w, b.w))
                     let old = m.pointee.rollingImpulse
                     var new = addW(old, delta)
-                    let limit = c.rollingResistance * totalNormal
+                    let limit = c.pointee.rollingResistance * totalNormal
                     let lengthSquared = dotW(new, new)
                     let scale = selectW(
                         lengthSquared .> (epsilon + limit * limit),
                         limit / (lengthSquared.squareRoot() + epsilon), FloatW(repeating: 1))
-                    new = selectW(c.rollingResistance .> .zero, mulW(scale, new), Vec3W())
+                    new = selectW(c.pointee.rollingResistance .> .zero, mulW(scale, new), Vec3W())
                     m.pointee.rollingImpulse = new
                     delta = subW(new, old)
-                    let rolling = c.rollingResistance .> .zero
-                    a.w = selectW(rolling, subW(a.w, mulMVW(c.invIA, delta)), a.w)
-                    b.w = selectW(rolling, addW(b.w, mulMVW(c.invIB, delta)), b.w)
+                    let rolling = c.pointee.rollingResistance .> .zero
+                    a.w = selectW(rolling, subW(a.w, mulMVW(invIA, delta)), a.w)
+                    b.w = selectW(rolling, addW(b.w, mulMVW(invIB, delta)), b.w)
                 }
                 let twistSpeed = dotW(normal, subW(b.w, a.w))
-                let maxLambda = c.friction * twistLimit
+                let maxLambda = c.pointee.friction * twistLimit
                 let oldTwist = m.pointee.twistImpulse
                 var twist = negW(m.pointee.twistMass * twistSpeed)
                 twist = maxW(negW(maxLambda) - oldTwist, minW(twist, maxLambda - oldTwist))
                 m.pointee.twistImpulse = oldTwist + twist
-                a.w = subW(a.w, mulW(twist, mulMVW(c.invIA, normal)))
-                b.w = addW(b.w, mulW(twist, mulMVW(c.invIB, normal)))
+                a.w = subW(a.w, mulW(twist, mulMVW(invIA, normal)))
+                b.w = addW(b.w, mulW(twist, mulMVW(invIB, normal)))
                 let rA = m.pointee.centerA
                 let rB = m.pointee.centerB
                 let angular = subW(crossW(b.w, rB), crossW(a.w, rA))
@@ -343,7 +371,7 @@ extension World {
                 delta = Vec2W(x: negW(delta.x), y: negW(delta.y))
                 let oldFriction = m.pointee.frictionImpulse
                 var newFriction = Vec2W(x: oldFriction.x + delta.x, y: oldFriction.y + delta.y)
-                let limit = c.friction * totalNormal
+                let limit = c.pointee.friction * totalNormal
                 let lengthSquared = newFriction.x * newFriction.x + newFriction.y * newFriction.y
                 let scale = selectW(
                     lengthSquared .> (limit * limit), limit / (lengthSquared.squareRoot() + epsilon),
@@ -352,17 +380,17 @@ extension World {
                 delta = Vec2W(x: newFriction.x - oldFriction.x, y: newFriction.y - oldFriction.y)
                 m.pointee.frictionImpulse = newFriction
                 var impulse = addW(mulW(delta.x, t1), mulW(delta.y, t2))
-                a.w = subW(a.w, mulMVW(c.invIA, crossW(rA, impulse)))
-                b.w = addW(b.w, mulMVW(c.invIB, crossW(rB, impulse)))
+                a.w = subW(a.w, mulMVW(invIA, crossW(rA, impulse)))
+                b.w = addW(b.w, mulMVW(invIB, crossW(rB, impulse)))
                 impulse = addW(impulse, mulW(total, normal))
                 let active = m.pointee.exists .> .zero
-                a.v = selectW(active, subW(a.v, mulW(c.invMassA, impulse)), oldA.v)
-                b.v = selectW(active, addW(b.v, mulW(c.invMassB, impulse)), oldB.v)
+                a.v = selectW(active, subW(a.v, mulW(invMassA, impulse)), oldA.v)
+                b.v = selectW(active, addW(b.v, mulW(invMassB, impulse)), oldB.v)
                 a.w = selectW(active, a.w, oldA.w)
                 b.w = selectW(active, b.w, oldB.w)
             }
-            Self.scatterStatesW(states, c.indexA, a)
-            Self.scatterStatesW(states, c.indexB, b)
+            Self.scatterStatesW(states, indexA, a)
+            Self.scatterStatesW(states, indexB, b)
         }
     }
 
@@ -371,15 +399,21 @@ extension World {
         let threshold = FloatW(repeating: -restitutionThreshold)
         let propagate = enableRestitutionPropagation
         withWideContacts(color, mesh) { c, states, pool in
-            if !propagate && !c.anyRestitution { return }
-            var a = Self.gatherStatesW(states, c.indexA)
-            var b = Self.gatherStatesW(states, c.indexB)
+            if !propagate && !c.pointee.anyRestitution { return }
+            let indexA = c.pointee.indexA
+            let indexB = c.pointee.indexB
+            let invIA = c.pointee.invIA
+            let invIB = c.pointee.invIB
+            let invMassA = c.pointee.invMassA
+            let invMassB = c.pointee.invMassB
+            var a = Self.gatherStatesW(states, indexA)
+            var b = Self.gatherStatesW(states, indexB)
             let originalA = a
             let originalB = b
-            let restitutionMask = c.restitution .> .zero
+            let restitutionMask = c.pointee.restitution .> .zero
             let dp = subW(b.dp, a.dp)
-            for offset in 0..<c.manifoldCount {
-                let m = pool + c.manifoldStart + offset
+            for offset in 0..<c.pointee.manifoldCount {
+                let m = pool + c.pointee.manifoldStart + offset
                 let normal = m.pointee.normal
                 let separation = dotW(normal, dp)
                 let normalA = invRotateVecW(a.dq, normal)
@@ -398,14 +432,14 @@ extension World {
                         let armed =
                             restitutionMask .& (p.pointee.relativeVelocity .< threshold) .& (compression .> .zero)
                         let bias = selectW(
-                            armed, c.restitution * p.pointee.relativeVelocity, maxW(.zero, s * invH))
+                            armed, c.pointee.restitution * p.pointee.relativeVelocity, maxW(.zero, s * invH))
                         let vrA = addW(a.v, crossW(a.w, p.pointee.rA))
                         let vrB = addW(b.v, crossW(b.w, p.pointee.rB))
                         let vn = dotW(subW(vrB, vrA), normal)
                         let neg = mass * (vn + bias)
                         var impulse = maxW(p.pointee.normalImpulse - neg, .zero) - p.pointee.normalImpulse
                         let approach = minW(maxW(negW(mass) * vn, .zero), maxW(impulse, .zero))
-                        let allowance = c.restitution * (compression + approach) - p.pointee.restitutionImpulse
+                        let allowance = c.pointee.restitution * (compression + approach) - p.pointee.restitutionImpulse
                         impulse = selectW(
                             active, selectW(armed, minW(impulse, approach + maxW(allowance, .zero)), impulse),
                             .zero)
@@ -413,10 +447,10 @@ extension World {
                         p.pointee.restitutionImpulse += impulse - approach
                         p.pointee.totalNormalImpulse += impulse
                         let linear = mulW(impulse, normal)
-                        a.w = selectW(active, subW(a.w, mulMVW(c.invIA, crossW(p.pointee.rA, linear))), a.w)
-                        a.v = selectW(active, subW(a.v, mulW(c.invMassA, linear)), a.v)
-                        b.w = selectW(active, addW(b.w, mulMVW(c.invIB, crossW(p.pointee.rB, linear))), b.w)
-                        b.v = selectW(active, addW(b.v, mulW(c.invMassB, linear)), b.v)
+                        a.w = selectW(active, subW(a.w, mulMVW(invIA, crossW(p.pointee.rA, linear))), a.w)
+                        a.v = selectW(active, subW(a.v, mulW(invMassA, linear)), a.v)
+                        b.w = selectW(active, addW(b.w, mulMVW(invIB, crossW(p.pointee.rB, linear))), b.w)
+                        b.v = selectW(active, addW(b.v, mulW(invMassB, linear)), b.v)
                     }
                 }
             }
@@ -426,46 +460,55 @@ extension World {
                 b.v = selectW(restitutionMask, b.v, originalB.v)
                 b.w = selectW(restitutionMask, b.w, originalB.w)
             }
-            Self.scatterStatesW(states, c.indexA, a)
-            Self.scatterStatesW(states, c.indexB, b)
+            Self.scatterStatesW(states, indexA, a)
+            Self.scatterStatesW(states, indexB, b)
         }
     }
 
     /// Persist directly from SoA lanes without first copying back into scalar constraints.
     func storeImpulsesWide(_ color: Int32, _ mesh: Bool) {
         let ci = Int(color)
-        let list = solverContacts.constraints[ci]
-        let wide = solverContacts.wideConstraints[ci]
         let split = solverContacts.wideConvexCounts[ci]
-        let range = mesh ? split..<wide.count : 0..<split
-        solverContacts.wideManifolds.withUnsafeBufferPointer { pool in
-            contacts.withUnsafeMutableBufferPointer { store in
-                for i in range {
-                    let c = wide[i]
-                    for lane in 0..<4 {
-                        let index = c.scalarIndices[lane]
-                        guard index >= 0 else { continue }
-                        let s = list[Int(index)]
-                        let id = Int(s.contactId)
-                        let hitEvents = (store[id].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
-                        store[id].manifolds.withUnsafeMutableBufferPointer { manifolds in
-                            for offset in 0..<Int(s.manifoldCount) {
-                                let m = pool.baseAddress! + c.manifoldStart + offset
-                                let out = manifolds.baseAddress! + offset
-                                for pi in 0..<Int(out.pointee.pointCount) {
-                                    out.pointee.points[pi].normalImpulse = m.pointee.points[pi].normalImpulse[lane]
-                                    out.pointee.points[pi].totalNormalImpulse =
-                                        m.pointee.points[pi].totalNormalImpulse[lane]
-                                    if hitEvents {
-                                        out.pointee.points[pi].normalVelocity =
-                                            m.pointee.points[pi].relativeVelocity[lane]
+        solverContacts.constraints[ci].withUnsafeBufferPointer { list in
+            solverContacts.wideConstraints[ci].withUnsafeBufferPointer { wide in
+                let range = mesh ? split..<wide.count : 0..<split
+                let listBase = list.baseAddress!
+                let wideBase = wide.baseAddress!
+                solverContacts.wideManifolds.withUnsafeBufferPointer { pool in
+                    contacts.withUnsafeMutableBufferPointer { store in
+                        let poolBase = pool.baseAddress!
+                        let storeBase = store.baseAddress!
+                        for i in range {
+                            let c = wideBase + i
+                            for lane in 0..<4 {
+                                let index = c.pointee.scalarIndices[lane]
+                                guard index >= 0 else { continue }
+                                let s = listBase + Int(index)
+                                let id = Int(s.pointee.contactId)
+                                let hitEvents =
+                                    (storeBase[id].flags & ContactFlags.simEnableHitEvent.rawValue) != 0
+                                storeBase[id].manifolds.withUnsafeMutableBufferPointer { manifolds in
+                                    let manifoldBase = manifolds.baseAddress!
+                                    for offset in 0..<Int(s.pointee.manifoldCount) {
+                                        let m = poolBase + c.pointee.manifoldStart + offset
+                                        let out = manifoldBase + offset
+                                        for pi in 0..<Int(out.pointee.pointCount) {
+                                            out.pointee.points[pi].normalImpulse =
+                                                m.pointee.points[pi].normalImpulse[lane]
+                                            out.pointee.points[pi].totalNormalImpulse =
+                                                m.pointee.points[pi].totalNormalImpulse[lane]
+                                            if hitEvents {
+                                                out.pointee.points[pi].normalVelocity =
+                                                    m.pointee.points[pi].relativeVelocity[lane]
+                                            }
+                                        }
+                                        out.pointee.twistImpulse = m.pointee.twistImpulse[lane]
+                                        out.pointee.frictionImpulse =
+                                            m.pointee.frictionImpulse.x[lane] * m.pointee.tangent1[lane]
+                                            + m.pointee.frictionImpulse.y[lane] * m.pointee.tangent2[lane]
+                                        out.pointee.rollingImpulse = m.pointee.rollingImpulse[lane]
                                     }
                                 }
-                                out.pointee.twistImpulse = m.pointee.twistImpulse[lane]
-                                out.pointee.frictionImpulse =
-                                    m.pointee.frictionImpulse.x[lane] * m.pointee.tangent1[lane]
-                                    + m.pointee.frictionImpulse.y[lane] * m.pointee.tangent2[lane]
-                                out.pointee.rollingImpulse = m.pointee.rollingImpulse[lane]
                             }
                         }
                     }

@@ -84,6 +84,30 @@ struct ContactPayload {
     var meshContact = MeshContactState()
 }
 
+/// Reusable buffers for one worker's mesh narrow phase. The C reference bump-allocates the same
+/// data from a per-worker arena; keeping it here avoids a fresh allocation per contact.
+struct MeshContactScratch {
+    var survivors: [MeshSurvivor] = []
+    var manifolds: [MeshTriangleManifold] = []
+    var points: [LocalManifoldPoint] = []
+
+    /// Per-worker diagnostics. Keeping these off the World objects avoids an exclusivity check
+    /// on every hull pair and contact.
+    var satCalls: Int32 = 0
+    var satCacheHits: Int32 = 0
+    var recycledContacts: Int32 = 0
+
+    /// Reused SAT and face-clipping slabs. `withUnsafeTemporaryAllocation` falls back to the heap
+    /// above 1 KB, and these are 13 KB and 8 KB, so keeping them here removes a malloc/free from
+    /// every hull pair.
+    var satScratch: [UInt8] = []
+    var faceScratch: [UInt8] = []
+}
+
+let satScratchByteCount = 25 * 132 * 4
+let faceScratchByteCount = 2 * 64 * MemoryLayout<ClipVertex>.stride
+    + 64 * MemoryLayout<LocalManifoldPoint>.stride
+
 /// Slabs never move. Contact ids reuse the same initialized payload slot, while the pool
 /// releases every non-POD field on world destruction, including slots of destroyed contacts.
 final class ContactPayloadPool {

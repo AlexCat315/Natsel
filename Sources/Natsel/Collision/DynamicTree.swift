@@ -176,6 +176,12 @@ public final class DynamicTree {
     /// Allocated space for rebuilding.
     var rebuildCapacity: Int32 = 0
 
+    /// DFS stack reused by rebuilds.
+    var rebuildStack: [Int32] = []
+
+    /// Stack reused while copying retained subtrees during a rebuild.
+    var copyStack: [(oldPair: Int32, newIndex: Int32)] = []
+
     /// Rebuild orders the nodes so the children follow parents.
     var dfsOrdered: Bool = true
 
@@ -1060,7 +1066,9 @@ public final class DynamicTree {
             return
         }
 
-        var stack = [(oldPair: Int32, newIndex: Int32)](repeating: (0, 0), count: treeStackSize)
+        if copyStack.count < treeStackSize {
+            copyStack = Array(repeating: (0, 0), count: treeStackSize)
+        }
         var stackCount = 0
 
         var oldPair = leftChild(node)
@@ -1086,7 +1094,7 @@ public final class DynamicTree {
                 // Push the left child of the right sibling.
                 if stackCount < treeStackSize {
                     let leftChildIndex = leftChild(swapNodes[pairBase + 1])
-                    stack[stackCount] = (oldPair: leftChildIndex, newIndex: newPair + 1)
+                    copyStack[stackCount] = (oldPair: leftChildIndex, newIndex: newPair + 1)
                     stackCount += 1
                 } else {
                     b3Assert(stackCount < treeStackSize)
@@ -1113,7 +1121,7 @@ public final class DynamicTree {
 
             // Descend a right subtree that was previously pushed.
             stackCount -= 1
-            let item = stack[stackCount]
+            let item = copyStack[stackCount]
             oldPair = item.oldPair
             newPair = bumpPair(item.newIndex)
             var rightNode = swapNodes[Int(item.newIndex)]
@@ -1273,10 +1281,12 @@ public final class DynamicTree {
         pairFreeList = B3.nullIndex
         dfsOrdered = true
 
+        #if DEBUG
         validate()
         if fullBuild == false {
             validateNoMoved()
         }
+        #endif
 
         return leafCount
     }

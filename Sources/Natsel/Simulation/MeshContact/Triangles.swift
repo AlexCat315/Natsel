@@ -10,7 +10,7 @@ struct MeshTriangleManifold {
     var pointRange: Range<Int> = 0..<0
 }
 
-private struct MeshSurvivor {
+struct MeshSurvivor {
     var cacheIndex: Int
     var triangle: Triangle
     var points: InlineArray<3, Vec3>
@@ -19,7 +19,8 @@ private struct MeshSurvivor {
 extension World {
     func collideMeshTriangles(
         _ contact: inout Contact, surface: TriangleSurface, transformA: WorldTransform,
-        shapeB: Shape, transformB: WorldTransform, isFast: Bool
+        shapeB: Shape, transformB: WorldTransform, isFast: Bool,
+        _ scratch: UnsafeMutablePointer<MeshContactScratch>
     ) -> [MeshTriangleManifold] {
         let transform = invMulWorldTransforms(transformB, transformA)
         let matrix = makeMatrixFromQuat(transform.q)
@@ -27,7 +28,7 @@ extension World {
         let hull = shapeB.hull
         let distance: Float = speculative ? B3.speculativeDistance : 0
         let margin = Vec3(distance, distance, distance)
-        var survivors: [MeshSurvivor] = []
+        scratch.pointee.survivors.removeAll(keepingCapacity: true)
         for (index, entry) in contact.meshContact.triangles.enumerated() {
             let triangle = surface.triangle(entry.triangleIndex)
             // Each scalar lane uses exactly the nested adds in C's four-wide transform.
@@ -48,19 +49,26 @@ extension World {
                     continue
                 }
             }
-            survivors.append(MeshSurvivor(cacheIndex: index, triangle: triangle, points: points))
+            scratch.pointee.survivors.append(MeshSurvivor(cacheIndex: index, triangle: triangle, points: points))
         }
-        let capacity = 32 * contact.meshContact.triangles.count
+        let triangleCount = contact.meshContact.triangles.count
+        let capacity = 32 * triangleCount
         var totalPointCount = 0
-        var manifolds: [MeshTriangleManifold] = []
-        let pointBuffer = [LocalManifoldPoint](unsafeUninitializedCapacity: capacity) { buffer, initializedCount in
-            for survivor in survivors {
+        scratch.pointee.manifolds.removeAll(keepingCapacity: true)
+        if scratch.pointee.points.count < capacity {
+            scratch.pointee.points.append(
+                contentsOf: repeatElement(
+                    LocalManifoldPoint(), count: capacity - scratch.pointee.points.count))
+        }
+        let pointBuffer = scratch.pointee.points.withUnsafeMutableBufferPointer { $0.baseAddress! }
+        do {
+            for survivor in scratch.pointee.survivors {
                 if totalPointCount + 3 >= capacity { break }
                 let index = survivor.cacheIndex
                 let triangle = survivor.triangle
                 let triangleIndex = contact.meshContact.triangles[index].triangleIndex
                 var manifold = LocalManifold()
-                manifold.points = buffer.baseAddress! + totalPointCount
+                manifold.points = pointBuffer + totalPointCount
                 manifold.triangleFlags = triangle.flags
                 let available = Int32(capacity - totalPointCount)
                 switch shapeB.geometry {
@@ -78,8 +86,8 @@ extension World {
                     collideTriangleAndHull(
                         &manifold, available, survivor.points[0], survivor.points[1], survivor.points[2],
                         triangle.flags, hull, &cache, speculative)
-                    satCallCount += 1
-                    satCacheHitCount += Int32(cache.hit)
+                    scratch.pointee.satCalls += 1
+                    scratch.pointee.satCacheHits += Int32(cache.hit)
                     contact.meshContact.triangles[index].cache = .sat(cache)
                 case .sphere(let sphere):
                     withInlineReadBuffer(survivor.points) { points in
@@ -95,7 +103,7 @@ extension World {
                     for i in 0..<Int(manifold.pointCount) {
                         manifold.points![i].triangleIndex = 0
                     }
-                    manifolds.append(
+                    scratch.pointee.manifolds.append(
                         MeshTriangleManifold(
                             normal: manifold.normal,
                             triangleNormal: makeNormalFromPoints(
@@ -107,15 +115,13 @@ extension World {
                     totalPointCount += Int(manifold.pointCount)
                 }
             }
-            initializedCount = totalPointCount
         }
         // Form shared, immutable slices only after writing the whole arena. Taking a slice
         // inside the collide loop would make subsequent point writes copy the arena.
-        manifolds.withUnsafeMutableBufferPointer { records in
-            for i in records.indices {
-                records[i].points = pointBuffer[records[i].pointRange]
-            }
+        for i in scratch.pointee.manifolds.indices {
+            scratch.pointee.manifolds[i].points =
+                scratch.pointee.points[scratch.pointee.manifolds[i].pointRange]
         }
-        return manifolds
+        return scratch.pointee.manifolds
     }
 }

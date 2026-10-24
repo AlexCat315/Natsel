@@ -3,7 +3,7 @@
 // Continuous collision (solver.c CCD pass).
 
 /// Mutable state shared by the swept queries of one fast body.
-private final class ContinuousContext {
+final class ContinuousContext {
     var world: World!
     var fastBodyId: Int32 = B3.nullIndex
     var fastShapeId: Int32 = B3.nullIndex
@@ -192,12 +192,16 @@ extension World {
         let dynamicTree = broadPhase.trees[Int(BodyType.dynamicBody.rawValue)]
         let fastBody = bodies[Int(fastBodySim.bodyId)]
 
-        let context = ContinuousContext()
+        let context = continuousContext
         context.world = self
         context.fastBodyId = fastBodySim.bodyId
         context.base = base
         context.sweep = sweep
         context.fraction = 1
+        context.sensorHits.removeAll(keepingCapacity: true)
+        context.distanceIterations = 0
+        context.pushBackIterations = 0
+        context.rootIterations = 0
 
         let isBullet = (fastBodySim.flags & BodyFlags.isBullet.rawValue) != 0
         let safetyFactor = fastBody.safetyFactor

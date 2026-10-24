@@ -1,5 +1,15 @@
 internal import Dispatch
 
+/// Compact narrow-phase view of a body sim. Reading a full `BodySim` by value here copied several
+/// hundred bytes twice per contact and showed up as the largest `memmove` source in the profile.
+struct ContactBodySnapshot {
+    var transform: WorldTransform
+    var localCenter: Vec3
+    var center: Pos
+    var maxExtent: Vec3
+    var flags: UInt32
+}
+
 // Narrow-phase collide pass (physics_world.c b3Collide).
 
 extension World {
@@ -21,10 +31,36 @@ extension World {
         return (body.setIndex, body.localIndex)
     }
 
-    /// Read one field group of a resolved body sim without copying the whole struct.
+    /// Read the handful of body-sim fields the narrow phase needs without copying the whole struct.
     @inline(__always)
-    func bodySimAt(_ set: Int32, _ local: Int32) -> BodySim {
-        solverSets[Int(set)].bodySims[Int(local)]
+    func contactBodySnapshotAt(
+        _ set: Int32, _ local: Int32,
+        _ awakeSims: UnsafeBufferPointer<BodySim>, _ staticSims: UnsafeBufferPointer<BodySim>
+    ) -> ContactBodySnapshot {
+        let index = Int(local)
+        let sims: UnsafeBufferPointer<BodySim>
+        if set == Int32(SetType.awakeSet.rawValue) {
+            sims = awakeSims
+        } else if set == Int32(SetType.staticSet.rawValue) {
+            sims = staticSims
+        } else {
+            return solverSets[Int(set)].bodySims.withUnsafeBufferPointer { buffer in
+                let sim = buffer.baseAddress! + index
+                return ContactBodySnapshot(
+                    transform: sim.pointee.transform,
+                    localCenter: sim.pointee.localCenter,
+                    center: sim.pointee.center,
+                    maxExtent: sim.pointee.maxExtent,
+                    flags: sim.pointee.flags)
+            }
+        }
+        let sim = sims.baseAddress! + index
+        return ContactBodySnapshot(
+            transform: sim.pointee.transform,
+            localCenter: sim.pointee.localCenter,
+            center: sim.pointee.center,
+            maxExtent: sim.pointee.maxExtent,
+            flags: sim.pointee.flags)
     }
 
     /// True if the encoded index refers to a static body.
@@ -35,21 +71,28 @@ extension World {
 
     /// Update awake contacts and apply state transitions.
     func collide(_ context: inout StepContext) {
-        // Gather contacts from all graph colors, then the non-touching contacts.
-        var contactIndices: [Int32] = []
+        // Gather contacts from all graph colors, then the non-touching contacts. Reuse the list
+        // across steps; rebuilding it allocated a new array every frame.
+        contactIndexScratch.removeAll(keepingCapacity: true)
         for i in 0..<Int(B3.graphColorCount) {
             let color = constraintGraph.colors[i]
-            contactIndices.append(contentsOf: color.convexContacts)
+            contactIndexScratch.append(contentsOf: color.convexContacts)
             for spec in color.contacts {
-                contactIndices.append(spec.contactId)
+                contactIndexScratch.append(spec.contactId)
             }
         }
 
-        contactIndices.append(contentsOf: solverSets[Int(SetType.awakeSet.rawValue)].contactIndices)
+        contactIndexScratch.append(
+            contentsOf: solverSets[Int(SetType.awakeSet.rawValue)].contactIndices)
 
-        guard contactIndices.isEmpty == false else {
+        guard contactIndexScratch.isEmpty == false else {
             return
         }
+        let contactIndices = contactIndexScratch
+
+        meshContactScratch.recycledContacts = 0
+        meshContactScratch.satCalls = 0
+        meshContactScratch.satCacheHits = 0
 
         let contactCapacity = UInt32(maxInt(Int32(contacts.count), 8))
         let workers = maxInt(1, minInt(workerCount, 8))
@@ -64,23 +107,51 @@ extension World {
 
             let chunk = (contactIndices.count + Int(workers) - 1) / Int(workers)
             var recycled = [Int32](repeating: 0, count: Int(workers))
+            var workerSatCalls = [Int32](repeating: 0, count: Int(workers))
+            var workerSatHits = [Int32](repeating: 0, count: Int(workers))
 
-            bits.withUnsafeMutableBufferPointer { bitBuffer in
-                recycled.withUnsafeMutableBufferPointer { recycledBuffer in
-                    contacts.withUnsafeMutableBufferPointer { contactBuffer in
-                        contactIndices.withUnsafeBufferPointer { indexBuffer in
-                            DispatchQueue.concurrentPerform(iterations: Int(workers)) { w in
-                                let start = w * chunk
-                                let end = min(indexBuffer.count, start + chunk)
-                                guard start < end else { return }
-                                var recycledCount: Int32 = 0
-                                var localStore = ContactStore(contactBuffer)
-                                for i in start..<end {
-                                    collideOneContact(
-                                        indexBuffer[i], &bitBuffer[w], store: &localStore,
-                                        &recycledCount)
+            let awakeSetIndex = Int(SetType.awakeSet.rawValue)
+            let staticSetIndex = Int(SetType.staticSet.rawValue)
+            solverSets[awakeSetIndex].bodySims.withUnsafeBufferPointer { awakeSims in
+                solverSets[staticSetIndex].bodySims.withUnsafeBufferPointer { staticSims in
+                    fatAABBs.withUnsafeBufferPointer { fat in
+                        bits.withUnsafeMutableBufferPointer { bitBuffer in
+                            recycled.withUnsafeMutableBufferPointer { recycledBuffer in
+                              workerSatCalls.withUnsafeMutableBufferPointer { satCallsBuffer in
+                               workerSatHits.withUnsafeMutableBufferPointer { satHitsBuffer in
+                                contacts.withUnsafeMutableBufferPointer { contactBuffer in
+                                    contactIndices.withUnsafeBufferPointer { indexBuffer in
+                                        let bitBase = bitBuffer.baseAddress!
+                                        let recycledBase = recycledBuffer.baseAddress!
+                                        let satCallsBase = satCallsBuffer.baseAddress!
+                                        let satHitsBase = satHitsBuffer.baseAddress!
+                                        let contactBase = contactBuffer.baseAddress!
+                                        let indexBase = indexBuffer.baseAddress!
+                                        let indexCount = indexBuffer.count
+                                        DispatchQueue.concurrentPerform(iterations: Int(workers)) { w in
+                                            let start = w * chunk
+                                            let end = min(indexCount, start + chunk)
+                                            guard start < end else { return }
+                                            var recycledCount: Int32 = 0
+                                            var localStore = ContactStore(
+                                                UnsafeMutableBufferPointer(
+                                                    start: contactBase, count: contacts.count))
+                                            var localScratch = MeshContactScratch()
+                                            withUnsafeMutablePointer(to: &localScratch) { scratch in
+                                                for i in start..<end {
+                                                    collideOneContact(
+                                                        indexBase[i], &bitBase[w], store: &localStore,
+                                                        &recycledCount, scratch, awakeSims, staticSims, fat)
+                                                }
+                                            }
+                                            recycledBase[w] = recycledCount
+                                            satCallsBase[w] = localScratch.satCalls
+                                            satHitsBase[w] = localScratch.satCacheHits
+                                        }
+                                    }
                                 }
-                                recycledBuffer[w] = recycledCount
+                               }
+                              }
                             }
                         }
                     }
@@ -89,9 +160,16 @@ extension World {
 
             var stateBits = BitSet()
             stateBits.setBitCountAndClear(contactCapacity)
+            var totalRecycled: Int32 = 0
             for i in 0..<Int(workers) {
                 stateBits.inPlaceUnion(bits[i])
+                totalRecycled += recycled[i]
+                meshContactScratch.satCalls += workerSatCalls[i]
+                meshContactScratch.satCacheHits += workerSatHits[i]
             }
+            taskContexts[0].recycledContactCount = totalRecycled
+            satCallCount += meshContactScratch.satCalls
+            satCacheHitCount += meshContactScratch.satCacheHits
             collideStatePass(stateBits)
             return
         }
@@ -99,7 +177,21 @@ extension World {
         var stateBits = BitSet(bitCapacity: contactCapacity)
         stateBits.setBitCountAndClear(contactCapacity)
 
-        collideEachContact(contactIndices, &stateBits)
+        // Borrow the body-sim and AABB buffers once for the whole pass. Indexing `solverSets[...]`
+        // per contact copied the SolverSet and retained its five arrays twice per contact.
+        let awakeSetIndex = Int(SetType.awakeSet.rawValue)
+        let staticSetIndex = Int(SetType.staticSet.rawValue)
+        solverSets[awakeSetIndex].bodySims.withUnsafeBufferPointer { awakeSims in
+            solverSets[staticSetIndex].bodySims.withUnsafeBufferPointer { staticSims in
+                fatAABBs.withUnsafeBufferPointer { fat in
+                    collideEachContact(
+                        contactIndices, &stateBits, awakeSims, staticSims, fat)
+                }
+            }
+        }
+        taskContexts[0].recycledContactCount = meshContactScratch.recycledContacts
+        satCallCount += meshContactScratch.satCalls
+        satCacheHitCount += meshContactScratch.satCacheHits
         collideStatePass(stateBits)
     }
 
@@ -109,17 +201,14 @@ extension World {
     /// Apply contact state transitions in contact id order. This phase is serial because it moves
     /// contacts between the graph and the awake set.
     private func collideStatePass(_ stateBits: BitSet) {
-        // Process contact state changes in contact id order.
-        for contactId in 0..<Int32(contacts.count) {
-            guard stateBits.getBit(UInt32(contactId)) else {
-                continue
-            }
-
+        // Process contact state changes in contact id order. Iterating set bits avoids scanning
+        // the entire contact table (tens of thousands of entries) every step.
+        stateBits.forEachSetBit { contactId in
             // Read the flag word first: most slots are untouched on a given step, and copying the
-            // whole contact (three reference-counted fields) for them was pure overhead.
+            // whole contact for them was pure overhead.
             let flags = contacts[Int(contactId)].flags
             guard flags != 0 else {
-                continue
+                return
             }
             var contact = contacts[Int(contactId)]
 
@@ -210,20 +299,31 @@ extension World {
     /// `ContactStore` holds a write reference to the world's contact array. Taking it per contact
     /// made the array multiply referenced for every contact, so each write copied the entire array;
     /// with tens of thousands of contacts that copy dominated the collide phase.
-    private func collideEachContact(_ contactIds: [Int32], _ stateBits: inout BitSet) {
+    private func collideEachContact(
+        _ contactIds: [Int32], _ stateBits: inout BitSet,
+        _ awakeSims: UnsafeBufferPointer<BodySim>, _ staticSims: UnsafeBufferPointer<BodySim>,
+        _ fatAABBs: UnsafeBufferPointer<AABB>
+    ) {
         var store = ContactStore(&contacts)
-        for contactId in contactIds {
-            collideOneContact(contactId, &stateBits, store: &store, nil)
+        withUnsafeMutablePointer(to: &meshContactScratch) { scratch in
+            for contactId in contactIds {
+                collideOneContact(
+                    contactId, &stateBits, store: &store, nil, scratch,
+                    awakeSims, staticSims, fatAABBs)
+            }
         }
     }
 
     private func collideOneContact(
         _ contactId: Int32, _ stateBits: inout BitSet,
         store: inout ContactStore,
-        _ recycledCount: UnsafeMutablePointer<Int32>?
+        _ recycledCount: UnsafeMutablePointer<Int32>?,
+        _ scratch: UnsafeMutablePointer<MeshContactScratch>,
+        _ awakeSims: UnsafeBufferPointer<BodySim>, _ staticSims: UnsafeBufferPointer<BodySim>,
+        _ fatAABBs: UnsafeBufferPointer<AABB>
     ) {
         // Borrow the stored contact so recycling does not retain and then copy its manifolds.
-        let update = store.withContact(contactId) { contact -> (BodySim, BodySim, Bool)? in
+        let update = store.withContact(contactId) { contact -> (ContactBodySnapshot, ContactBodySnapshot, Bool)? in
             b3Assert(contact.contactId == contactId)
 
             let shapeIdA = contact.shapeIdA
@@ -244,8 +344,8 @@ extension World {
             let encodedB = contact.encodedBodySimB
             let locA = resolveContactBodySimIndex(encodedA, contact.edges[0].bodyId)
             let locB = resolveContactBodySimIndex(encodedB, contact.edges[1].bodyId)
-            let bodySimA = bodySimAt(locA.set, locA.local)
-            let bodySimB = bodySimAt(locB.set, locB.local)
+            let bodySimA = contactBodySnapshotAt(locA.set, locA.local, awakeSims, staticSims)
+            let bodySimB = contactBodySnapshotAt(locB.set, locB.local, awakeSims, staticSims)
 
             let wasTouching = (contact.flags & ContactFlags.simTouching.rawValue) != 0
 
@@ -322,7 +422,7 @@ extension World {
                         if let recycledCount {
                             recycledCount.pointee += 1
                         } else {
-                            taskContexts[0].recycledContactCount += 1
+                            scratch.pointee.recycledContacts += 1
                         }
                         return nil
                     }
@@ -342,7 +442,7 @@ extension World {
         // This updates solid contacts
         let touching = updateContact(
             contactId, bodySimA.localCenter, bodySimA.transform, bodySimB.localCenter, bodySimB.transform,
-            ((bodySimA.flags | bodySimB.flags) & BodyFlags.isFast.rawValue) != 0, &store
+            ((bodySimA.flags | bodySimB.flags) & BodyFlags.isFast.rawValue) != 0, scratch, &store
         )
 
         store.withContact(contactId) { contact in
@@ -381,20 +481,19 @@ extension World {
     func addNonTouchingContact(_ contactId: Int32) {
         var contact = contacts[Int(contactId)]
         b3Assert(contact.setIndex == SetType.awakeSet.rawValue)
-        var set = solverSets[Int(SetType.awakeSet.rawValue)]
+        let awakeSetIndex = Int(SetType.awakeSet.rawValue)
         contact.colorIndex = B3.nullIndex
-        contact.localIndex = Int32(set.contactIndices.count)
-        set.contactIndices.append(contact.contactId)
-        solverSets[Int(SetType.awakeSet.rawValue)] = set
+        contact.localIndex = Int32(solverSets[awakeSetIndex].contactIndices.count)
+        solverSets[awakeSetIndex].contactIndices.append(contact.contactId)
         contacts[Int(contactId)] = contact
     }
 
     /// Remove a non-touching contact from a solver set.
     func removeNonTouchingContact(_ setIndex: Int32, _ localIndex: Int32) {
-        var set = solverSets[Int(setIndex)]
-        let movedIndex = removeSwapArray(&set.contactIndices, Int(localIndex))
+        let movedIndex = removeSwapArray(
+            &solverSets[Int(setIndex)].contactIndices, Int(localIndex))
         if movedIndex != B3.nullIndex {
-            let movedContactIndex = set.contactIndices[Int(localIndex)]
+            let movedContactIndex = solverSets[Int(setIndex)].contactIndices[Int(localIndex)]
             var movedContact = contacts[Int(movedContactIndex)]
             b3Assert(movedContact.setIndex == setIndex)
             b3Assert(movedContact.colorIndex == B3.nullIndex)
@@ -402,6 +501,5 @@ extension World {
             movedContact.localIndex = localIndex
             contacts[Int(movedContactIndex)] = movedContact
         }
-        solverSets[Int(setIndex)] = set
     }
 }

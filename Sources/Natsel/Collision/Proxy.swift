@@ -1,18 +1,29 @@
 /// Owns the point storage for a shape proxy so the proxy's pointer stays valid for the duration
 /// of a query. Hull proxies borrow the hull's points and need no copy.
 struct ShapeProxyBuffer: @unchecked Sendable {
-    private var points: [Vec3]
+    // Spheres and capsules are the only shapes that use points here, so two inline points
+    // replace a heap array on every time-of-impact call.
+    private var points = InlineArray<2, Vec3>(repeating: Vec3())
+    private var pointCount: Int32 = 0
     private var hull: Hull?
     private let radius: Float
 
-    init(points: [Vec3], radius: Float) {
-        self.points = points
+    init(_ a: Vec3, _ b: Vec3, radius: Float) {
+        points[0] = a
+        points[1] = b
+        pointCount = 2
+        self.hull = nil
+        self.radius = radius
+    }
+
+    init(_ a: Vec3, radius: Float) {
+        points[0] = a
+        pointCount = 1
         self.hull = nil
         self.radius = radius
     }
 
     init(hull: Hull) {
-        self.points = []
         self.hull = hull
         self.radius = 0
     }
@@ -21,15 +32,15 @@ struct ShapeProxyBuffer: @unchecked Sendable {
         if let hull {
             return hull.vertexCount
         }
-        return Int32(points.count)
+        return pointCount
     }
 
     func withProxy<R>(_ body: (ShapeProxy) -> R) -> R {
         if let hull {
             return body(ShapeProxy(points: hull.points, count: hull.vertexCount, radius: 0))
         }
-        return points.withUnsafeBufferPointer {
-            body(ShapeProxy(points: $0.baseAddress, count: Int32($0.count), radius: radius))
+        return withInlineReadBuffer(points) {
+            body(ShapeProxy(points: $0.baseAddress, count: pointCount, radius: radius))
         }
     }
 }

@@ -1,6 +1,12 @@
 // Broad-phase pair generation and structural contact creation
 // (broad_phase.c pair update and the bookkeeping part of contact.c).
 
+/// Stack entry for cross-tree traversal.
+struct TraversalPair {
+    var a: Int32 = 0
+    var b: Int32 = 0
+}
+
 // MARK: - Contact registers
 
 struct ContactRegister {
@@ -164,7 +170,7 @@ extension World {
             setIndex = SetType.disabledSet.rawValue
         }
 
-        var set = solverSets[Int(setIndex)]
+        let setId = Int(setIndex)
 
         // Create contact key and contact
         let contactId = contactIdPool.alloc()
@@ -178,7 +184,7 @@ extension World {
         contact.generation = contact.generation &+ 1
         contact.setIndex = setIndex
         contact.colorIndex = B3.nullIndex
-        contact.localIndex = Int32(set.contactIndices.count)
+        contact.localIndex = Int32(solverSets[setId].contactIndices.count)
         contact.islandId = B3.nullIndex
         contact.islandIndex = B3.nullIndex
         contact.shapeIdA = shapeA.id
@@ -261,8 +267,7 @@ extension World {
         _ = broadPhase.pairSet.addKey(pairKey)
 
         // Contacts are created as non-touching.
-        set.contactIndices.append(contactId)
-        solverSets[Int(setIndex)] = set
+        solverSets[setId].contactIndices.append(contactId)
 
         var radiusA: Float = 0
         if typeA == .sphereShape {
@@ -383,24 +388,21 @@ extension World {
                 contact.setIndex != SetType.awakeSet.rawValue
                     || (contact.flags & ContactFlags.touching.rawValue) == 0
             )
-            var set = solverSets[Int(contact.setIndex)]
-
+            let setIndex = Int(contact.setIndex)
             let localIndex = contact.localIndex
-            let movedIndex = removeSwapArray(&set.contactIndices, Int(localIndex))
+            let movedIndex = removeSwapArray(
+                &solverSets[setIndex].contactIndices, Int(localIndex))
             if movedIndex != B3.nullIndex {
-                let movedContactIndex = set.contactIndices[Int(localIndex)]
+                let movedContactIndex = solverSets[setIndex].contactIndices[Int(localIndex)]
                 var movedContact = contacts[Int(movedContactIndex)]
                 movedContact.localIndex = localIndex
                 contacts[Int(movedContactIndex)] = movedContact
             }
-
-            solverSets[Int(contact.setIndex)] = set
         } else {
             removeContactFromGraph(
                 bodyIdA, bodyIdB, contact.colorIndex, contact.localIndex,
                 (flags & ContactFlags.simMeshContact.rawValue) != 0)
         }
-
         // Free contact and id (preserve generation)
         contact.contactId = B3.nullIndex
         contact.setIndex = B3.nullIndex
@@ -497,38 +499,37 @@ extension World {
         _ proxy: TreeNode,
         _ nodes: UnsafeBufferPointer<TreeNode>,
         _ pairStart: Int32,
-        _ pairKeys: inout [UInt64]
+        _ pairKeys: inout [UInt64],
+        _ stack: inout [Int32]
     ) {
         let proxyMark = proxy.flagIndex & movedNodeFlag
         let shapeId = proxy.shapeIndex
 
-        withUnsafeTemporaryAllocation(of: Int32.self, capacity: treeStackSize) { stack in
-            var stackCount = 0
-            stack[stackCount] = pairStart
-            stackCount += 1
+        var stackCount = 0
+        stack[stackCount] = pairStart
+        stackCount += 1
 
-            while stackCount > 0 {
-                stackCount -= 1
-                let pair = stack[stackCount]
-                for i in 0..<2 {
-                    let node = nodes[Int(pair) + i]
-                    if ((node.flagIndex | proxyMark) & movedNodeFlag) == 0 {
-                        continue
-                    }
+        while stackCount > 0 {
+            stackCount -= 1
+            let pair = stack[stackCount]
+            for i in 0..<2 {
+                let node = nodes[Int(pair) + i]
+                if ((node.flagIndex | proxyMark) & movedNodeFlag) == 0 {
+                    continue
+                }
 
-                    if aabbOverlaps(proxy.aabb, node.aabb) == false {
-                        continue
-                    }
+                if aabbOverlaps(proxy.aabb, node.aabb) == false {
+                    continue
+                }
 
-                    if isLeaf(node) {
-                        addCandidatePair(shapeId, node.shapeIndex, &pairKeys)
+                if isLeaf(node) {
+                    addCandidatePair(shapeId, node.shapeIndex, &pairKeys)
+                } else {
+                    if stackCount < treeStackSize {
+                        stack[stackCount] = leftChild(node)
+                        stackCount += 1
                     } else {
-                        if stackCount < treeStackSize {
-                            stack[stackCount] = leftChild(node)
-                            stackCount += 1
-                        } else {
-                            b3Assert(stackCount < treeStackSize)
-                        }
+                        b3Assert(stackCount < treeStackSize)
                     }
                 }
             }
@@ -541,9 +542,10 @@ extension World {
         _ arrayB: UnsafeBufferPointer<TreeNode>,
         _ nodeA: TreeNode,
         _ nodeB: TreeNode,
-        _ stack: UnsafeMutableBufferPointer<(a: Int32, b: Int32)>,
+        _ stack: inout [TraversalPair],
         _ stackCount: inout Int,
-        _ pairKeys: inout [UInt64]
+        _ pairKeys: inout [UInt64],
+        _ proxyStack: inout [Int32]
     ) {
         if testPair(nodeA, nodeB) == false {
             return
@@ -554,12 +556,12 @@ extension World {
         if leafA && leafB {
             addCandidatePair(nodeA.shapeIndex, nodeB.shapeIndex, &pairKeys)
         } else if leafA {
-            collideProxyAndSubtree(nodeA, arrayB, leftChild(nodeB), &pairKeys)
+            collideProxyAndSubtree(nodeA, arrayB, leftChild(nodeB), &pairKeys, &proxyStack)
         } else if leafB {
-            collideProxyAndSubtree(nodeB, arrayA, leftChild(nodeA), &pairKeys)
+            collideProxyAndSubtree(nodeB, arrayA, leftChild(nodeA), &pairKeys, &proxyStack)
         } else {
             if stackCount < treeStackSize {
-                stack[stackCount] = (a: leftChild(nodeA), b: leftChild(nodeB))
+                stack[stackCount] = TraversalPair(a: leftChild(nodeA), b: leftChild(nodeB))
                 stackCount += 1
             } else {
                 b3Assert(stackCount < treeStackSize)
@@ -574,37 +576,47 @@ extension World {
         _ subtreeB: TreeNode,
         _ pairKeys: inout [UInt64]
     ) {
-        withUnsafeTemporaryAllocation(of: (a: Int32, b: Int32).self, capacity: treeStackSize) { stack in
-            var stackCount = 0
+        var stackCount = 0
 
-            // Seed the stack.
-            visitPair(arrayA, arrayB, subtreeA, subtreeB, stack, &stackCount, &pairKeys)
+        // Seed the stack.
+        visitPair(
+            arrayA, arrayB, subtreeA, subtreeB, &broadPhasePairStack, &stackCount, &pairKeys,
+            &broadPhaseProxyStack)
 
-            while stackCount > 0 {
-                stackCount -= 1
-                let pair = stack[stackCount]
-                for i in 0..<2 {
-                    for j in 0..<2 {
-                        visitPair(
-                            arrayA, arrayB, arrayA[Int(pair.a) + i], arrayB[Int(pair.b) + j], stack, &stackCount,
-                            &pairKeys
-                        )
-                    }
+        while stackCount > 0 {
+            stackCount -= 1
+            let pair = broadPhasePairStack[stackCount]
+            for i in 0..<2 {
+                for j in 0..<2 {
+                    visitPair(
+                        arrayA, arrayB, arrayA[Int(pair.a) + i], arrayB[Int(pair.b) + j],
+                        &broadPhasePairStack, &stackCount, &pairKeys, &broadPhaseProxyStack
+                    )
                 }
             }
         }
     }
 
     /// This does a serial cross-tree breadth first search until the queue is full.
-    func gatherCrossSeeds(_ treeA: DynamicTree, _ treeB: DynamicTree) -> [NodePair] {
+    /// The queue and result arrays are caller-owned scratch so a step does not allocate them.
+    func gatherCrossSeeds(
+        _ treeA: DynamicTree, _ treeB: DynamicTree,
+        _ queue: inout [NodePair], _ seeds: inout [NodePair]
+    ) {
         let nodesA = treeA.nodes
         let nodesB = treeB.nodes
 
         let crossSeedCount = 64
-        var queue = [NodePair](repeating: NodePair(), count: 2 * crossSeedCount)
-        let mask = 2 * crossSeedCount - 1
+        let queueCapacity = 2 * crossSeedCount
+        if queue.count < queueCapacity {
+            queue.append(contentsOf: repeatElement(NodePair(), count: queueCapacity - queue.count))
+        }
+        let mask = queueCapacity - 1
         var head = 0
         var tail = 0
+
+        seeds.removeAll(keepingCapacity: true)
+        seeds.reserveCapacity(crossSeedCount)
 
         let rootA = nodesA[Int(rootNode)]
         let rootB = nodesB[Int(rootNode)]
@@ -612,9 +624,6 @@ extension World {
             queue[tail & mask] = NodePair(rootA, rootB)
             tail += 1
         }
-
-        var seeds: [NodePair] = []
-        seeds.reserveCapacity(crossSeedCount)
 
         while head < tail && seeds.count + (tail - head) + 3 < crossSeedCount {
             let pair = queue[head & mask]
@@ -643,8 +652,6 @@ extension World {
             seeds.append(queue[head & mask])
             head += 1
         }
-
-        return seeds
     }
 
     /// Generate broad-phase pairs and create contacts for new pairs.
@@ -661,20 +668,31 @@ extension World {
             return
         }
 
-        var pairKeys: [UInt64] = []
-        pairKeys.reserveCapacity(64)
+        pairKeyScratch.removeAll(keepingCapacity: true)
+        if pairKeyScratch.capacity < 64 {
+            pairKeyScratch.reserveCapacity(64)
+        }
+        if broadPhasePairStack.count < treeStackSize {
+            broadPhasePairStack = Array(repeating: TraversalPair(), count: treeStackSize)
+        }
+        if broadPhaseProxyStack.count < treeStackSize {
+            broadPhaseProxyStack = Array(repeating: 0, count: treeStackSize)
+        }
 
         // Get the sibling pairs of the dynamic body tree that have moved. Size the buffer from the
         // actual pair count so a rebuild that leaves an odd nodeEnd cannot overflow it.
         let pairCapacity = maxInt((dynamicTree.nodeEnd - 2) / 2 + 1, 1)
-        var movedSiblings = [Int32](repeating: 0, count: Int(pairCapacity))
-        let dynamicMoveCount = gatherMovedSiblings(dynamicTree, &movedSiblings)
+        if movedSiblingScratch.count < Int(pairCapacity) {
+            movedSiblingScratch.append(
+                contentsOf: repeatElement(0, count: Int(pairCapacity) - movedSiblingScratch.count))
+        }
+        let dynamicMoveCount = gatherMovedSiblings(dynamicTree, &movedSiblingScratch)
 
         // Get seeds for colliding against the static and kinematic trees.
-        let staticSeeds = gatherCrossSeeds(dynamicTree, staticTree)
-        b3Assert(staticSeeds.count <= 64)
-        let kinematicSeeds = gatherCrossSeeds(dynamicTree, kinematicTree)
-        b3Assert(kinematicSeeds.count <= 64)
+        gatherCrossSeeds(dynamicTree, staticTree, &crossSeedQueue, &staticSeedScratch)
+        gatherCrossSeeds(dynamicTree, kinematicTree, &crossSeedQueue, &kinematicSeedScratch)
+        b3Assert(staticSeedScratch.count <= 64)
+        b3Assert(kinematicSeedScratch.count <= 64)
 
         // End all read borrows before rebuilding the trees.
         dynamicTree.nodes.withUnsafeBufferPointer { dynamicNodes in
@@ -682,20 +700,20 @@ extension World {
                 kinematicTree.nodes.withUnsafeBufferPointer { kinematicNodes in
 
                     // Collide the dynamic body tree against the static and kinematic trees.
-                    for seed in staticSeeds {
-                        collideCrossPairs(dynamicNodes, staticNodes, seed.a, seed.b, &pairKeys)
+                    for seed in staticSeedScratch {
+                        collideCrossPairs(dynamicNodes, staticNodes, seed.a, seed.b, &pairKeyScratch)
                     }
 
-                    for seed in kinematicSeeds {
-                        collideCrossPairs(dynamicNodes, kinematicNodes, seed.a, seed.b, &pairKeys)
+                    for seed in kinematicSeedScratch {
+                        collideCrossPairs(dynamicNodes, kinematicNodes, seed.a, seed.b, &pairKeyScratch)
                     }
 
                     // Collide the dynamic body tree against itself.
                     for i in 0..<Int(dynamicMoveCount) {
-                        let nodeIndex = movedSiblings[i]
+                        let nodeIndex = movedSiblingScratch[i]
                         collideCrossPairs(
                             dynamicNodes, dynamicNodes, dynamicNodes[Int(nodeIndex)], dynamicNodes[Int(nodeIndex) + 1],
-                            &pairKeys
+                            &pairKeyScratch
                         )
                     }
 
@@ -711,14 +729,14 @@ extension World {
 
         // Pairs arrive in deterministic order but scrambled relative to body and shape order.
         // Sort them here.
-        pairKeys.sort()
+        pairKeyScratch.sort()
 
-        for i in 0..<pairKeys.count {
-            let key = pairKeys[i]
+        for i in 0..<pairKeyScratch.count {
+            let key = pairKeyScratch[i]
 
             // The traversal is cross subtree and the seeds are disjoint, so a duplicate key means
             // a real bug. Skip rather than double add to the pair set.
-            let duplicate = i > 0 && key == pairKeys[i - 1]
+            let duplicate = i > 0 && key == pairKeyScratch[i - 1]
             b3Validate(duplicate == false)
             if duplicate {
                 continue

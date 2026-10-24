@@ -5,16 +5,17 @@ extension World {
     /// Returns true if the shapes are touching.
     func computeConvexManifold(
         _ contactId: Int32,
-        _ shapeA: Shape,
+        _ shapeA: UnsafePointer<Shape>,
         _ xfA: WorldTransform,
-        _ shapeB: Shape,
+        _ shapeB: UnsafePointer<Shape>,
         _ xfB: WorldTransform,
+        _ scratch: UnsafeMutablePointer<MeshContactScratch>,
         _ cs: inout ContactStore
     ) -> Bool {
         return cs.withContact(contactId) { contact in
 
-            let typeA = shapeA.type
-            let typeB = shapeB.type
+            let typeA = shapeA.pointee.type
+            let typeB = shapeB.pointee.type
 
             var pointBuffer = InlineArray<4, LocalManifoldPoint>(repeating: LocalManifoldPoint())
             var geomManifold = LocalManifold()
@@ -28,17 +29,17 @@ extension World {
                 if typeA == .sphereShape {
                     b3Assert(typeB == .sphereShape)
                     collideSpheres(
-                        &geomManifold, pointCapacity, shapeA.sphere, shapeB.sphere, transformBtoA
+                        &geomManifold, pointCapacity, shapeA.pointee.sphere, shapeB.pointee.sphere, transformBtoA
                     )
                 } else if typeA == .capsuleShape {
                     if typeB == .sphereShape {
                         collideCapsuleAndSphere(
-                            &geomManifold, pointCapacity, shapeA.capsule, shapeB.sphere, transformBtoA
+                            &geomManifold, pointCapacity, shapeA.pointee.capsule, shapeB.pointee.sphere, transformBtoA
                         )
                     } else {
                         b3Assert(typeB == .capsuleShape)
                         collideCapsules(
-                            &geomManifold, pointCapacity, shapeA.capsule, shapeB.capsule, transformBtoA
+                            &geomManifold, pointCapacity, shapeA.pointee.capsule, shapeB.pointee.capsule, transformBtoA
                         )
                     }
                 } else {
@@ -46,22 +47,22 @@ extension World {
 
                     if typeB == .sphereShape {
                         collideHullAndSphere(
-                            &geomManifold, pointCapacity, shapeA.hull!, shapeB.sphere, transformBtoA,
+                            &geomManifold, pointCapacity, shapeA.pointee.hull!, shapeB.pointee.sphere, transformBtoA,
                             &contact.simplexCache
                         )
                     } else if typeB == .capsuleShape {
                         collideHullAndCapsule(
-                            &geomManifold, pointCapacity, shapeA.hull!, shapeB.capsule, transformBtoA,
+                            &geomManifold, pointCapacity, shapeA.pointee.hull!, shapeB.pointee.capsule, transformBtoA,
                             &contact.simplexCache
                         )
                     } else {
                         b3Assert(typeB == .hullShape)
                         collideHulls(
-                            &geomManifold, pointCapacity, shapeA.hull!, shapeB.hull!, transformBtoA,
-                            &contact.satCache
+                            &geomManifold, pointCapacity, shapeA.pointee.hull!, shapeB.pointee.hull!, transformBtoA,
+                            scratch, &contact.satCache
                         )
-                        satCallCount += 1
-                        satCacheHitCount += Int32(contact.satCache.hit)
+                        scratch.pointee.satCalls += 1
+                        scratch.pointee.satCacheHits += Int32(contact.satCache.hit)
                     }
                 }
 
@@ -149,15 +150,16 @@ extension World {
     /// Update a convex contact and mix materials.
     func updateConvexContact(
         _ contactId: Int32,
-        _ shapeA: Shape,
+        _ shapeA: UnsafePointer<Shape>,
         _ xfA: WorldTransform,
-        _ shapeB: Shape,
+        _ shapeB: UnsafePointer<Shape>,
         _ xfB: WorldTransform,
         _ flip: Bool,
+        _ scratch: UnsafeMutablePointer<MeshContactScratch>,
         _ cs: inout ContactStore
     ) -> Bool {
         // Compute new manifold
-        let touching = computeConvexManifold(contactId, shapeA, xfA, shapeB, xfB, &cs)
+        let touching = computeConvexManifold(contactId, shapeA, xfA, shapeB, xfB, scratch, &cs)
 
         if touching == false {
             b3Assert(cs.get(contactId).manifoldCount == 0)
@@ -181,8 +183,8 @@ extension World {
                 contact.manifolds[0] = manifold
             }
 
-            let materialA = shapeA.material(0)
-            let materialB = shapeB.material(0)
+            let materialA = shapeA.pointee.material(0)
+            let materialB = shapeB.pointee.material(0)
 
             // Keep these updated in case the values on the shapes are modified
             contact.friction = mixFriction(
@@ -194,8 +196,8 @@ extension World {
             )
 
             if materialA.rollingResistance > 0 || materialB.rollingResistance > 0 {
-                func radius(_ shape: Shape) -> Float {
-                    switch shape.geometry {
+                func radius(_ shape: UnsafePointer<Shape>) -> Float {
+                    switch shape.pointee.geometry {
                     case .sphere(let sphere):
                         return sphere.radius
                     case .capsule(let capsule):
@@ -222,10 +224,10 @@ extension World {
 
             if let preSolve, (contact.flags & ContactFlags.simEnablePreSolveEvents.rawValue) != 0 {
                 let idA = ShapeID(
-                    index1: shapeA.id + 1, world0: worldId, generation: shapeA.generation
+                    index1: shapeA.pointee.id + 1, world0: worldId, generation: shapeA.pointee.generation
                 )
                 let idB = ShapeID(
-                    index1: shapeB.id + 1, world0: worldId, generation: shapeB.generation
+                    index1: shapeB.pointee.id + 1, world0: worldId, generation: shapeB.pointee.generation
                 )
 
                 // This call assumes thread safety
@@ -242,8 +244,8 @@ extension World {
                 }
             }
 
-            if (shapeA.flags & ShapeFlags.enableHitEvents.rawValue) != 0
-                || (shapeB.flags & ShapeFlags.enableHitEvents.rawValue) != 0
+            if (shapeA.pointee.flags & ShapeFlags.enableHitEvents.rawValue) != 0
+                || (shapeB.pointee.flags & ShapeFlags.enableHitEvents.rawValue) != 0
             {
                 contact.flags |= ContactFlags.simEnableHitEvent.rawValue
             } else {
@@ -251,6 +253,24 @@ extension World {
             }
 
             return true
+        }
+    }
+
+    /// Compatibility wrapper for callers that do not own mesh scratch.
+    @discardableResult
+    func updateContact(
+        _ contactId: Int32,
+        _ localCenterA: Vec3,
+        _ xfA: WorldTransform,
+        _ localCenterB: Vec3,
+        _ xfB: WorldTransform,
+        _ isFast: Bool,
+        _ cs: inout ContactStore
+    ) -> Bool {
+        withUnsafeMutablePointer(to: &meshContactScratch) { scratch in
+            updateContact(
+                contactId, localCenterA, xfA, localCenterB, xfB, isFast,
+                scratch, &cs)
         }
     }
 
@@ -263,57 +283,66 @@ extension World {
         _ localCenterB: Vec3,
         _ xfB: WorldTransform,
         _ isFast: Bool,
+        _ scratch: UnsafeMutablePointer<MeshContactScratch>,
         _ cs: inout ContactStore
     ) -> Bool {
-        let shapeA = shapes[Int(cs.get(contactId).shapeIdA)]
-        let shapeB = shapes[Int(cs.get(contactId).shapeIdB)]
+        let contact = cs.get(contactId)
+        let shapeIndexA = Int(contact.shapeIdA)
+        let shapeIndexB = Int(contact.shapeIdB)
 
-        b3Assert(shapeB.type != .compoundShape)
+        return shapes.withUnsafeBufferPointer { shapeBuffer in
+            let shapeA = shapeBuffer.baseAddress! + shapeIndexA
+            let shapeB = shapeBuffer.baseAddress! + shapeIndexB
 
-        let touching: Bool
+            b3Assert(shapeB.pointee.type != .compoundShape)
 
-        if shapeA.type == .compoundShape {
-            touching = updateCompoundContact(contactId, shapeA, xfA, shapeB, xfB, isFast, &cs)
-        } else if shapeA.type == .meshShape || shapeA.type == .heightShape {
-            touching = computeMeshManifolds(
-                contactId, shapeA: shapeA, transformA: xfA,
-                shapeB: shapeB, transformB: xfB, isFast: isFast, cs: &cs)
-            let enableHit =
-                touching
-                && ((shapeA.flags | shapeB.flags) & ShapeFlags.enableHitEvents.rawValue) != 0
-            cs.withContact(contactId) { contact in
-                if enableHit {
-                    contact.flags |= ContactFlags.simEnableHitEvent.rawValue
-                } else {
-                    contact.flags &= ~ContactFlags.simEnableHitEvent.rawValue
-                }
-            }
+            let touching: Bool
+            let typeA = shapeA.pointee.type
 
-        } else {
-            // Convex-vs-convex
-            touching = updateConvexContact(contactId, shapeA, xfA, shapeB, xfB, false, &cs)
-        }
-
-        if touching {
-            let centerA = rotateVector(xfA.q, localCenterA)
-            let centerB = rotateVector(xfB.q, localCenterB)
-
-            // Adjust anchors to be relative to center of mass, editing the stored contact in place.
-            cs.withContact(contactId) { contact in
-                for i in 0..<contact.manifoldCount {
-                    for j in 0..<contact.manifolds[Int(i)].pointCount {
-                        contact.manifolds[Int(i)].points[Int(j)].anchorA =
-                            contact.manifolds[Int(i)].points[Int(j)].anchorA - centerA
-                        contact.manifolds[Int(i)].points[Int(j)].anchorB =
-                            contact.manifolds[Int(i)].points[Int(j)].anchorB - centerB
+            if typeA == .compoundShape {
+                touching = updateCompoundContact(
+                    contactId, shapeA.pointee, xfA, shapeB.pointee, xfB, isFast, scratch, &cs)
+            } else if typeA == .meshShape || typeA == .heightShape {
+                touching = computeMeshManifolds(
+                    contactId, shapeA: shapeA.pointee, transformA: xfA,
+                    shapeB: shapeB.pointee, transformB: xfB, isFast: isFast, scratch, cs: &cs)
+                let enableHit =
+                    touching
+                    && ((shapeA.pointee.flags | shapeB.pointee.flags)
+                        & ShapeFlags.enableHitEvents.rawValue) != 0
+                cs.withContact(contactId) { contact in
+                    if enableHit {
+                        contact.flags |= ContactFlags.simEnableHitEvent.rawValue
+                    } else {
+                        contact.flags &= ~ContactFlags.simEnableHitEvent.rawValue
                     }
                 }
-                contact.flags |= ContactFlags.simTouching.rawValue
+            } else {
+                // Convex-vs-convex
+                touching = updateConvexContact(contactId, shapeA, xfA, shapeB, xfB, false, scratch, &cs)
             }
-        } else {
-            cs.withContact(contactId) { $0.flags &= ~ContactFlags.simTouching.rawValue }
-        }
 
-        return touching
+            if touching {
+                let centerA = rotateVector(xfA.q, localCenterA)
+                let centerB = rotateVector(xfB.q, localCenterB)
+
+                // Adjust anchors to be relative to center of mass, editing the stored contact in place.
+                cs.withContact(contactId) { contact in
+                    for i in 0..<contact.manifoldCount {
+                        for j in 0..<contact.manifolds[Int(i)].pointCount {
+                            contact.manifolds[Int(i)].points[Int(j)].anchorA =
+                                contact.manifolds[Int(i)].points[Int(j)].anchorA - centerA
+                            contact.manifolds[Int(i)].points[Int(j)].anchorB =
+                                contact.manifolds[Int(i)].points[Int(j)].anchorB - centerB
+                        }
+                    }
+                    contact.flags |= ContactFlags.simTouching.rawValue
+                }
+            } else {
+                cs.withContact(contactId) { $0.flags &= ~ContactFlags.simTouching.rawValue }
+            }
+
+            return touching
+        }
     }
 }

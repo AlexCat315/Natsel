@@ -54,9 +54,7 @@ final class ConstraintGraph {
     }
 
     func setBitGrow(_ colorIndex: Int32, _ bodyId: Int32) {
-        var color = colors[Int(colorIndex)]
-        color.bodySet.setBitGrow(UInt32(bodyId))
-        colors[Int(colorIndex)] = color
+        colors[Int(colorIndex)].bodySet.setBitGrow(UInt32(bodyId))
     }
 
     func clearBit(_ colorIndex: Int32, _ bodyId: Int32) {
@@ -121,8 +119,9 @@ extension World {
             (contact.flags & ContactFlags.simMeshContact.rawValue) != 0 || colorIndex == overflowIndex
 
         contact.colorIndex = colorIndex
-        var color = constraintGraph.colors[Int(colorIndex)]
-        contact.localIndex = isScalar ? Int32(color.contacts.count) : Int32(color.convexContacts.count)
+        contact.localIndex = isScalar
+            ? Int32(constraintGraph.colors[Int(colorIndex)].contacts.count)
+            : Int32(constraintGraph.colors[Int(colorIndex)].convexContacts.count)
         contact.encodedBodySimA = encodeBodySimIndex(bodyA)
         contact.encodedBodySimB = encodeBodySimIndex(bodyB)
 
@@ -132,11 +131,9 @@ extension World {
             spec.contactId = contact.contactId
             spec.manifoldStart = 0
             spec.manifoldCount = UInt16(truncatingIfNeeded: contact.manifoldCount)
-            color.contacts.append(spec)
-            constraintGraph.colors[Int(colorIndex)] = color
+            constraintGraph.colors[Int(colorIndex)].contacts.append(spec)
         } else {
-            color.convexContacts.append(contact.contactId)
-            constraintGraph.colors[Int(colorIndex)] = color
+            constraintGraph.colors[Int(colorIndex)].convexContacts.append(contact.contactId)
         }
 
         contacts[Int(contactId)] = contact
@@ -239,14 +236,12 @@ extension World {
 
         let colorIndex = assignJointColor(bodyIdA, bodyIdB, bodyA.type, bodyB.type)
 
-        var color = constraintGraph.colors[Int(colorIndex)]
         var jointSim = JointSim()
         jointSim.jointId = joint.jointId
-        color.jointSims.append(jointSim)
-        constraintGraph.colors[Int(colorIndex)] = color
+        constraintGraph.colors[Int(colorIndex)].jointSims.append(jointSim)
 
         joint.colorIndex = colorIndex
-        joint.localIndex = Int32(color.jointSims.count - 1)
+        joint.localIndex = Int32(constraintGraph.colors[Int(colorIndex)].jointSims.count - 1)
         joints[Int(jointId)] = joint
 
         return joint.localIndex

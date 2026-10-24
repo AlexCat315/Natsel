@@ -570,17 +570,17 @@ func overlapShape(_ shape: Shape, _ transform: Transform, _ proxy: ShapeProxy) -
 func makeShapeProxy(_ shape: Shape) -> ShapeProxyBuffer {
     switch shape.geometry {
     case .capsule(let capsule):
-        return ShapeProxyBuffer(points: [capsule.center1, capsule.center2], radius: capsule.radius)
+        return ShapeProxyBuffer(capsule.center1, capsule.center2, radius: capsule.radius)
 
     case .sphere(let sphere):
-        return ShapeProxyBuffer(points: [sphere.center], radius: sphere.radius)
+        return ShapeProxyBuffer(sphere.center, radius: sphere.radius)
 
     case .hull(let hull):
         return ShapeProxyBuffer(hull: hull)
 
     default:
         b3Assert(false)
-        return ShapeProxyBuffer(points: [], radius: 0)
+        return ShapeProxyBuffer(Vec3(), radius: 0)
     }
 }
 

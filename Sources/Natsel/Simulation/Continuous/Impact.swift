@@ -34,8 +34,8 @@ func triangleSurfaceImpact(_ surface: TriangleSurface, shapeB: Shape, sweepA: Sw
             let offset2 = dot(normal, center2 - a)
             if offset1 < 0 { return true }
             if !isSensor && offset1 - offset2 < fallbackRadius && offset2 > fallbackRadius { return true }
-            let triangle = [a, b, c]
-            triangle.withUnsafeBufferPointer { points in
+            let triangle: InlineArray<3, Vec3> = [a, b, c]
+            withInlineReadBuffer(triangle) { points in
                 input.proxyA = ShapeProxy(points: points.baseAddress, count: 3, radius: 0)
                 var output = timeOfImpact(input)
                 if 0 < output.fraction && output.fraction < input.maxFraction {

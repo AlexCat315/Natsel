@@ -137,9 +137,7 @@ extension World {
 
         // Island is still fully connected, no split needed.
         if componentCount == 1 {
-            var island = islands[Int(baseId)]
-            island.constraintRemoveCount = 0
-            islands[Int(baseId)] = island
+            islands[Int(baseId)].constraintRemoveCount = 0
             return
         }
 
@@ -180,7 +178,12 @@ extension World {
             islandIds[i] = createIsland(SetType.awakeSet.rawValue)
         }
 
-        // Assign bodies to new islands
+        // Assign bodies to new islands. Reserve each island's final capacity up front so the
+        // rebuild does not repeatedly grow (and copy) the arrays.
+        for i in 0..<islandCount {
+            let newIslandId = islandIds[i]
+            islands[Int(newIslandId)].bodies.reserveCapacity(Int(componentBodyCounts[i]))
+        }
         for i in 0..<baseBodyCount {
             let bodyId = baseBodyIds[i]
             let root = islandFindParent(&parents, Int32(i))
@@ -188,13 +191,11 @@ extension World {
             guard let newIslandId = islandIds[Int(rootMap[Int(root)])] as Int32? else {
                 continue
             }
-            var newIsland = islands[Int(newIslandId)]
             var body = bodies[Int(bodyId)]
             body.islandId = newIslandId
-            body.islandIndex = Int32(newIsland.bodies.count)
-            newIsland.bodies.append(bodyId)
+            body.islandIndex = Int32(islands[Int(newIslandId)].bodies.count)
+            islands[Int(newIslandId)].bodies.append(bodyId)
             bodies[Int(bodyId)] = body
-            islands[Int(newIslandId)] = newIsland
         }
 
         // Assign contacts to the island of their bodies
@@ -207,12 +208,10 @@ extension World {
             let islandIdB = bodies[Int(link.bodyIdB)].islandId
             let targetIslandId = islandIdA != B3.nullIndex ? islandIdA : islandIdB
 
-            var targetIsland = islands[Int(targetIslandId)]
             contact.islandId = targetIslandId
-            contact.islandIndex = Int32(targetIsland.contacts.count)
-            targetIsland.contacts.append(link)
+            contact.islandIndex = Int32(islands[Int(targetIslandId)].contacts.count)
+            islands[Int(targetIslandId)].contacts.append(link)
             contacts[Int(link.contactId)] = contact
-            islands[Int(targetIslandId)] = targetIsland
         }
 
         // Assign joints to the island of their bodies
@@ -225,12 +224,10 @@ extension World {
             let islandIdB = bodies[Int(link.bodyIdB)].islandId
             let targetIslandId = islandIdA != B3.nullIndex ? islandIdA : islandIdB
 
-            var targetIsland = islands[Int(targetIslandId)]
             joint.islandId = targetIslandId
-            joint.islandIndex = Int32(targetIsland.joints.count)
-            targetIsland.joints.append(link)
+            joint.islandIndex = Int32(islands[Int(targetIslandId)].joints.count)
+            islands[Int(targetIslandId)].joints.append(link)
             joints[Int(link.jointId)] = joint
-            islands[Int(targetIslandId)] = targetIsland
         }
 
         // Destroy the base island
@@ -264,10 +261,10 @@ extension World {
 
         let awakeSetIndex = Int(SetType.awakeSet.rawValue)
         let disabledSetIndex = Int(SetType.disabledSet.rawValue)
-        var awakeSet = solverSets[awakeSetIndex]
-        var disabledSet = solverSets[disabledSetIndex]
 
-        b3Assert(0 <= island.localIndex && Int(island.localIndex) < awakeSet.islandSims.count)
+        b3Assert(
+            0 <= island.localIndex
+                && Int(island.localIndex) < solverSets[awakeSetIndex].islandSims.count)
 
         // move awake bodies to sleeping set
         // this shuffles around bodies in the awake set
@@ -287,16 +284,17 @@ extension World {
             }
 
             let awakeBodyIndex = body.localIndex
-            let awakeSim = awakeSet.bodySims[Int(awakeBodyIndex)]
+            let awakeSim = solverSets[awakeSetIndex].bodySims[Int(awakeBodyIndex)]
 
             // move body sim to sleep set
             let sleepBodyIndex = Int32(sleepSet.bodySims.count)
             sleepSet.bodySims.append(awakeSim)
 
-            let movedIndex = removeSwapArray(&awakeSet.bodySims, Int(awakeBodyIndex))
+            let movedIndex = removeSwapArray(
+                &solverSets[awakeSetIndex].bodySims, Int(awakeBodyIndex))
             if movedIndex != B3.nullIndex {
                 // fix local index on moved element
-                let movedId = awakeSet.bodySims[Int(awakeBodyIndex)].bodyId
+                let movedId = solverSets[awakeSetIndex].bodySims[Int(awakeBodyIndex)].bodyId
                 var movedBody = bodies[Int(movedId)]
                 b3Assert(movedBody.localIndex == movedIndex)
                 movedBody.localIndex = awakeBodyIndex
@@ -308,7 +306,7 @@ extension World {
             }
 
             // destroy state, no need to clone
-            removeSwapArray(&awakeSet.bodyStates, Int(awakeBodyIndex))
+            removeSwapArray(&solverSets[awakeSetIndex].bodyStates, Int(awakeBodyIndex))
 
             body.setIndex = sleepSetId
             body.localIndex = sleepBodyIndex
@@ -346,19 +344,21 @@ extension World {
                 }
 
                 let localIndex = contact.localIndex
-                b3Assert(awakeSet.contactIndices[Int(localIndex)] == contactId)
+                b3Assert(solverSets[awakeSetIndex].contactIndices[Int(localIndex)] == contactId)
 
                 b3Assert(contact.manifoldCount == 0)
                 b3Assert((contact.flags & ContactFlags.touching.rawValue) == 0)
 
                 // Move the non-touching contact to the disabled set.
                 contact.setIndex = SetType.disabledSet.rawValue
-                contact.localIndex = Int32(disabledSet.contactIndices.count)
-                disabledSet.contactIndices.append(contact.contactId)
+                contact.localIndex = Int32(solverSets[disabledSetIndex].contactIndices.count)
+                solverSets[disabledSetIndex].contactIndices.append(contact.contactId)
 
-                let movedLocalIndex = removeSwapArray(&awakeSet.contactIndices, Int(localIndex))
+                let movedLocalIndex = removeSwapArray(
+                    &solverSets[awakeSetIndex].contactIndices, Int(localIndex))
                 if movedLocalIndex != B3.nullIndex {
-                    let movedContactIndex = awakeSet.contactIndices[Int(localIndex)]
+                    let movedContactIndex =
+                        solverSets[awakeSetIndex].contactIndices[Int(localIndex)]
                     var movedContact = contacts[Int(movedContactIndex)]
                     b3Assert(movedContact.localIndex == movedLocalIndex)
                     movedContact.localIndex = localIndex
@@ -469,9 +469,11 @@ extension World {
             islandSim.islandId = islandId
             sleepSet.islandSims.append(islandSim)
 
-            let movedIslandIndex = removeSwapArray(&awakeSet.islandSims, islandIndex)
+            let movedIslandIndex = removeSwapArray(
+                &solverSets[awakeSetIndex].islandSims, islandIndex)
             if movedIslandIndex != B3.nullIndex {
-                let movedIslandId = awakeSet.islandSims[islandIndex].islandId
+                let movedIslandId =
+                    solverSets[awakeSetIndex].islandSims[islandIndex].islandId
                 var movedIsland = islands[Int(movedIslandId)]
                 b3Assert(movedIsland.localIndex == movedIslandIndex)
                 movedIsland.localIndex = Int32(islandIndex)
@@ -488,8 +490,6 @@ extension World {
         }
 
         solverSets[Int(sleepSetId)] = sleepSet
-        solverSets[awakeSetIndex] = awakeSet
-        solverSets[disabledSetIndex] = disabledSet
     }
 
     /// Collect the sleepiest island that needs splitting and put sleeping islands to sleep.

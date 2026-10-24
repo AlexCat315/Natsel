@@ -246,8 +246,11 @@ extension World {
 
     /// Prepare the constraint data for one color.
     func prepareContacts(_ colorIndex: Int32, _ softness: Softness, _ staticSoftness: Softness, _ context: StepContext) {
-        let contactIds = solverContactIds(colorIndex)
-        guard contactIds.isEmpty == false else {
+        let color = constraintGraph.colors[Int(colorIndex)]
+        let convexContactIds = color.convexContacts
+        let meshContactIds = color.contacts.isEmpty ? [] : solverMeshContactIds(colorIndex)
+        let totalCount = convexContactIds.count + meshContactIds.count
+        guard totalCount > 0 else {
             return
         }
 
@@ -255,32 +258,53 @@ extension World {
         let invTau = 1 / B3.speculativeDistance
         let minFrictionWeight = B3.minFrictionWeight
 
-        var constraints: [ContactConstraint] = []
-        constraints.reserveCapacity(contactIds.count)
+        // Reuse this color's storage. The previous local array allocated and then replaced the
+        // stored one every step, so the solver prepared a fresh allocation per color per step.
+        let colorIndexInt = Int(colorIndex)
+        solverContacts.constraints[colorIndexInt].removeAll(keepingCapacity: true)
+        solverContacts.constraints[colorIndexInt].reserveCapacity(totalCount)
+        solverContacts.convexCounts[colorIndexInt] = convexContactIds.count
 
-        for contactId in contactIds {
-            let contact = contacts[Int(contactId)]
-            let tangentVelocity = contact.tangentVelocity
+        let awakeSetIndex = Int(SetType.awakeSet.rawValue)
+        solverSets[awakeSetIndex].bodySims.withUnsafeBufferPointer { bodySims in
+            solverSets[awakeSetIndex].bodyStates.withUnsafeBufferPointer { bodyStates in
+              contacts.withUnsafeBufferPointer { contactStore in
+                for pass in 0..<2 {
+                    let contactIds = pass == 0 ? convexContactIds : meshContactIds
+                    for contactId in contactIds {
+            let contact = contactStore.baseAddress! + Int(contactId)
+            let tangentVelocity = contact.pointee.tangentVelocity
 
             var constraint = ContactConstraint()
             constraint.contactId = contactId
 
-            let indexA = decodeAwakeIndex(contact.encodedBodySimA)
-            let indexB = decodeAwakeIndex(contact.encodedBodySimB)
+            let indexA = decodeAwakeIndex(contact.pointee.encodedBodySimA)
+            let indexB = decodeAwakeIndex(contact.pointee.encodedBodySimB)
             constraint.indexA = indexA
             constraint.indexB = indexB
 
-            let simA = indexA >= 0 ? solverSets[Int(SetType.awakeSet.rawValue)].bodySims[Int(indexA)] : BodySim()
-            let simB = indexB >= 0 ? solverSets[Int(SetType.awakeSet.rawValue)].bodySims[Int(indexB)] : BodySim()
-
-            constraint.invMassA = simA.invMass
-            constraint.invMassB = simB.invMass
-            constraint.invIA = SymMatrix3(simA.invInertiaWorld)
-            constraint.invIB = SymMatrix3(simB.invInertiaWorld)
-            constraint.friction = contact.friction
-            constraint.restitution = contact.restitution
-            constraint.rollingResistance = contact.rollingResistance
-            constraint.isStatic = (contact.flags & ContactFlags.staticFlag.rawValue) != 0
+            // Read the few scalar fields directly from the borrowed body-sim buffer. Taking a
+            // BodySim by value here copied several hundred bytes for every contact.
+            if indexA >= 0 {
+                let sim = bodySims.baseAddress! + Int(indexA)
+                constraint.invMassA = sim.pointee.invMass
+                constraint.invIA = SymMatrix3(sim.pointee.invInertiaWorld)
+            } else {
+                constraint.invMassA = 0
+                constraint.invIA = SymMatrix3()
+            }
+            if indexB >= 0 {
+                let sim = bodySims.baseAddress! + Int(indexB)
+                constraint.invMassB = sim.pointee.invMass
+                constraint.invIB = SymMatrix3(sim.pointee.invInertiaWorld)
+            } else {
+                constraint.invMassB = 0
+                constraint.invIB = SymMatrix3()
+            }
+            constraint.friction = contact.pointee.friction
+            constraint.restitution = contact.pointee.restitution
+            constraint.rollingResistance = contact.pointee.rollingResistance
+            constraint.isStatic = (contact.pointee.flags & ContactFlags.staticFlag.rawValue) != 0
             constraint.softness = constraint.isStatic ? staticSoftness : softness
 
             let invIAB = addSym(constraint.invIA, constraint.invIB)
@@ -290,7 +314,7 @@ extension World {
                 constraint.rollingMass = SymMatrix3()
             }
 
-            for manifold in contact.manifolds {
+            for manifold in contact.pointee.manifolds {
 
                 var manifoldConstraint = ManifoldConstraint()
                 let pointCount = manifold.pointCount
@@ -400,11 +424,11 @@ extension World {
                 manifoldConstraint.twistMass = kTwist > 0 ? 1 / kTwist : 0
 
                 // Sample relative velocities if needed for restitution or hit events.
-                let haveRestitution = contact.restitution > 0
-                let hitEvents = (contact.flags & ContactFlags.simEnableHitEvent.rawValue) != 0
+                let haveRestitution = contact.pointee.restitution > 0
+                let hitEvents = (contact.pointee.flags & ContactFlags.simEnableHitEvent.rawValue) != 0
                 if haveRestitution || hitEvents {
-                    let stateA = solverState(indexA)
-                    let stateB = solverState(indexB)
+                    let stateA = indexA >= 0 ? bodyStates[Int(indexA)] : BodyState.identity
+                    let stateB = indexB >= 0 ? bodyStates[Int(indexB)] : BodyState.identity
 
                     for pointIndex in 0..<Int(pointCount) {
                         var cp = manifoldConstraint.points[pointIndex]
@@ -425,17 +449,22 @@ extension World {
                 solverContacts.manifoldPool.append(manifoldConstraint)
                 constraint.manifoldCount += 1
             }
-            constraints.append(constraint)
+            solverContacts.constraints[colorIndexInt].append(constraint)
+                    }
+                }
+              }
+            }
         }
-
-        solverContacts.constraints[Int(colorIndex)] = constraints
-        solverContacts.convexCounts[Int(colorIndex)] = solverConvexContactIds(colorIndex).count
     }
 
     /// Prepare all constraint data for this step.
     func prepareAllContacts(_ context: StepContext) {
-        solverContacts.constraints = Array(repeating: [], count: Int(B3.graphColorCount))
-        solverContacts.convexCounts = Array(repeating: 0, count: Int(B3.graphColorCount))
+        for i in solverContacts.constraints.indices {
+            solverContacts.constraints[i].removeAll(keepingCapacity: true)
+        }
+        for i in solverContacts.convexCounts.indices {
+            solverContacts.convexCounts[i] = 0
+        }
         solveAnyRestitution = false
 
         prepareAllJoints(context)
