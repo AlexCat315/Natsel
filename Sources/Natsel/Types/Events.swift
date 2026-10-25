@@ -65,7 +65,8 @@ public struct ContactHitEvent: Sendable, Equatable, BitwiseCopyable {
     /// Id of the second shape
     public var shapeIdB = ShapeID()
 
-    /// Id of the contact. This contact may have been destroyed.
+    /// Id of the contact. This contact may have been destroyed, or be null for a CCD impact
+    /// resolved before a persistent contact exists.
     public var contactId = ContactID()
 
     /// Point where the shapes hit at the beginning of the time step.

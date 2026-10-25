@@ -140,6 +140,14 @@ struct SoftBodyCollider {
     }
 }
 
+/// A vertex can touch several independently oriented surfaces, for example a floor and a wall.
+struct SoftVertexPlane {
+    var normal = Vec3()
+    var offset: Float = 0
+    var separation = Float.greatestFiniteMagnitude
+    var collider: Int32 = B3.nullIndex
+}
+
 struct SoftBodyRecord {
     var id: Int32 = B3.nullIndex
     var generation: UInt16 = 0
@@ -148,6 +156,7 @@ struct SoftBodyRecord {
     var settings = SoftBodySettings()
 
     // Particle state, structure of arrays.
+    var origin = Pos()
     var positions: [Vec3] = []
     var previousPositions: [Vec3] = []
     var velocities: [Vec3] = []
@@ -159,6 +168,9 @@ struct SoftBodyRecord {
     var colliderIndices: [Int32] = []
     var hasContact: [Bool] = []
     var colliders: [SoftBodyCollider] = []
+    static let planesPerVertex = 4
+    var vertexPlanes: [SoftVertexPlane] = []
+    var vertexPlaneCounts: [UInt8] = []
 
     // Four wide constraint batches built from the settings.
     var edgeBatches: [EdgeBatch] = []
@@ -214,6 +226,7 @@ struct SoftBodyRecord {
     var awake = true
     var sleepTime: Float = 0
     var bounds = AABB()
+    var spatialRevision: UInt64 = 0
     var volume: Float = 0
 
     init() {}
@@ -224,7 +237,13 @@ struct SoftBodyRecord {
         self.settings = settings
         userData = def.userData
 
-        let transform = Transform(def.position, normalizeQuat(def.rotation))
+        // A shared grid frame avoids repeated rebasing of nearby cloth pieces. Power-of-two
+        // cells keep the origin exact and bound local vertex magnitudes during travel.
+        let cell = 1024.0
+        origin = Pos((def.position.x / cell).rounded() * cell,
+                     (def.position.y / cell).rounded() * cell,
+                     (def.position.z / cell).rounded() * cell)
+        let transform = Transform(subPos(def.position, origin), normalizeQuat(def.rotation))
         let count = settings.vertices.count
         positions = settings.vertices.map { transformPoint(transform, $0.position) }
         previousPositions = positions
@@ -233,6 +252,8 @@ struct SoftBodyRecord {
         planeNormals = [Vec3](repeating: Vec3(), count: count)
         planeOffsets = [Float](repeating: 0, count: count)
         colliderIndices = [Int32](repeating: B3.nullIndex, count: count)
+        vertexPlanes = [SoftVertexPlane](repeating: SoftVertexPlane(), count: count * Self.planesPerVertex)
+        vertexPlaneCounts = [UInt8](repeating: 0, count: count)
         hasContact = [Bool](repeating: false, count: count)
         if settings.skinned.isEmpty == false {
             skinnedPositions = [Vec3](repeating: Vec3(), count: settings.skinned.count)
@@ -265,6 +286,7 @@ struct SoftBodyRecord {
     }
 
     mutating func updateBounds() {
+        spatialRevision &+= 1
         guard let first = positions.first else {
             bounds = AABB()
             return
@@ -311,6 +333,7 @@ extension World {
 
     public func destroySoftBody(_ softBodyId: SoftBodyID) {
         guard let index = softBodyIndex(softBodyId) else { return }
+        softBodyRayCaches.removeValue(forKey: Int32(index))
         let generation = softBodies[index].generation
         softBodies[index] = SoftBodyRecord()
         softBodies[index].generation = generation
@@ -339,13 +362,15 @@ extension World {
 
     /// Current vertex positions, in the order of the (optimized) settings.
     public func softBodyVertexPositions(_ softBodyId: SoftBodyID) -> [Pos] {
-        softBodyIndex(softBodyId).map { softBodies[$0].positions } ?? []
+        softBodyIndex(softBodyId).map { i in softBodies[i].positions.map { offsetPos(softBodies[i].origin, $0) } } ?? []
     }
 
-    /// Borrow the vertex positions without copying, for example to upload a render mesh.
+    /// Materialize double precision world vertices for the callback. For allocation-free rendering,
+    /// use `withSoftBodyLocalVertexPositions`.
     public func withSoftBodyVertexPositions<R>(_ softBodyId: SoftBodyID, _ body: (UnsafeBufferPointer<Pos>) -> R) -> R? {
         guard let index = softBodyIndex(softBodyId) else { return nil }
-        return softBodies[index].positions.withUnsafeBufferPointer(body)
+        let worldPositions = softBodies[index].positions.map { offsetPos(softBodies[index].origin, $0) }
+        return worldPositions.withUnsafeBufferPointer(body)
     }
 
     public func softBodyVertexVelocities(_ softBodyId: SoftBodyID) -> [Vec3] {
@@ -354,7 +379,7 @@ extension World {
 
     public func softBodyVertexPosition(_ softBodyId: SoftBodyID, _ vertex: Int32) -> Pos? {
         guard let i = softBodyIndex(softBodyId), vertex >= 0, Int(vertex) < softBodies[i].vertexCount else { return nil }
-        return softBodies[i].positions[Int(vertex)]
+        return offsetPos(softBodies[i].origin, softBodies[i].positions[Int(vertex)])
     }
 
     /// Move a vertex. Kinematic vertices (inverse mass zero) are animated this way.
@@ -362,8 +387,9 @@ extension World {
         guard let i = softBodyIndex(softBodyId), vertex >= 0, Int(vertex) < softBodies[i].vertexCount,
             isValidPosition(position)
         else { return }
-        softBodies[i].positions[Int(vertex)] = position
-        softBodies[i].previousPositions[Int(vertex)] = position
+        softBodies[i].positions[Int(vertex)] = subPos(position, softBodies[i].origin)
+        softBodies[i].previousPositions[Int(vertex)] = subPos(position, softBodies[i].origin)
+        softBodies[i].updateBounds()
         wakeSoftBody(i)
     }
 
@@ -406,8 +432,10 @@ extension World {
         guard let i = softBodyIndex(softBodyId), isValidPosition(position), isValidQuat(rotation) else { return }
         let center = softBodyCenterOfMass(softBodyId)
         let q = normalizeQuat(rotation)
+        let localCenter = subPos(center, softBodies[i].origin)
+        softBodies[i].origin = position
         for v in softBodies[i].positions.indices {
-            let p = position + rotateVector(q, softBodies[i].positions[v] - center)
+            let p = rotateVector(q, softBodies[i].positions[v] - localCenter)
             softBodies[i].positions[v] = p
             softBodies[i].previousPositions[v] = p
             softBodies[i].velocities[v] = rotateVector(q, softBodies[i].velocities[v])
@@ -433,9 +461,9 @@ extension World {
             sum = mulAdd(sum, m, record.positions[v])
             mass += m
         }
-        if mass > 0 { return (1 / mass) * sum }
+        if mass > 0 { return offsetPos(record.origin, (1 / mass) * sum) }
         for p in record.positions { sum += p }
-        return record.positions.isEmpty ? Pos() : (1 / Float(record.positions.count)) * sum
+        return offsetPos(record.origin, record.positions.isEmpty ? Vec3() : (1 / Float(record.positions.count)) * sum)
     }
 
     public func softBodyLinearVelocity(_ softBodyId: SoftBodyID) -> Vec3 {
@@ -452,7 +480,7 @@ extension World {
     }
 
     public func softBodyBounds(_ softBodyId: SoftBodyID) -> AABB {
-        softBodyIndex(softBodyId).map { softBodies[$0].bounds } ?? AABB()
+        softBodyIndex(softBodyId).map { offsetAABB(softBodies[$0].bounds, softBodies[$0].origin) } ?? AABB()
     }
 
     /// Enclosed volume of a closed surface after the last step.
@@ -493,10 +521,10 @@ extension World {
 
     /// Pose of the skeleton driving skinned vertices, one world transform per joint. Kinematic
     /// skinned vertices follow the skin; dynamic ones are constrained near it.
-    public func setSoftBodySkinTransforms(_ softBodyId: SoftBodyID, _ transforms: [Transform], teleport: Bool = false) {
+    public func setSoftBodySkinTransforms(_ softBodyId: SoftBodyID, _ transforms: [WorldTransform], teleport: Bool = false) {
         guard let i = softBodyIndex(softBodyId), transforms.count >= softBodies[i].settings.inverseBindMatrices.count
         else { return }
-        softBodies[i].jointTransforms = transforms
+        softBodies[i].jointTransforms = transforms.map { toRelativeTransform($0, softBodies[i].origin) }
         softBodies[i].hasSkinPose = true
         softBodies[i].updateSkin()
         if teleport {
@@ -506,6 +534,7 @@ extension World {
                 softBodies[i].previousPositions[v] = softBodies[i].skinnedPositions[k]
                 softBodies[i].velocities[v] = Vec3()
             }
+            softBodies[i].updateBounds()
         }
         wakeSoftBody(i)
     }
@@ -661,4 +690,33 @@ func closedVolume(_ faces: [SoftBodyFace], _ positions: UnsafeBufferPointer<Vec3
         sixVolume += dot(a, cross(b, c))
     }
     return sixVolume / 6
+}
+
+
+extension SoftBodyRecord {
+    /// Contact groups share a local frame; translation never passes through an absolute float.
+    mutating func rebase(_ reference: Pos) {
+        guard reference != origin else { return }
+        let delta = subPos(origin, reference)
+        for i in positions.indices { positions[i] += delta; previousPositions[i] += delta }
+        for i in skinnedPositions.indices { skinnedPositions[i] += delta }
+        for i in jointTransforms.indices { jointTransforms[i].p += delta }
+        origin = reference
+        updateBounds()
+    }
+}
+
+extension World {
+    /// Read vertex offsets without allocation. Add `origin` in double precision when rendering.
+    public func withSoftBodyLocalVertexPositions<R>(
+        _ id: SoftBodyID, _ body: (Pos, UnsafeBufferPointer<Vec3>) throws -> R
+    ) rethrows -> R? {
+        guard let i = softBodyIndex(id) else { return nil }
+        return try softBodies[i].positions.withUnsafeBufferPointer { try body(softBodies[i].origin, $0) }
+    }
+
+    /// Convenience for existing single precision world poses.
+    public func setSoftBodySkinTransforms(_ id: SoftBodyID, _ transforms: [Transform], teleport: Bool = false) {
+        setSoftBodySkinTransforms(id, transforms.map(makeWorldTransform), teleport: teleport)
+    }
 }

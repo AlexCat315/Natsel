@@ -121,10 +121,10 @@ struct OverlapEquivalenceTests {
             let worldPoint = transformPoint(bodyTransform, local)
 
             var hits = 0
-            var point = worldPoint
+            var point = Vec3()
             withUnsafePointer(to: &point) { ptr in
                 let proxy = ShapeProxy(points: ptr, count: 1, radius: 0.25)
-                _ = world.overlapShape(Pos(), proxy, .defaultFilter) { _ in
+                _ = world.overlapShape(worldPoint, proxy, .defaultFilter) { _ in
                     hits += 1
                     return true
                 }
@@ -132,22 +132,22 @@ struct OverlapEquivalenceTests {
             #expect(hits == 1, "child \(i) at \(worldPoint)")
 
             // The body-scoped query must agree.
-            var bodyPoint = worldPoint
+            var bodyPoint = Vec3()
             let bodyHit = withUnsafePointer(to: &bodyPoint) { ptr -> Bool in
                 let proxy = ShapeProxy(points: ptr, count: 1, radius: 0.25)
                 return world.bodyOverlapShape(
-                    body, Pos(), proxy, .defaultFilter, bodyTransform)
+                    body, worldPoint, proxy, .defaultFilter, bodyTransform)
             }
             #expect(bodyHit)
         }
 
         // The gap between the two children stays empty.
         let inGap = transformPoint(bodyTransform, Vec3())
-        var gapPoint = inGap
+        var gapPoint = Vec3()
         var gapHits = 0
         withUnsafePointer(to: &gapPoint) { ptr in
             let proxy = ShapeProxy(points: ptr, count: 1, radius: 0.25)
-            _ = world.overlapShape(Pos(), proxy, .defaultFilter) { _ in
+            _ = world.overlapShape(inGap, proxy, .defaultFilter) { _ in
                 gapHits += 1
                 return true
             }

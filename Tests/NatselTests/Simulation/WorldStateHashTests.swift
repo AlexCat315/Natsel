@@ -27,25 +27,25 @@ struct WorldStateHashTests {
         return world
     }
 
-    @Test("state hash matches the C reference across a step sequence")
+    @Test("state hash matches the C double reference across a step sequence")
     func stateHash() {
         let world = makeScene()
-        #expect(world.worldStateHash() == 0x5fe4_b47a_1d93_4f3f)
+        #expect(world.worldStateHash() == 0x6f4b10a3e12ce95d)
 
         for step in 0..<60 {
             world.step(1.0 / 60.0, subStepCount: 4)
             if step % 20 == 19 {
                 let hash = world.worldStateHash()
                 switch step {
-                case 19: #expect(hash == 0xfbfa_a631_882b_8a7d)
-                case 39: #expect(hash == 0xda0c_1b91_6e3d_8327)
-                default: #expect(hash == 0xe1c4_3efd_2746_7992)
+                case 19: #expect(hash == 0xd45a2023371ef805)
+                case 39: #expect(hash == 0x33541c56ac0e05ee)
+                default: #expect(hash == 0xecb40a65d209f64e)
                 }
             }
         }
     }
 
-    @Test("state hash covers positions to float precision")
+    @Test("state hash covers positions to double precision")
     func stateHashPrecision() {
         let world = makeScene()
         let before = world.worldStateHash()
@@ -61,10 +61,10 @@ struct WorldStateHashTests {
     }
 }
 
-// MARK: - Golden values regenerated from the C reference build
+// MARK: - Golden values regenerated from the C double reference build
 
 extension WorldStateHashTests {
-    @Test("stack scene hashes match the C reference at every checkpoint")
+    @Test("stack scene hashes match the C double reference at every checkpoint")
     func stackGolden() {
         let world = World()
 
@@ -83,12 +83,12 @@ extension WorldStateHashTests {
             _ = world.createHullShape(box, shapeDef, makeBoxHull(0.5, 0.5, 0.5))
         }
 
-        #expect(world.worldStateHash() == 0x37cb_0b80_904a_c026)
+        #expect(world.worldStateHash() == 0x999e4316812ce95d)
 
         var checkpoints: [Int: UInt64] = [
-            20: 0x949b_1293_7583_efcd,
-            40: 0x59d9_2287_c7d3_f35d,
-            60: 0x7e95_9f62_9051_030a,
+            20: 0xf5769f98293d5e95,
+            40: 0x67f9945b1d90a615,
+            60: 0xc7dbee39873f0d58,
         ]
 
         for step in 1...60 {

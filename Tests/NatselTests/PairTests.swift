@@ -73,7 +73,7 @@ struct PairTests {
         for p in positions {
             def = BodyDef()
             def.type = .dynamicBody
-            def.position = p
+            def.position = Pos(p)
             let body = world.createBody(def)
             dynamicBodies.append(body)
 

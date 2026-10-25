@@ -77,6 +77,12 @@ extension World {
             }
         }
 
+        let first = records[group[0]]
+        let localCenter = aabbCenter(first.bounds)
+        let rebaseDistance = 1024 * lengthUnitsPerMeter
+        let reference = lengthSquared(localCenter) > rebaseDistance * rebaseDistance
+            ? offsetPos(first.origin, localCenter) : first.origin
+        for index in group { records[index].rebase(reference) }
         forEachBody { _, index in world.detectSoftBodyCollisions(&records[index], dt) }
 
         var contacts: [SoftContact] = []
@@ -140,19 +146,18 @@ extension World {
             }
             return i
         }
-        let boxes = active.map { i -> AABB in
+        let boxes = active.map { i -> WorldAABB in
             let record = softBodies[i]
-            return aabbInflate(record.bounds, record.maxSpeed * dt + record.contactThickness)
+            return WorldAABB(localBounds: aabbInflate(record.bounds, record.maxSpeed * dt + record.contactThickness), origin: record.origin)
         }
-        for a in 0..<active.count where softBodies[active[a]].collideWithSoftBodies {
-            for b in (a + 1)..<active.count where softBodies[active[b]].collideWithSoftBodies {
-                guard aabbOverlaps(boxes[a], boxes[b]),
-                    shouldShapesCollide(softBodies[active[a]].filter, softBodies[active[b]].filter)
-                else { continue }
-                let ra = find(a)
-                let rb = find(b)
-                if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
-            }
+        for pair in overlappingBoundsPairs(boxes).pairs {
+            let a = pair.a
+            let b = pair.b
+            guard softBodies[active[a]].collideWithSoftBodies, softBodies[active[b]].collideWithSoftBodies,
+                shouldShapesCollide(softBodies[active[a]].filter, softBodies[active[b]].filter) else { continue }
+            let ra = find(a)
+            let rb = find(b)
+            if ra != rb { parent[max(ra, rb)] = min(ra, rb) }
         }
         var groups: [[Int]] = []
         var groupOfRoot = [Int: Int]()
@@ -170,18 +175,18 @@ extension World {
 
     /// A sleeping soft body wakes when a moving soft body reaches it.
     private func wakeSoftBodiesTouchedBySoftBodies(_ dt: Float) {
-        for i in softBodies.indices
-        where softBodies[i].id != B3.nullIndex && softBodies[i].awake == false && softBodies[i].collideWithSoftBodies {
-            let bounds = aabbInflate(softBodies[i].bounds, softBodies[i].contactThickness)
-            for j in softBodies.indices
-            where j != i && softBodies[j].id != B3.nullIndex && softBodies[j].awake && softBodies[j].collideWithSoftBodies {
-                let mover = softBodies[j]
-                guard mover.maxSpeed > mover.sleepThreshold,
-                    aabbOverlaps(bounds, aabbInflate(mover.bounds, mover.maxSpeed * dt)),
-                    shouldShapesCollide(softBodies[i].filter, mover.filter)
-                else { continue }
+        let ids = softBodies.indices.filter { softBodies[$0].id != B3.nullIndex && softBodies[$0].collideWithSoftBodies }
+        let boxes = ids.map { i in
+            let record = softBodies[i]
+            let margin = record.contactThickness + (record.awake ? record.maxSpeed * dt : 0)
+            return WorldAABB(localBounds: aabbInflate(record.bounds, margin), origin: record.origin)
+        }
+        for pair in overlappingBoundsPairs(boxes).pairs {
+            for (i, j) in [(ids[pair.a], ids[pair.b]), (ids[pair.b], ids[pair.a])] {
+                guard !softBodies[i].awake, softBodies[j].awake,
+                    softBodies[j].maxSpeed > softBodies[j].sleepThreshold,
+                    shouldShapesCollide(softBodies[i].filter, softBodies[j].filter) else { continue }
                 wakeSoftBody(i)
-                break
             }
         }
     }
@@ -189,7 +194,7 @@ extension World {
     /// Sleeping soft bodies wake when a moving rigid body enters their bounds.
     private func wakeTouchedSoftBodies() {
         for i in softBodies.indices where softBodies[i].id != B3.nullIndex && softBodies[i].awake == false {
-            let bounds = aabbInflate(softBodies[i].bounds, B3.speculativeDistance)
+            let bounds = offsetAABB(aabbInflate(softBodies[i].bounds, B3.speculativeDistance), softBodies[i].origin)
             var wake = false
             for tree in broadPhase.trees[1...] {
                 _ = tree.query(bounds, maskBits: softBodies[i].filter.maskBits, requireAllBits: false) { _, data in
@@ -471,30 +476,29 @@ extension SoftBodyRecord {
     ) {
         let invH = 1 / h
         let n = x.count
-        let hasColliders = colliders.isEmpty == false
-        planeNormals.withUnsafeBufferPointer { normals in
-        planeOffsets.withUnsafeBufferPointer { offsets in
-        colliderIndices.withUnsafeBufferPointer { indices in
+        vertexPlanes.withUnsafeBufferPointer { planes in
+        vertexPlaneCounts.withUnsafeBufferPointer { counts in
             for i in 0..<n {
                 guard w[i] > 0 else { continue }
                 let previousVelocity = v[i]
                 var vi = invH * (x[i] - x0[i])
 
-                let ci = indices[i]
-                if hasColliders && ci >= 0 {
-                    let normal = normals[i]
-                    let penetration = offsets[i] - dot(normal, x[i])
+                for k in 0..<Int(counts[i]) {
+                    let plane = planes[i * Self.planesPerVertex + k]
+                    let ci = plane.collider
+                    let normal = plane.normal
+                    let penetration = plane.offset - dot(normal, x[i])
                     if penetration > 0 {
                         x[i] = mulAdd(x[i], penetration, normal)
                         if last { contact[i] = true }
 
                         let collider = Int(ci)
-                        let r = x[i] - colliders[collider].center
+                        let r = x[i] - subPos(colliders[collider].center, origin)
                         let bodyVelocity = colliders[collider].pointVelocity(r)
                         let relative = vi - bodyVelocity
                         let vn = dot(normal, relative)
-                        let normalVelocity = vn * normal
-                        let tangentVelocity = relative - normalVelocity
+                        let normalVelocity = minFloat(vn, 0) * normal
+                        let tangentVelocity = relative - vn * normal
                         let tangentLength = length(tangentVelocity)
 
                         // Friction bounded by the normal correction: |dv_t| <= mu * d / h.
@@ -529,7 +533,6 @@ extension SoftBodyRecord {
                 }
                 v[i] = vi
             }
-        }
         }
         }
     }

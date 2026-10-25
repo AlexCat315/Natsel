@@ -8,7 +8,7 @@ private func makeCar(
 ) -> (VehicleID, BodyID) {
     var bodyDef = BodyDef()
     bodyDef.type = .dynamicBody
-    bodyDef.position = position
+    bodyDef.position = Pos(position)
     let body = world.createBody(bodyDef)
 
     let halfWidth: Float = 0.9
@@ -164,7 +164,7 @@ struct VehicleTests {
         let slope = makeQuatFromAxisAngle(Vec3(1, 0, 0), 10 * B3.degToRad)
         _ = world.createHullShape(ground, shapeDef, makeTransformedBoxHull(100, 1, 100, Transform(Vec3(0, -1, 0), slope)))
         let (car, body) = makeCar(world, position: Vec3(0, 1.4, 0))
-        world.setBodyTransform(body, Vec3(0, 1.4, 0), slope)
+        world.setBodyTransform(body, Pos(0, Float(1.4), 0), slope)
         for _ in 0..<60 {
             world.setVehicleDriverInput(car, forward: 0, right: 0, brake: 1, handBrake: 1)
             world.step(1.0 / 60.0, subStepCount: 4)
@@ -183,7 +183,7 @@ struct VehicleTests {
         _ = makeGround(world)
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0, 0.25, 0)
+        bodyDef.position = Pos(0, Float(0.25), 0)
         let platform = world.createBody(bodyDef)
         var shapeDef = ShapeDef()
         shapeDef.density = 100
@@ -229,7 +229,7 @@ struct VehicleTests {
         _ = makeGround(world)
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0, 1.2, 0)
+        bodyDef.position = Pos(0, Float(1.2), 0)
         let body = world.createBody(bodyDef)
         var shapeDef = ShapeDef()
         shapeDef.density = 8000 / (8 * 1.5 * 0.5 * 3)
@@ -289,7 +289,7 @@ struct VehicleTests {
         _ = makeGround(world)
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0, 0.9, 0)
+        bodyDef.position = Pos(0, Float(0.9), 0)
         let body = world.createBody(bodyDef)
         var shapeDef = ShapeDef()
         shapeDef.density = 240 / (8 * 0.2 * 0.3 * 0.8)

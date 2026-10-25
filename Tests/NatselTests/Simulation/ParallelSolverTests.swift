@@ -38,7 +38,7 @@ enum ParallelScene: String, CaseIterable {
 
 private func ground(_ world: World) -> BodyID {
     var def = BodyDef()
-    def.position = Vec3(0, -1, 0)
+    def.position = Pos(0, -1, 0)
     let body = world.createBody(def)
     _ = world.createHullShape(body, ShapeDef(), makeBoxHull(100, 1, 100))
     return body
@@ -53,7 +53,7 @@ private func buildPyramid(_ world: World) {
         for column in 0..<(base - row) {
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = Vec3(Float(column) - 0.5 * Float(base - row - 1), 0.5 + Float(row), 0)
+            def.position = Pos(Float(column) - 0.5 * Float(base - row - 1), 0.5 + Float(row), 0)
             let body = world.createBody(def)
             _ = world.createHullShape(body, ShapeDef(), box)
         }
@@ -68,7 +68,7 @@ private func buildJointGrid(_ world: World) {
         for i in 0..<n {
             var def = BodyDef()
             def.type = i == 0 ? .staticBody : .dynamicBody
-            def.position = Vec3(Float(k), -Float(i), 0)
+            def.position = Pos(Float(k), -Float(i), 0)
             let body = world.createBody(def)
             _ = world.createSphereShape(body, ShapeDef(), Sphere(center: Vec3(), radius: 0.4))
             var joint = SphericalJointDef()
@@ -98,7 +98,7 @@ private func buildRestitution(_ world: World) {
     for i in 0..<400 {
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(Float(i % 20) * 1.1 - 10, 1 + Float(i / 20) * 1.1, Float(i % 7) * 0.05)
+        def.position = Pos(Float(i % 20) * 1.1 - 10, 1 + Float(i / 20) * 1.1, Float(i % 7) * 0.05)
         let body = world.createBody(def)
         if i % 2 == 0 {
             _ = world.createSphereShape(body, shapeDef, Sphere(center: Vec3(), radius: 0.5))
@@ -115,10 +115,10 @@ private func buildMixedJoints(_ world: World) {
         for link in 0..<12 {
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = Vec3(Float(chain) * 2, 12 - Float(link), 0)
+            def.position = Pos(Float(chain) * 2, 12 - Float(link), 0)
             let body = world.createBody(def)
             _ = world.createHullShape(body, ShapeDef(), makeBoxHull(0.4, 0.4, 0.4))
-            let pivot = Vec3(Float(chain) * 2, 12.5 - Float(link), 0)
+            let pivot = Pos(Float(chain) * 2, 12.5 - Float(link), 0)
             switch (chain + link) % 4 {
             case 0:
                 var joint = RevoluteJointDef()
@@ -166,7 +166,7 @@ private func buildRagdolls(_ world: World) {
     _ = ground(world)
     for i in 0..<16 {
         var human = Human()
-        createHuman(&human, world, Vec3(Float(i % 4) * 1.5, 2 + Float(i / 4) * 2, 0), 0.05, 5, 0.5, i + 1, nil, false)
+        createHuman(&human, world, Pos(Float(i % 4) * 1.5, 2 + Float(i / 4) * 2, 0), 0.05, 5, 0.5, i + 1, nil, false)
     }
 }
 
@@ -178,7 +178,7 @@ private func buildFastAndSleepy(_ world: World) {
     let wall = makeBoxHull(0.25, 4, 20)
     for x: Float in [-16, 16] {
         var def = BodyDef()
-        def.position = Vec3(x, 4, 0)
+        def.position = Pos(x, 4, 0)
         let body = world.createBody(def)
         _ = world.createHullShape(body, ShapeDef(), wall)
     }
@@ -186,7 +186,7 @@ private func buildFastAndSleepy(_ world: World) {
     for i in 0..<640 {
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(Float(i % 16) - 7.5, 0.4 + Float(i / 256) * 0.8, Float((i / 16) % 16) - 7.5)
+        def.position = Pos(Float(i % 16) - 7.5, 0.4 + Float(i / 256) * 0.8, Float((i / 16) % 16) - 7.5)
         let body = world.createBody(def)
         _ = world.createHullShape(body, ShapeDef(), box)
     }
@@ -194,7 +194,7 @@ private func buildFastAndSleepy(_ world: World) {
         var def = BodyDef()
         def.type = .dynamicBody
         def.isBullet = i % 3 == 0
-        def.position = Vec3(i % 2 == 0 ? -12 : 12, 1 + Float(i / 2) * 0.5, Float(i % 5) - 2)
+        def.position = Pos(i % 2 == 0 ? -12 : 12, 1 + Float(i / 2) * 0.5, Float(i % 5) - 2)
         def.linearVelocity = Vec3(i % 2 == 0 ? 300 : -300, 0, Float(i % 3) - 1)
         let body = world.createBody(def)
         _ = world.createSphereShape(body, ShapeDef(), Sphere(center: Vec3(), radius: 0.1))
@@ -217,7 +217,7 @@ private func buildPaths(_ world: World) {
             let at = path.point(at: Float(bead) * 1.25).position
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = center + at
+            def.position = Pos(center + at)
             let body = world.createBody(def)
             _ = world.createHullShape(body, ShapeDef(), makeCubeHull(0.3))
             var joint = PathJointDef()
@@ -282,7 +282,7 @@ struct ParallelSolverTests {
             for k in 0..<6 {
                 var def = BodyDef()
                 def.type = .dynamicBody
-                def.position = Vec3(Float(k) * 4, 1.2, 0)
+                def.position = Pos(Float(k) * 4, Float(1.2), 0)
                 let body = world.createBody(def)
                 var shapeDef = ShapeDef()
                 shapeDef.density = 400
@@ -301,7 +301,7 @@ struct ParallelSolverTests {
                 world.setVehicleDriverInput(id, forward: 1, right: k % 2 == 0 ? 0.3 : -0.3)
             }
             _ = world.createSoftBody(SoftBodyDef(settings: SoftBodySettings.makeCloth(columns: 12, rows: 12, spacing: 0.1),
-                                                 position: Vec3(0, 3, 4)))
+                                                 position: Pos(0, 3, 4)))
             buildPyramid(world)
             for _ in 0..<60 { world.step(1.0 / 60.0, subStepCount: 4) }
             return world.worldStateHash()

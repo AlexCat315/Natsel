@@ -11,7 +11,7 @@ struct MoverTOITests {
     }
 
     private func identityAt(_ x: Float, _ y: Float, _ z: Float) -> WorldTransform {
-        Transform(Vec3(x, y, z), Quat.identity)
+        WorldTransform(Vec3(x, y, z), Quat.identity)
     }
 
     private func makeWorld() -> (World, BodyID) {
@@ -149,9 +149,9 @@ struct MoverTOITests {
         _ = world.createHullShape(body, ShapeDef(), makeBoxHull(2, 0.25, 0.25))
 
         // The query origin puts the mover at world (0,0,2.1), just inside the swept end of the bar.
-        let origin = Pos(0, 0, 2.1)
+        let origin = Pos(0, 0, Float(2.1))
         let transform1 = identityAt(0, 0, 0)
-        let transform2 = Transform(
+        let transform2 = WorldTransform(
             Vec3(), makeQuatFromAxisAngle(.axisY, 0.5 * B3.pi))
 
         let spinning = world.bodyTimeOfImpactMover(
@@ -170,8 +170,8 @@ struct MoverTOITests {
         let (world, body) = makeWorld()
         _ = world.createHullShape(body, ShapeDef(), makeBoxHull(0.5, 0.5, 0.5))
 
-        let origin = Pos(1.0e6, -2.0e6, 5.0e5)
-        let transform = Transform(offsetPos(origin, Vec3(5, 0, 0)), Quat.identity)
+        let origin = Pos(Float(1.0e6), Float(-2.0e6), Float(5.0e5))
+        let transform = WorldTransform(offsetPos(origin, Vec3(5, 0, 0)), Quat.identity)
 
         let result = world.bodyTimeOfImpactMover(
             body, origin, standingMover(), Vec3(10, 0, 0), .defaultFilter, transform, transform)
@@ -283,11 +283,11 @@ extension MoverTOITests {
             let translation = random.float(0, 3) * random.direction()
 
             let q1 = random.quat()
-            let transform1 = Transform(Vec3(), q1)
+            let transform1 = WorldTransform(Vec3(), q1)
 
             let spin = makeQuatFromAxisAngle(random.direction(), random.float(0.001, B3.pi))
             let shift = random.vector(-1, 1)
-            let transform2 = Transform(shift, mulQuat(spin, q1))
+            let transform2 = WorldTransform(shift, mulQuat(spin, q1))
 
             let result = world.bodyTimeOfImpactMover(
                 body, origin, mover, translation, .defaultFilter, transform1, transform2)

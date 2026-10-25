@@ -138,8 +138,6 @@ public struct CastOutput: Sendable, Equatable, BitwiseCopyable {
     public init() {}
 }
 
-/// Ray cast or shape-cast output in world space. Same type in single precision.
-public typealias WorldCastOutput = CastOutput
 
 /// Body cast result for ray and shape casts.
 public struct BodyCastResult: Sendable, Equatable {
@@ -451,3 +449,22 @@ public typealias PlaneResultCallback = (_ shapeId: ShapeID, _ planes: UnsafeBuff
 
 /// Used to filter shapes for shape casting character movers. Return true to accept the collision.
 public typealias MoverFilterCallback = (_ shapeId: ShapeID) -> Bool
+
+/// A cast against a world shape, preserving the double precision hit position.
+public struct WorldCastOutput: Sendable, Equatable, BitwiseCopyable {
+    public var normal = Vec3()
+    public var point = Pos()
+    public var fraction: Float = 0
+    public var iterations: Int32 = 0
+    public var triangleIndex: Int32 = 0
+    public var childIndex: Int32 = 0
+    public var materialIndex: Int32 = 0
+    public var hit = false
+    public init() {}
+    internal init(_ local: CastOutput, origin: Pos) {
+        normal = local.normal; point = offsetPos(origin, local.point)
+        fraction = local.fraction; iterations = local.iterations
+        triangleIndex = local.triangleIndex; childIndex = local.childIndex
+        materialIndex = local.materialIndex; hit = local.hit
+    }
+}

@@ -21,7 +21,7 @@ struct StepTests {
 
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0, 5, 0)
+        def.position = Pos(0, 5, 0)
         def.linearVelocity = Vec3(1, 2, 3)
         def.angularVelocity = Vec3(0.1, 0.2, 0.3)
         def.linearDamping = 0.1
@@ -34,7 +34,7 @@ struct StepTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(-1, 3, 0)
+        def.position = Pos(-1, 3, 0)
         def.linearVelocity = Vec3(0.5, -0.5, 1.0)
         def.angularVelocity = Vec3(1, 0, 0)
         def.motionLocks.linearX = true
@@ -47,7 +47,7 @@ struct StepTests {
 
         def = BodyDef()
         def.type = .kinematicBody
-        def.position = Vec3(2, 0, 0)
+        def.position = Pos(2, 0, 0)
         def.linearVelocity = Vec3(0, 0, 1)
         def.angularVelocity = Vec3(0.3, 0, 0)
         let b2 = world.createBody(def)
@@ -56,12 +56,12 @@ struct StepTests {
 
         def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(10, 10, 10)
+        def.position = Pos(10, 10, 10)
         let b3s = world.createBody(def)
         shapeDef = ShapeDef()
         _ = world.createSphereShape(b3s, shapeDef, Sphere(center: Vec3(), radius: 1.0))
 
-        world.applyBodyForce(b0, Vec3(100, 0, 0), Vec3(0.2, 5.2, 0), true)
+        world.applyBodyForce(b0, Vec3(100, 0, 0), Pos(Float(0.2), Float(5.2), 0), true)
         world.applyBodyTorque(b0, Vec3(0, 10, 0), true)
 
         for _ in 0..<5 {
@@ -75,7 +75,7 @@ struct StepTests {
             var v = world.bodyLinearVelocity(id)
             var w = world.bodyAngularVelocity(id)
             var center = world.bodyWorldCenter(id)
-            h = fnv(h, &transform.p, 12)
+            h = fnv(h, &transform.p, MemoryLayout<Pos>.size)
             h = fnv(h, &transform.q, 16)
             h = fnv(h, &v, 12)
             h = fnv(h, &w, 12)
@@ -83,12 +83,12 @@ struct StepTests {
             var flags = world.body(id).flags
             h = fnv(h, &flags, 4)
         }
-        #expect(h == 0x6621_048a_976a_4438)
+        #expect(h == 0x32c481b36da0e179)
 
         let t0 = world.bodyTransform(b0)
-        #expect(t0.p.x.bitPattern == 0x3da9_f74e)
-        #expect(t0.p.y.bitPattern == 0x40a4_ba70)
-        #expect(t0.p.z.bitPattern == 0x3e7e_e22e)
+        #expect(Float(t0.p.x).bitPattern == 0x3da9_f74e)
+        #expect(Float(t0.p.y).bitPattern == 0x40a4_ba70)
+        #expect(Float(t0.p.z).bitPattern == 0x3e7e_e22e)
         #expect(t0.q.v.x.bitPattern == 0x3b88_b2ee)
         #expect(t0.q.s.bitPattern == 0x3f7f_f82d)
 
@@ -97,15 +97,15 @@ struct StepTests {
         #expect(world.bodyLinearVelocity(b0).z.bitPattern == 0x403e_6839)
 
         // Motion locks zero the x translation.
-        #expect(world.bodyTransform(b1).p.x.bitPattern == 0xbf80_0000)
+        #expect(Float(world.bodyTransform(b1).p.x).bitPattern == 0xbf80_0000)
         #expect(world.bodyLinearVelocity(b1).x.bitPattern == 0)
         #expect(world.body(b1).flags == 0x0000_7031)
 
         // Kinematic body moves but ignores gravity.
-        #expect(world.bodyTransform(b2).p.z.bitPattern == 0x3daa_aaab)
+        #expect(Float(world.bodyTransform(b2).p.z).bitPattern == 0x3daa_aaab)
         #expect(world.body(b2).flags == 0x0000_6000)
 
         // Static body is untouched.
-        #expect(world.bodyTransform(b3s).p == Vec3(10, 10, 10))
+        #expect(world.bodyTransform(b3s).p == Pos(10, 10, 10))
     }
 }

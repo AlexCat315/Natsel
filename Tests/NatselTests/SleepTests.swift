@@ -25,7 +25,7 @@ struct SleepTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0, 0.6, 0)
+        def.position = Pos(0, Float(0.6), 0)
         let box = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -50,7 +50,7 @@ struct SleepTests {
         var vv = v
         var flags = b.flags
         var sleepTime = b.sleepTime
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &flags, 4)
@@ -59,6 +59,6 @@ struct SleepTests {
         #expect(b.setIndex == 3)
         #expect(b.localIndex == 0)
         #expect(b.sleepTime.bitPattern == 0x3f00_0003)
-        #expect(h == 0xe35c_04b9_0db7_7bb6)
+        #expect(h == 0x8200da4b91165954)
     }
 }

@@ -26,7 +26,7 @@ struct CallbackTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0, 1.0, 0)
+        def.position = Pos(0, Float(1.0), 0)
         let box = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000

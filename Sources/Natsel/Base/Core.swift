@@ -13,8 +13,8 @@ public struct Version: Sendable, Equatable {
 /// Get the current version of the engine.
 public func getVersion() -> Version { Version(major: 0, minor: 2, revision: 0) }
 
-/// Large world mode is not supported.
-public func isDoublePrecision() -> Bool { false }
+/// World positions use Double; local geometry, velocities, and constraint solving use Float.
+public func isDoublePrecision() -> Bool { true }
 
 /// The maximum manifold point count the library was built with.
 public func getMaxManifoldPoints() -> Int32 { B3.maxManifoldPoints }

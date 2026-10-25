@@ -29,7 +29,7 @@ struct MeshSimulationTests {
         _ = world.createMeshShape(ground, shapeDef, mesh, scale: (scenario % 9) / 3 == 2 ? Vec3(-1.25, 1, 0.75) : .one)
         bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0.13, 2, 0.17)
+        bodyDef.position = Pos(Float(0.13), 2, Float(0.17))
         bodyDef.rotation = makeQuatFromAxisAngle(.axisY, 0.3)
         bodyDef.linearVelocity = Vec3(0.35, -0.1, 0.2)
         bodyDef.angularVelocity = Vec3(0.1, 0.2, 0.15)

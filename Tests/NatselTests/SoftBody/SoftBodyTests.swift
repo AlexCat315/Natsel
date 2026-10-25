@@ -14,7 +14,7 @@ private func step(_ world: World, _ count: Int) {
 }
 
 private func minY(_ world: World, _ id: SoftBodyID) -> Float {
-    world.softBodyVertexPositions(id).reduce(Float.greatestFiniteMagnitude) { min($0, $1.y) }
+    world.softBodyVertexPositions(id).reduce(Float.greatestFiniteMagnitude) { min($0, Float($1.y)) }
 }
 
 @Suite("Soft bodies")
@@ -73,7 +73,7 @@ struct SoftBodyTests {
             columns: 20, rows: 20, spacing: 0.05, attributes: attributes, bendType: .dihedral,
             pinned: { x, z in z == 0 && (x == 0 || x == 19) })
         #expect(settings.longRangeAttachments.count > 0)
-        var def = SoftBodyDef(settings: settings, position: Vec3(0, 2, 0))
+        var def = SoftBodyDef(settings: settings, position: Pos(0, 2, 0))
         def.iterationCount = 10
         let cloth = world.createSoftBody(def)
         #expect(cloth.isNull == false)
@@ -98,7 +98,7 @@ struct SoftBodyTests {
         }
         #expect(maxStretch < 1.1)
         #expect(meanStretch < 1.005)
-        for p in positions { #expect(isValidVec3(p)) }
+        for p in positions { #expect(isValidPosition(p)) }
     }
 
     @Test("cloth drapes over a static sphere and box")
@@ -112,7 +112,7 @@ struct SoftBodyTests {
         let settings = SoftBodySettings.makeCloth(
             columns: 30, rows: 30, spacing: 0.1,
             attributes: SoftBodyVertexAttributes(compliance: 0, shearCompliance: 1.0e-5, bendCompliance: 1.0e-3))
-        var def = SoftBodyDef(settings: settings, position: Vec3(0.5, 1.5, 0))
+        var def = SoftBodyDef(settings: settings, position: Pos(Float(0.5), Float(1.5), 0))
         def.vertexRadius = 0.01
         let cloth = world.createSoftBody(def)
         step(world, 300)
@@ -142,7 +142,7 @@ struct SoftBodyTests {
         let restVolume = settings.volumes.reduce(0) { $0 + $1.sixRestVolume } / 6
         #expect(abs(restVolume - 0.4 * 0.4 * 0.4) < 1.0e-4)
 
-        var def = SoftBodyDef(settings: settings, position: Vec3(0, 1, 0))
+        var def = SoftBodyDef(settings: settings, position: Pos(0, 1, 0))
         def.vertexRadius = 0.01
         let cube = world.createSoftBody(def)
         let initialVolume = world.softBodyVolume(cube)
@@ -179,7 +179,7 @@ struct SoftBodyTests {
             columns: 25, rows: 25, spacing: 0.08,
             attributes: SoftBodyVertexAttributes(compliance: 1.0e-6, shearCompliance: 1.0e-5, bendCompliance: 1.0e-2),
             pinned: { x, z in (x == 0 || x == 24) && (z == 0 || z == 24) })
-        var def = SoftBodyDef(settings: settings, position: Vec3(0, 1, 0))
+        var def = SoftBodyDef(settings: settings, position: Pos(0, 1, 0))
         def.vertexRadius = 0.02
         def.friction = 0.5
         def.linearDamping = 1
@@ -187,24 +187,28 @@ struct SoftBodyTests {
 
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0, 1.5, 0)
+        bodyDef.position = Pos(0, Float(1.5), 0)
         let box = world.createBody(bodyDef)
         var shapeDef = ShapeDef()
         shapeDef.density = 50
         _ = world.createHullShape(box, shapeDef, makeBoxHull(0.2, 0.2, 0.2))
 
-        step(world, 600)
+        var touchedBox = false
+        for _ in 0..<600 {
+            world.step(1.0 / 60.0, subStepCount: 4)
+            touchedBox = touchedBox || world.softBodyContacts(cloth).contains { $0.bodyId == box }
+        }
         // Supported by the cloth: below the pins but far above free fall, and settled.
         var lowest: Float = .greatestFiniteMagnitude
         var highest: Float = -.greatestFiniteMagnitude
         for _ in 0..<60 {
             world.step(1.0 / 60.0, subStepCount: 4)
-            lowest = min(lowest, world.bodyPosition(box).y)
-            highest = max(highest, world.bodyPosition(box).y)
+            lowest = min(lowest, Float(world.bodyPosition(box).y))
+            highest = max(highest, Float(world.bodyPosition(box).y))
         }
         #expect(lowest > 0.2 && highest < 1.15)
         #expect(highest - lowest < 0.05)
-        #expect(world.softBodyContacts(cloth).contains { $0.bodyId == box })
+        #expect(touchedBox)
         // The cloth sags under the box.
         #expect(minY(world, cloth) < 0.95)
     }
@@ -232,7 +236,7 @@ struct SoftBodyTests {
             }
             let settings = SoftBodySettings.makeCloth(columns: 10, rows: 10, spacing: 0.1)
             let center: Vec3 = kind == 1 ? Vec3(5, 0.5, 5) : Vec3(0, 0.5, 0)
-            var def = SoftBodyDef(settings: settings, position: center)
+            var def = SoftBodyDef(settings: settings, position: Pos(center))
             def.vertexRadius = 0.01
             let cloth = world.createSoftBody(def)
             step(world, 180)
@@ -245,14 +249,14 @@ struct SoftBodyTests {
     func rayCast() {
         let world = World()
         let settings = SoftBodySettings.makeCloth(columns: 5, rows: 5, spacing: 0.25)
-        let cloth = world.createSoftBody(SoftBodyDef(settings: settings, position: Vec3(0, 1, 0)))
-        let hit = world.castRayClosestSoftBody(Vec3(0.1, 3, 0.1), Vec3(0, -4, 0))
+        let cloth = world.createSoftBody(SoftBodyDef(settings: settings, position: Pos(0, 1, 0)))
+        let hit = world.castRayClosestSoftBody(Pos(Float(0.1), 3, Float(0.1)), Vec3(0, -4, 0))
         #expect(hit.hit)
         #expect(hit.softBodyId == cloth)
         #expect(abs(hit.point.y - 1) < 1.0e-4)
         #expect(hit.normal.y > 0.99)
         // Single sided faces are missed from below.
-        let below = world.castRaySoftBody(cloth, Vec3(0.1, -1, 0.1), Vec3(0, 4, 0))
+        let below = world.castRaySoftBody(cloth, Pos(Float(0.1), -1, Float(0.1)), Vec3(0, 4, 0))
         #expect(below.hit == false)
     }
 
@@ -289,11 +293,11 @@ struct SoftBodyTests {
             var ids: [SoftBodyID] = []
             for k in 0..<4 {
                 let settings = SoftBodySettings.makeCloth(columns: 16, rows: 16, spacing: 0.05)
-                ids.append(world.createSoftBody(SoftBodyDef(settings: settings, position: Vec3(Float(k), 1, 0))))
+                ids.append(world.createSoftBody(SoftBodyDef(settings: settings, position: Pos(Float(k), 1, 0))))
             }
             var bodyDef = BodyDef()
             bodyDef.type = .dynamicBody
-            bodyDef.position = Vec3(0, 0.5, 0)
+            bodyDef.position = Pos(0, Float(0.5), 0)
             let box = world.createBody(bodyDef)
             _ = world.createHullShape(box, ShapeDef(), makeBoxHull(0.2, 0.2, 0.2))
             step(world, 120)
@@ -307,13 +311,13 @@ struct SoftBodyTests {
         let world = World()
         _ = makeGround(world)
         let settings = SoftBodySettings.makeCloth(columns: 10, rows: 10, spacing: 0.1)
-        let cloth = world.createSoftBody(SoftBodyDef(settings: settings, position: Vec3(0, 0.05, 0)))
+        let cloth = world.createSoftBody(SoftBodyDef(settings: settings, position: Pos(0, Float(0.05), 0)))
         step(world, 120)
         #expect(world.softBodyIsAwake(cloth) == false)
 
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0, 1, 0)
+        bodyDef.position = Pos(0, 1, 0)
         let ball = world.createBody(bodyDef)
         _ = world.createSphereShape(ball, ShapeDef(), Sphere(center: Vec3(), radius: 0.1))
         var woke = false

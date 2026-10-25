@@ -53,7 +53,7 @@ struct ImpulseDeterminismTests {
             let column = i % 8
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = Pos(2 * Float(column) - 7, 1.45, 2 * Float(row) - 7)
+            def.position = Pos(2 * Float(column) - 7, Float(1.45), 2 * Float(row) - 7)
             let id = world.createBody(def)
             bodyIds.append(id)
 
@@ -82,7 +82,7 @@ struct ImpulseDeterminismTests {
             }
         }
 
-        #expect(h == 0x56B2_50F7)
+        #expect(h == 0xb7fbcfc0)
     }
 
     @Test("mesh mix matches the C velocity and impulse hash", arguments: [false, true])
@@ -102,7 +102,7 @@ struct ImpulseDeterminismTests {
             }
         }
 
-        #expect(h == 0x246C_C2A7)
+        #expect(h == 0x9da0b374)
     }
     func makeMeshMix(_ wide: Bool) -> (World, [BodyID]) {
         let world = World()
@@ -128,7 +128,7 @@ struct ImpulseDeterminismTests {
             let column = i % 8
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = Pos(2.2 * Float(column) - 7.7, 1.2, 2.2 * Float(row) - 7.7)
+            def.position = Pos(2.2 * Float(column) - 7.7, Float(1.2), 2.2 * Float(row) - 7.7)
             let id = world.createBody(def)
             bodyIds.append(id)
 

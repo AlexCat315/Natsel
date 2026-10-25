@@ -15,7 +15,7 @@ private final class StateScene {
     init(workers: Int32 = 1) {
         world.workerCount = workers
         var groundDef = BodyDef()
-        groundDef.position = Vec3(0, -1, 0)
+        groundDef.position = Pos(0, -1, 0)
         anchor = world.createBody(groundDef)
         _ = world.createHullShape(anchor, ShapeDef(), makeBoxHull(60, 1, 60))
 
@@ -32,7 +32,7 @@ private final class StateScene {
             for column in 0..<(8 - row) {
                 var def = BodyDef()
                 def.type = .dynamicBody
-                def.position = Vec3(Float(column) * 0.85 - 0.425 * Float(7 - row), 1.4 + Float(row) * 0.8, 0)
+                def.position = Pos(Float(column) * 0.85 - 0.425 * Float(7 - row), 1.4 + Float(row) * 0.8, 0)
                 let body = world.createBody(def)
                 _ = world.createHullShape(body, shapeDef, box)
                 boxes.append(body)
@@ -41,7 +41,7 @@ private final class StateScene {
 
         for i in 0..<3 {
             var human = Human()
-            createHuman(&human, world, Vec3(Float(i) * 2 - 8, 2, 6), 0.05, 5, 0.5, i + 1, nil, false)
+            createHuman(&human, world, Pos(Float(i) * 2 - 8, 2, 6), 0.05, 5, 0.5, i + 1, nil, false)
         }
 
         // A chain mixing joint kinds, with a path joint and a six DOF joint at the end.
@@ -49,10 +49,10 @@ private final class StateScene {
         for link in 0..<6 {
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = Vec3(10, 6 - Float(link), 0)
+            def.position = Pos(10, 6 - Float(link), 0)
             let body = world.createBody(def)
             _ = world.createHullShape(body, ShapeDef(), makeBoxHull(0.3, 0.3, 0.3))
-            let pivot = Vec3(10, 6.5 - Float(link), 0)
+            let pivot = Pos(10, 6.5 - Float(link), 0)
             if link % 2 == 0 {
                 var joint = RevoluteJointDef()
                 joint.base.bodyIdA = previous
@@ -74,7 +74,7 @@ private final class StateScene {
         }
         var bead = BodyDef()
         bead.type = .dynamicBody
-        bead.position = Vec3(-10, 1, -5)
+        bead.position = Pos(-10, 1, -5)
         let beadBody = world.createBody(bead)
         _ = world.createSphereShape(beadBody, ShapeDef(), Sphere(center: Vec3(), radius: 0.2))
         var path = PathJointDef()
@@ -90,7 +90,7 @@ private final class StateScene {
         for k in 0..<2 {
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = Vec3(Float(k) * 5 - 20, 1.2, -12)
+            def.position = Pos(Float(k) * 5 - 20, Float(1.2), -12)
             let body = world.createBody(def)
             var chassis = ShapeDef()
             chassis.density = 400
@@ -111,17 +111,17 @@ private final class StateScene {
         }
 
         softBody = world.createSoftBody(SoftBodyDef(
-            settings: SoftBodySettings.makeCloth(columns: 10, rows: 10, spacing: 0.15), position: Vec3(0, 6, 3)))
+            settings: SoftBodySettings.makeCloth(columns: 10, rows: 10, spacing: 0.15), position: Pos(0, 6, 3)))
 
         var bullet = BodyDef()
         bullet.type = .dynamicBody
         bullet.isBullet = true
-        bullet.position = Vec3(-25, 2, 0)
+        bullet.position = Pos(-25, 2, 0)
         bullet.linearVelocity = Vec3(250, 0, 0)
         _ = world.createSphereShape(world.createBody(bullet), ShapeDef(), Sphere(center: Vec3(), radius: 0.1))
 
         var characterDef = CharacterDef()
-        characterDef.position = Vec3(-4, 0.05, 0)
+        characterDef.position = Pos(-4, Float(0.05), 0)
         character = CharacterVirtual(world: world, characterDef)
     }
 
@@ -144,6 +144,7 @@ private final class StateScene {
     func fingerprint() -> [UInt64] {
         var values: [UInt64] = [world.worldStateHash(), UInt64(world.awakeBodyCount())]
         var hash: UInt64 = 14_695_981_039_346_656_037
+        func mix(_ f: Double) { hash = (hash ^ f.bitPattern) &* 1_099_511_628_211 }
         func mix(_ f: Float) { hash = (hash ^ UInt64(f.bitPattern)) &* 1_099_511_628_211 }
         for p in world.softBodyVertexPositions(softBody) { mix(p.x); mix(p.y); mix(p.z) }
         for vehicle in vehicles {
@@ -214,7 +215,7 @@ struct WorldStateTests {
         world.destroyShapeInternal(world.bodies[Int(scene.boxes[5].index1 - 1)].headShapeId, true)
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0, 8, 0)
+        def.position = Pos(0, 8, 0)
         let added = world.createBody(def)
         _ = world.createHullShape(added, ShapeDef(), makeBoxHull(1, 0.2, 0.7))
         var weld = WeldJointDef()

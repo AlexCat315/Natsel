@@ -4,6 +4,11 @@ static uint64_t Word(uint64_t hash, uint32_t word) {
 }
 static uint64_t Scalar(uint64_t hash,float value) { uint32_t word; memcpy(&word,&value,4); return Word(hash,word); }
 static uint64_t Vector(uint64_t hash,b3Vec3 value) { return Scalar(Scalar(Scalar(hash,value.x),value.y),value.z); }
+static uint64_t Position(uint64_t hash, b3Pos value) {
+    double v[3] = {value.x, value.y, value.z};
+    for(int i=0;i<3;++i) { uint64_t bits; memcpy(&bits,v+i,8); hash=Word(hash,(uint32_t)bits); hash=Word(hash,(uint32_t)(bits>>32)); }
+    return hash;
+}
 static uint64_t Contacts(uint64_t hash,b3World* world) {
     int count=0;
     for(int i=0;i<world->contacts.count;++i) {

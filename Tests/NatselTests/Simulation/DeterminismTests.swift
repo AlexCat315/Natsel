@@ -2,7 +2,7 @@ import Testing
 @testable import Natsel
 
 // Determinism scenarios from test/test_determinism.c and shared/determinism.c.
-@Suite("World determinism C parity")
+@Suite("World determinism C double parity")
 struct WorldDeterminismTests {
     @Test("wave pile matches the C sleep step and transform hash")
     func wavePile() {
@@ -18,7 +18,7 @@ struct WorldDeterminismTests {
         }
         #expect(done)
         #expect(sleepStep == 272)
-        #expect(hash == 0x266F_83B0)
+        #expect(hash == 0xC8E5_F3D6)
     }
 
     @Test("mesh drop matches the C sleep step and transform hash")
@@ -34,8 +34,8 @@ struct WorldDeterminismTests {
             done = updateMeshDrop(world, &scene, stepCount: &stepCount, sleepStep: &sleepStep, hash: &hash)
         }
         #expect(done)
-        #expect(sleepStep == 226)
-        #expect(hash == 0xD2FF_069D)
+        #expect(sleepStep == 218)
+        #expect(hash == 0xD378_CF04)
     }
 
     @Test("query spawn matches the C state and query hashes")
@@ -56,8 +56,8 @@ struct WorldDeterminismTests {
         #expect(done)
         #expect(scene.spawnCount == 50)
         #expect(sleepStep == 242)
-        #expect(hash == 0xF3AD_9BA6)
+        #expect(hash == 0x4895_85E6)
         #expect(scene.queryHitCount == 59)
-        #expect(scene.queryHash == 0xE327_1F3D)
+        #expect(scene.queryHash == 0x5B44_29DC)
     }
 }

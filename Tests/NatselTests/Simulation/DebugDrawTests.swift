@@ -16,7 +16,7 @@ struct DebugDrawTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Pos(0, 0.6, 0)
+        def.position = Pos(0, Float(0.6), 0)
         let box = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.density = 1000

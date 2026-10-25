@@ -25,7 +25,7 @@ struct CcdTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(-5, 0, 0)
+        def.position = Pos(-5, 0, 0)
         def.linearVelocity = Vec3(200, 0, 0)
         def.isBullet = bullet
         let body = world.createBody(def)
@@ -43,7 +43,7 @@ struct CcdTests {
         var flags = world.body(body).flags
 
         var h: UInt64 = 14_695_981_039_346_656_037
-        h = fnv(h, &transform.p, 12)
+        h = fnv(h, &transform.p, MemoryLayout<Pos>.size)
         h = fnv(h, &transform.q, 16)
         h = fnv(h, &v, 12)
         h = fnv(h, &av, 12)
@@ -58,13 +58,13 @@ struct CcdTests {
     func bullet() {
         let (h, count) = run(bullet: true)
         #expect(count == 0)
-        #expect(h == 0x08de_1f1f_ba3b_75d8)
+        #expect(h == 0x626020bf0b39848b)
     }
 
     @Test("non-bullet fast body does not tunnel")
     func fastBody() {
         let (h, count) = run(bullet: false)
         #expect(count == 0)
-        #expect(h == 0x0634_234a_d519_be58)
+        #expect(h == 0x5fb624ea2617cd0b)
     }
 }

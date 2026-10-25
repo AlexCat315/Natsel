@@ -126,19 +126,22 @@ extension World {
     /// (along `surfaceNormal`). Returns the number of bodies affected.
     @discardableResult
     public func applyBuoyancy(
-        in volume: AABB, surfaceNormal: Vec3 = Vec3(0, 1, 0), buoyancy: Float, linearDrag: Float = 0.5,
+        in volume: WorldAABB, surfaceNormal: Vec3 = Vec3(0, 1, 0), buoyancy: Float, linearDrag: Float = 0.5,
         angularDrag: Float = 0.01, fluidVelocity: Vec3 = Vec3(), timeStep: Float,
         filter: QueryFilter = .defaultFilter
     ) -> Int {
         let n = normalize(surfaceNormal)
-        let corner = Vec3(n.x >= 0 ? volume.upperBound.x : volume.lowerBound.x,
+        let corner = Pos(n.x >= 0 ? volume.upperBound.x : volume.lowerBound.x,
                           n.y >= 0 ? volume.upperBound.y : volume.lowerBound.y,
                           n.z >= 0 ? volume.upperBound.z : volume.lowerBound.z)
         var seen = Set<Int32>()
         let tree = broadPhase.trees[Int(BodyType.dynamicBody.rawValue)]
-        _ = tree.query(volume, maskBits: filter.maskBits, requireAllBits: false) { _, data in
+        _ = tree.query(volume.conservativeBounds, maskBits: filter.maskBits, requireAllBits: false) { _, data in
             let shape = self.shapes[Int(data)]
-            if shouldQueryCollide(shape.filter, filter) { seen.insert(shape.bodyId) }
+            if shouldQueryCollide(shape.filter, filter) {
+                let id = ShapeID(index1: shape.id + 1, world0: self.worldId, generation: shape.generation)
+                if volume.overlaps(self.shapeWorldAABB(id)) { seen.insert(shape.bodyId) }
+            }
             return true
         }
         var count = 0
@@ -160,7 +163,7 @@ extension World {
         var shapeId = record.headShapeId
         while shapeId != B3.nullIndex {
             let shape = shapes[Int(shapeId)]
-            bounds = aabbUnion(bounds, computeShapeAABB(shape, .identity))
+            bounds = aabbUnion(bounds, computeShapeAABB(shape, Transform.identity))
             shapeId = shape.nextShapeId
         }
         return bounds
@@ -403,4 +406,19 @@ private func submergedMesh(_ mesh: Mesh, _ xf: Transform, _ plane: Plane, _ sum:
 private extension AABB {
     /// Order the corners after a scale that may be negative.
     var normalized: AABB { AABB(minVec3(lowerBound, upperBound), maxVec3(lowerBound, upperBound)) }
+}
+
+
+extension World {
+    /// Convenience overload for a fluid volume described by single precision world bounds.
+    @discardableResult
+    public func applyBuoyancy(
+        in volume: AABB, surfaceNormal: Vec3 = Vec3(0, 1, 0), buoyancy: Float, linearDrag: Float = 0.5,
+        angularDrag: Float = 0.01, fluidVelocity: Vec3 = Vec3(), timeStep: Float,
+        filter: QueryFilter = .defaultFilter
+    ) -> Int {
+        applyBuoyancy(in: WorldAABB(Pos(volume.lowerBound), Pos(volume.upperBound)),
+                      surfaceNormal: surfaceNormal, buoyancy: buoyancy, linearDrag: linearDrag,
+                      angularDrag: angularDrag, fluidVelocity: fluidVelocity, timeStep: timeStep, filter: filter)
+    }
 }

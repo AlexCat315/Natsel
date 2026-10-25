@@ -40,18 +40,18 @@ extension World {
     func drawSoftBodiesPass(_ options: DebugDraw) {
         guard options.drawSoftBodies, let drawSegment = options.drawSegment, softBodyIdPool.idCount > 0 else { return }
         for record in softBodies where record.id != B3.nullIndex {
-            guard aabbOverlaps(record.bounds, options.drawingBounds) else { continue }
+            guard aabbOverlaps(offsetAABB(record.bounds, record.origin), options.drawingBounds) else { continue }
             let color = record.awake ? DebugColors.lightSteelBlue : DebugColors.gray
             record.positions.withUnsafeBufferPointer { x in
                 for edge in record.settings.edges {
-                    drawSegment(x[Int(edge.vertex.x)], x[Int(edge.vertex.y)], color)
+                    drawSegment(offsetPos(record.origin, x[Int(edge.vertex.x)]), offsetPos(record.origin, x[Int(edge.vertex.y)]), color)
                 }
                 if let drawPoint = options.drawPoint {
                     for i in 0..<x.count {
                         if record.invMasses[i] == 0 {
-                            drawPoint(x[i], 5, DebugColors.red)
+                            drawPoint(offsetPos(record.origin, x[i]), 5, DebugColors.red)
                         } else if record.hasContact[i] {
-                            drawPoint(x[i], 3, DebugColors.orange)
+                            drawPoint(offsetPos(record.origin, x[i]), 3, DebugColors.orange)
                         }
                     }
                 }

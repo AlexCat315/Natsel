@@ -145,7 +145,7 @@ func createPathBeads(_ world: World) {
             let fraction = Float(bead) * 0.75
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = center + path.point(at: fraction).position
+            def.position = Pos(center + path.point(at: fraction).position)
             let body = world.createBody(def)
             _ = world.createHullShape(body, ShapeDef(), makeCubeHull(0.2))
             var joint = PathJointDef()
@@ -250,7 +250,7 @@ func createRagdollMotors(_ world: World) {
     benchmarkRagdolls = []
     for i in 0..<100 {
         var pose = bind
-        pose.rootOffset = Vec3(Float(i % 10) * 2 - 9, 0.2, Float(i / 10) * 2 - 9)
+        pose.rootOffset = Pos(Float(i % 10) * 2 - 9, 0.2, Float(i / 10) * 2 - 9)
         benchmarkRagdolls.append(Ragdoll(world: world, settings: settings, pose: pose)!)
     }
 }

@@ -12,7 +12,7 @@ private struct PathRig {
         ground = world.createBody(BodyDef())
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = position
+        def.position = Pos(position)
         body = world.createBody(def)
         _ = world.createHullShape(body, ShapeDef(), makeBoxHull(0.2, 0.1, 0.1))
     }
@@ -140,7 +140,7 @@ struct PathJointTests {
         var wraps = 0
         rig.run(360) {
             let p = rig.world.bodyPosition(rig.body)
-            #expect(abs(length(Vec3(p.x, 0, p.z)) - 3) < 0.03 && abs(p.y) < 0.01)
+            #expect(abs(length(subPos(Pos(p.x, Float(0.0), p.z), .zero)) - 3) < 0.03 && abs(p.y) < 0.01)
             let f = rig.world.pathJointFraction(joint)!
             if f < last - 6 { wraps += 1 }
             last = f
@@ -220,7 +220,7 @@ struct PathJointTests {
         def.type = .dynamicBody
         let carrier = world.createBody(def)
         _ = world.createHullShape(carrier, ShapeDef(), makeBoxHull(2, 0.1, 0.5))
-        def.position = Vec3(0.5, 0.3, 0)
+        def.position = Pos(Float(0.5), Float(0.3), 0)
         let bead = world.createBody(def)
         _ = world.createSphereShape(bead, ShapeDef(), Sphere(center: Vec3(), radius: 0.1))
         var joint = PathJointDef()

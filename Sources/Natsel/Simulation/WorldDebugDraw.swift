@@ -361,13 +361,13 @@ extension World {
         _ drawSegment: (Pos, Pos, HexColor) -> Void
     ) {
         drawSegment(
-            toVec3(frame.p), offsetPos(frame.p, length * rotateVector(frame.q, .axisX)),
+            frame.p, offsetPos(frame.p, length * rotateVector(frame.q, .axisX)),
             DebugColors.red)
         drawSegment(
-            toVec3(frame.p), offsetPos(frame.p, length * rotateVector(frame.q, .axisY)),
+            frame.p, offsetPos(frame.p, length * rotateVector(frame.q, .axisY)),
             DebugColors.green)
         drawSegment(
-            toVec3(frame.p), offsetPos(frame.p, length * rotateVector(frame.q, .axisZ)),
+            frame.p, offsetPos(frame.p, length * rotateVector(frame.q, .axisZ)),
             DebugColors.blue)
     }
 
@@ -396,10 +396,10 @@ extension World {
             let vertex = Vec3(radius * cs.cosine, radius * cs.sine, 0)
 
             if index == 0 {
-                drawSegment(toVec3(frameA.p), transformWorldPoint(frameA, vertex), DebugColors.cyan)
+                drawSegment(frameA.p, transformWorldPoint(frameA, vertex), DebugColors.cyan)
             }
             if index == sliceCount {
-                drawSegment(transformWorldPoint(frameA, vertex), toVec3(frameA.p), DebugColors.cyan)
+                drawSegment(transformWorldPoint(frameA, vertex), frameA.p, DebugColors.cyan)
             }
             if index > 0 {
                 drawSegment(
@@ -413,7 +413,7 @@ extension World {
         let twist = getTwistAngle(relQ)
         let cs = computeCosSin(twist)
         let mark = Vec3(radius * cs.cosine, radius * cs.sine, 0)
-        drawSegment(toVec3(frameA.p), transformWorldPoint(frameA, mark), DebugColors.yellow)
+        drawSegment(frameA.p, transformWorldPoint(frameA, mark), DebugColors.yellow)
     }
 
     private func drawRevoluteJoint(
@@ -447,9 +447,9 @@ extension World {
         let s = 0.2 * scale
 
         drawSegment(
-            toVec3(frameA.p), offsetPos(frameA.p, s * matrix.cy), DebugColors.green)
+            frameA.p, offsetPos(frameA.p, s * matrix.cy), DebugColors.green)
         drawSegment(
-            toVec3(frameA.p), offsetPos(frameA.p, s * matrix.cz), DebugColors.blue)
+            frameA.p, offsetPos(frameA.p, s * matrix.cz), DebugColors.blue)
 
         if joint.enableLimit {
             let p1 = offsetPos(frameA.p, joint.lowerTranslation * axis)
@@ -479,7 +479,7 @@ extension World {
 
         // The cone axis of body B.
         drawSegment(
-            toVec3(frameB.p),
+            frameB.p,
             offsetPos(frameB.p, 0.2 * scale * rotateVector(frameB.q, .axisZ)),
             DebugColors.orange)
 
@@ -504,7 +504,7 @@ extension World {
                 let vertex = Vec3(coneRadius * pcs.cosine, coneRadius * pcs.sine, coneHeight)
 
                 drawSegment(
-                    toVec3(frameA.p), transformWorldPoint(frameA, vertex), DebugColors.cyan)
+                    frameA.p, transformWorldPoint(frameA, vertex), DebugColors.cyan)
                 if index > 0 {
                     drawSegment(
                         transformWorldPoint(frameA, previous),
@@ -527,7 +527,7 @@ extension World {
         let matrixA = makeMatrixFromQuat(frameA.q)
         let matrixB = makeMatrixFromQuat(frameB.q)
 
-        drawSegment(toVec3(frameA.p), toVec3(frameB.p), DebugColors.blue)
+        drawSegment(frameA.p, frameB.p, DebugColors.blue)
 
         if joint.enableSuspensionLimit {
             let lower = offsetPos(frameA.p, joint.lowerSuspensionLimit * matrixA.cx)
@@ -565,10 +565,10 @@ extension World {
                     frame, Vec3(0, -radius * cs.sine, radius * cs.cosine))
 
                 if index == 0 {
-                    drawSegment(toVec3(frame.p), previous, DebugColors.cyan)
+                    drawSegment(frame.p, previous, DebugColors.cyan)
                 }
                 if index == sliceCount - 1 {
-                    drawSegment(vertex, toVec3(frame.p), DebugColors.cyan)
+                    drawSegment(vertex, frame.p, DebugColors.cyan)
                 }
                 drawSegment(previous, vertex, DebugColors.cyan)
                 previous = vertex

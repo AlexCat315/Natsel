@@ -388,7 +388,7 @@ extension MoverGeometryTests {
             body, shapeDef,
             Capsule(center1: Vec3(9, 0, 0), center2: Vec3(11, 0, 0), radius: 0.3))
 
-        let bodyTransform = Transform(Vec3(), Quat.identity)
+        let bodyTransform = WorldTransform(Vec3(), Quat.identity)
 
         // Convex shapes report the base material as index 0.
         let movers = [
@@ -429,7 +429,7 @@ extension MoverGeometryTests {
         let planes = world.bodyCollideMover(
             body, Pos(),
             Capsule(center1: Vec3(-2, 0.15, 0), center2: Vec3(-2, 0.35, 0), radius: 0.2),
-            .defaultFilter, Transform(Vec3(), Quat.identity), capacity: 4
+            .defaultFilter, WorldTransform(Vec3(), Quat.identity), capacity: 4
         )
 
         // The mesh answers through the world query, not the body query.

@@ -20,12 +20,12 @@ struct SphericalJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1.5, 3, 0)
+        def.position = Pos(Float(1.5), 3, 0)
         def.angularVelocity = Vec3(1, 0.5, 0.3)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
@@ -70,7 +70,7 @@ struct SphericalJointTests {
         var lower = sim.lowerTwistImpulse
         var upper = sim.upperTwistImpulse
         var swing = sim.swingImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -81,8 +81,8 @@ struct SphericalJointTests {
         h = fnv(h, &upper, 4)
         h = fnv(h, &swing, 4)
 
-        #expect(h == 0xe54e_d4c3_e3fc_77a0)
-        #expect(sim.linearImpulse.y.bitPattern == 0x402e_4bf3)
-        #expect(sim.motorImpulse.x.bitPattern == 0x3d62_9f3b)
+        #expect(h == 0xc2d47c7120c353e3)
+        #expect(sim.linearImpulse.y.bitPattern == 0x402e4bec)
+        #expect(sim.motorImpulse.x.bitPattern == 0x3d629f41)
     }
 }

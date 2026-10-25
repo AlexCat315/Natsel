@@ -20,12 +20,12 @@ struct DistanceJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1, 3, 0)
+        def.position = Pos(1, 3, 0)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -64,7 +64,7 @@ struct DistanceJointTests {
         var lower = sim.lowerImpulse
         var upper = sim.upperImpulse
         var motor = sim.motorImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -73,7 +73,7 @@ struct DistanceJointTests {
         h = fnv(h, &upper, 4)
         h = fnv(h, &motor, 4)
 
-        #expect(h == 0x0330_1a2a_38bf_280a)
+        #expect(h == 0xe74092bba8a6ae98)
         #expect(sim.motorImpulse.bitPattern == 0x3ed5_5556)
     }
 
@@ -84,12 +84,12 @@ struct DistanceJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1, 3, 0)
+        def.position = Pos(1, 3, 0)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -116,16 +116,16 @@ struct DistanceJointTests {
         var vv = v
         var avv = av
         var impulse = sim.impulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
         h = fnv(h, &impulse, 4)
 
         print("JOINT impulse \(sim.impulse) p \(p) hash \(String(h, radix: 16))")
-        #expect(sim.impulse.bitPattern == 0xc08f_3e70)
-        #expect(h == 0x13e4_1c00_01a7_a9ae)
-        #expect(p.x.bitPattern == 0x3f55_8443)
-        #expect(p.y.bitPattern == 0x401c_a3d3)
+        #expect(sim.impulse.bitPattern == 0xc08f3e67)
+        #expect(h == 0xe093de5a5a98dd52)
+        #expect(Float(p.x).bitPattern == 0x3f558449)
+        #expect(Float(p.y).bitPattern == 0x401ca3d5)
     }
 }

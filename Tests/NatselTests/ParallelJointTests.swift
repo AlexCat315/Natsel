@@ -20,12 +20,12 @@ struct ParallelJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1, 3, 0)
+        def.position = Pos(1, 3, 0)
         def.angularVelocity = Vec3(1, 0.5, 0.3)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
@@ -55,14 +55,14 @@ struct ParallelJointTests {
         var vv = v
         var avv = av
         var perp = sim.perpImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
         h = fnv(h, &perp, 8)
 
-        #expect(h == 0x4963_c33e_f4a1_dc8b)
-        #expect(transform.p.y.bitPattern == 0xc188_5561)
+        #expect(h == 0x44f7894b3d309177)
+        #expect(Float(transform.p.y).bitPattern == 0xc1885560)
         #expect(transform.q.v.z.bitPattern == 0x3e97_4e80)
     }
 }

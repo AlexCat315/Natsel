@@ -53,7 +53,7 @@ struct LocatorSceneTests {
         // Beside the top box, close enough that the fat bounds overlap and far enough that the
         // shapes never touch. Kinematic and awake, so the contact stays in the awake set while the
         // stack sleeps.
-        let plate = createBody(world, .kinematicBody, Pos(1.04, 2.5, 0), 0.5, 0.5, 0.5)
+        let plate = createBody(world, .kinematicBody, Pos(Float(1.04), Float(2.5), 0), 0.5, 0.5, 0.5)
         world.enableBodySleep(plate, false)
 
         var steps = stepUntilAsleep(world, stack[0], 300)
@@ -80,7 +80,7 @@ struct LocatorSceneTests {
             woke = woke || world.isBodyAwake(stack[0])
         }
         #expect(woke)
-        #expect(world.worldStateHash() == 0xafe9_e7ba_a78c_53bc)
+        #expect(world.worldStateHash() == 0xb2b35ce22624a188)
     }
 
     /// An island falling asleep and a body leaving the awake set both swap the last awake sim into
@@ -97,7 +97,7 @@ struct LocatorSceneTests {
             )
         }
 
-        let spare = createBody(world, .dynamicBody, Pos(20, 0.5, 0), 0.5, 0.5, 0.5)
+        let spare = createBody(world, .dynamicBody, Pos(20, Float(0.5), 0), 0.5, 0.5, 0.5)
         world.enableBodySleep(spare, false)
 
         var awakeBodies: [BodyID] = []
@@ -117,7 +117,7 @@ struct LocatorSceneTests {
         world.enableBody(spare)
         step(world, 10)
 
-        #expect(world.worldStateHash() == 0x9b6c_18a7_1ccc_c834)
+        #expect(world.worldStateHash() == 0x3ad31ebf618e5d73)
     }
 
     /// Destroying a body swaps the last sim of its set into the hole. The moved body keeps its
@@ -141,14 +141,14 @@ struct LocatorSceneTests {
         for i in 0..<3 {
             let x = 10 + 4 * Float(i)
             staticBodies.append(createBody(world, .staticBody, Pos(x, -1, 0), 1, 1, 1))
-            _ = createBody(world, .dynamicBody, Pos(x, 0.5, 0), 0.5, 0.5, 0.5)
+            _ = createBody(world, .dynamicBody, Pos(x, Float(0.5), 0), 0.5, 0.5, 0.5)
         }
 
         step(world, 30)
         world.destroyBody(staticBodies[0])
         step(world, 30)
 
-        #expect(world.worldStateHash() == 0x1845_0bd8_9e82_cd75)
+        #expect(world.worldStateHash() == 0xc32c508447da54d1)
     }
 
     /// A kinematic body parked above a pile keeps a non-touching contact to a body that falls
@@ -159,9 +159,9 @@ struct LocatorSceneTests {
     func kinematic() {
         let world = World()
         _ = createBody(world, .staticBody, Pos(0, -1, 0), 5, 1, 5)
-        let box = createBody(world, .dynamicBody, Pos(0, 0.5, 0), 0.5, 0.5, 0.5)
+        let box = createBody(world, .dynamicBody, Pos(0, Float(0.5), 0), 0.5, 0.5, 0.5)
 
-        let plate = createBody(world, .kinematicBody, Pos(0, 1.52, 0), 1, 0.5, 1)
+        let plate = createBody(world, .kinematicBody, Pos(0, Float(1.52), 0), 1, 0.5, 1)
 
         let steps = stepUntilAsleep(world, box, 300)
         #expect(steps < 300)
@@ -171,7 +171,7 @@ struct LocatorSceneTests {
         step(world, 60)
 
         #expect(world.isBodyAwake(box))
-        #expect(world.worldStateHash() == 0x3ffb_0c16_7e6c_06bf)
+        #expect(world.worldStateHash() == 0xbf6fe0b733a58e0c)
     }
 
     /// Set type and disable move a body between solver sets, which changes the encoding of every
@@ -190,7 +190,7 @@ struct LocatorSceneTests {
         let world = World()
         _ = createBody(world, .staticBody, Pos(0, -1, 0), 20, 1, 5)
 
-        let box = createBody(world, .dynamicBody, Pos(0, 0.5, 0), 0.5, 0.5, 0.5)
+        let box = createBody(world, .dynamicBody, Pos(0, Float(0.5), 0), 0.5, 0.5, 0.5)
         step(world, 30)
 
         world.setBodyType(box, .staticBody)
@@ -204,8 +204,8 @@ struct LocatorSceneTests {
         step(world, 30)
 
         // Two piles far enough apart to sleep in separate sets.
-        let sleeperA = createBody(world, .dynamicBody, Pos(-12, 0.5, 0), 0.5, 0.5, 0.5)
-        let sleeperB = createBody(world, .dynamicBody, Pos(12, 0.5, 0), 0.5, 0.5, 0.5)
+        let sleeperA = createBody(world, .dynamicBody, Pos(-12, Float(0.5), 0), 0.5, 0.5, 0.5)
+        let sleeperB = createBody(world, .dynamicBody, Pos(12, Float(0.5), 0), 0.5, 0.5, 0.5)
 
         let steps = stepUntilAsleep(world, sleeperA, 300)
         #expect(steps < 300)
@@ -217,7 +217,7 @@ struct LocatorSceneTests {
         _ = world.createSphericalJoint(jointDef)
         step(world, 30)
 
-        #expect(world.worldStateHash() == 0x6e17_0094_6895_660a)
+        #expect(world.worldStateHash() == 0xb07f2ed30dc56a2d)
     }
 
     /// The fast flag lives on the body sim and gates contact recycling, but a flag sync rebuilds
@@ -309,7 +309,7 @@ struct GraphIndexInvariantTests {
         for i in 0..<3 {
             def = BodyDef()
             def.type = .dynamicBody
-            def.position = Pos(Float(i) * 0.9 - 0.9, 0.6, 0)
+            def.position = Pos(Float(i) * 0.9 - 0.9, Float(0.6), 0)
             let box = world.createBody(def)
             shapeDef = ShapeDef()
             shapeDef.density = 1000

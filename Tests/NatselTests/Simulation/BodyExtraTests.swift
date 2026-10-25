@@ -11,13 +11,13 @@ struct BodyExtraTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Pos(0, -0.5, 0)
+        def.position = Pos(0, Float(-0.5), 0)
         let ground = world.createBody(def)
         _ = world.createHullShape(ground, ShapeDef(), makeBoxHull(10, 0.5, 10))
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Pos(0, 0.5, 0)
+        def.position = Pos(0, Float(0.5), 0)
         let box = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -150,7 +150,7 @@ struct BodyExtraTests {
 
         // Ask the body to reach (6, 0, 0) in one second.
         world.setBodyTargetTransform(
-            body, Transform(Vec3(6, 0, 0), Quat.identity), timeStep: 1.0, wake: true)
+            body, WorldTransform(Vec3(6, 0, 0), Quat.identity), timeStep: 1.0, wake: true)
 
         // The velocity is the center difference over the time step.
         let v = world.bodyLinearVelocity(body)
@@ -167,7 +167,7 @@ struct BodyExtraTests {
         staticDef.position = Pos(20, 0, 0)
         let staticBody = world.createBody(staticDef)
         world.setBodyTargetTransform(
-            staticBody, Transform(Vec3(0, 0, 0), Quat.identity), timeStep: 1.0)
+            staticBody, WorldTransform(Vec3(0, 0, 0), Quat.identity), timeStep: 1.0)
         #expect(world.bodyLinearVelocity(staticBody) == Vec3())
     }
 }

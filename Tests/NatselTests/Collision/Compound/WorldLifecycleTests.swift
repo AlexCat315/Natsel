@@ -7,7 +7,7 @@ struct CompoundWorldLifecycleTests {
     func queries() throws {
         let world = World()
         var bodyDef = BodyDef()
-        bodyDef.position = Vec3(2, 3, -1)
+        bodyDef.position = Pos(2, 3, -1)
         bodyDef.rotation = makeQuatFromAxisAngle(.axisY, 0.3)
         let body = world.createBody(bodyDef)
         let compound = try #require(referenceCompound(4))
@@ -15,7 +15,7 @@ struct CompoundWorldLifecycleTests {
         #expect(world.shapeIsValid(shapeID))
         #expect(world.compoundShapeCount == 1)
         let shape = world.shape(shapeID)
-        let transform = Transform(bodyDef.position, bodyDef.rotation)
+        let transform = WorldTransform(bodyDef.position, bodyDef.rotation)
         for i in 0..<20 {
             let origin = Vec3(Float(i) * 0.15 - 1, 2, 0.5)
             let translation = Vec3(0, -4, 0)
@@ -37,10 +37,10 @@ struct CompoundWorldLifecycleTests {
                 let proxy = ShapeProxy(points: pointer, count: 1, radius: 0.3)
                 let expectedOverlap = overlapCompound(compound, .identity, proxy)
                 let worldPoint = transformPoint(transform, point)
-                withUnsafePointer(to: worldPoint) { worldPointer in
+                withUnsafePointer(to: Vec3()) { worldPointer in
                     let worldProxy = ShapeProxy(points: worldPointer, count: 1, radius: 0.3)
                     var count = 0
-                    _ = world.overlapShape(.zero, worldProxy) { _ in count += 1; return true }
+                    _ = world.overlapShape(worldPoint, worldProxy) { _ in count += 1; return true }
                     #expect((count == 1) == expectedOverlap)
                 }
                 var input = ShapeCastInput()
@@ -48,8 +48,8 @@ struct CompoundWorldLifecycleTests {
                 input.translation = translation
                 input.maxFraction = 1
                 input.canEncroach = true
-                let cast = shapeCastShape(shape, transform, input)
-                let localPoint = invTransformPoint(transform, point)
+                let cast = shapeCastShape(shape, toRelativeTransform(transform, .zero), input)
+                let localPoint = invTransformWorldPoint(transform, Pos(point))
                 let expectedCast = withUnsafePointer(to: localPoint) { localPointer in
                     var local = input
                     local.proxy.points = localPointer
@@ -60,7 +60,7 @@ struct CompoundWorldLifecycleTests {
                 #expect(cast.fraction.bitPattern == expectedCast.fraction.bitPattern)
                 #expect(cast.childIndex == expectedCast.childIndex)
                 #expect(cast.materialIndex == expectedCast.materialIndex)
-                #expect(cast.point == transformPoint(transform, expectedCast.point))
+                #expect(distance(Pos(cast.point), transformWorldPoint(transform, expectedCast.point)) < 1.0e-5)
             }
         }
         world.destroyShape(shapeID, updateBodyMass: true)
@@ -79,7 +79,7 @@ struct CompoundWorldLifecycleTests {
         let shape = world.createCompoundShape(ground, ShapeDef(), compound)
         var definition = BodyDef()
         definition.type = .dynamicBody
-        definition.position = Vec3(-0.4, 0.7, 0.4)
+        definition.position = Pos(Float(-0.4), Float(0.7), Float(0.4))
         let body = world.createBody(definition)
         _ = world.createSphereShape(body, ShapeDef(), Sphere(center: .zero, radius: 0.5))
         world.step(1 / 60, subStepCount: 4)

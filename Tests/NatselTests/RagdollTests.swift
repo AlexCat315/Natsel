@@ -19,7 +19,7 @@ private func humanSkeleton() -> Skeleton {
 /// Standing bind pose, feet at y = 0 when the root offset is zero.
 private func humanBindPose(_ skeleton: Skeleton, at origin: Vec3 = Vec3()) -> SkeletonPose {
     var pose = SkeletonPose(skeleton: skeleton)
-    pose.rootOffset = origin
+    pose.rootOffset = Pos(origin)
     let down = makeQuatFromAxisAngle(.axisZ, -0.5 * Float.pi)
     let up = makeQuatFromAxisAngle(.axisZ, 0.5 * Float.pi)
     func set(_ name: String, _ p: Vec3, _ q: Quat) { pose.jointMatrices[skeleton.jointIndex(name)!] = Transform(p, q) }
@@ -79,7 +79,7 @@ private func groundWorld(gravity: Vec3 = Vec3(0, -10, 0)) -> World {
     let world = World()
     world.gravity = gravity
     var def = BodyDef()
-    def.position = Vec3(0, -1, 0)
+    def.position = Pos(0, -1, 0)
     _ = world.createHullShape(world.createBody(def), ShapeDef(), makeBoxHull(20, 1, 20))
     return world
 }
@@ -273,7 +273,7 @@ struct RagdollTests {
         let bind = humanBindPose(skeleton, at: Vec3(0, 2, 0))
         let ragdoll = Ragdoll(world: world, settings: humanSettings(skeleton), pose: bind)!
         var target = bind
-        target.rootOffset = Vec3(0.3, 2.1, -0.2)
+        target.rootOffset = Pos(Float(0.3), Float(2.1), Float(-0.2))
         ragdoll.driveToPose(usingKinematics: target, timeStep: 1.0 / 60.0)
         world.step(1.0 / 60.0, subStepCount: 4)
         for i in 0..<skeleton.jointCount {

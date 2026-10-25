@@ -70,7 +70,7 @@ struct ContactRecyclingTests {
         for _ in 0..<20 {
             world.step(timeStep, subStepCount: 4)
             let p = world.bodyTransform(body).p
-            minSeparation = minFloat(minSeparation, p.y - totalRadius)
+            minSeparation = minFloat(minSeparation, Float(p.y) - totalRadius)
         }
 
         return minSeparation
@@ -103,7 +103,7 @@ struct ContactRecyclingTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Pos(0, 1.0, 0)
+        def.position = Pos(0, Float(1.0), 0)
         let ball = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000

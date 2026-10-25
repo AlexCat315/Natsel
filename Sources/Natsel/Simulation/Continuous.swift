@@ -20,18 +20,7 @@ final class ContinuousContext {
 /// Offset an AABB by a position, rounding outward as in the C code.
 @inline(__always)
 func aabbOffset(_ localBox: AABB, _ origin: Pos) -> AABB {
-    AABB(
-        Vec3(
-            roundDownFloat(origin.x + localBox.lowerBound.x),
-            roundDownFloat(origin.y + localBox.lowerBound.y),
-            roundDownFloat(origin.z + localBox.lowerBound.z)
-        ),
-        Vec3(
-            roundUpFloat(origin.x + localBox.upperBound.x),
-            roundUpFloat(origin.y + localBox.upperBound.y),
-            roundUpFloat(origin.z + localBox.upperBound.z)
-        )
-    )
+    offsetAABB(localBox, origin)
 }
 
 extension World {
@@ -151,7 +140,7 @@ extension World {
 
         if isSensor {
             // Only accept a sensor hit that is sooner than the current solid hit.
-            if output.fraction <= context.fraction && context.sensorHits.count < 8 {
+            if output.fraction <= context.fraction {
                 context.sensorHits.append((sensorId: shapeId, visitorId: fastShapeIdValue, fraction: output.fraction))
             }
         } else if 0 < output.fraction && output.fraction < context.fraction {
@@ -203,11 +192,11 @@ extension World {
 
         var xf1 = Transform()
         xf1.q = sweep.q1
-        xf1.p = subPos(sweep.c1, rotateVector(sweep.q1, sweep.localCenter))
+        xf1.p = (sweep.c1 - rotateVector(sweep.q1, sweep.localCenter))
 
         var xf2 = Transform()
         xf2.q = sweep.q2
-        xf2.p = subPos(sweep.c2, rotateVector(sweep.q2, sweep.localCenter))
+        xf2.p = (sweep.c2 - rotateVector(sweep.q2, sweep.localCenter))
 
         let staticTree = broadPhase.trees[Int(BodyType.staticBody.rawValue)]
         let kinematicTree = broadPhase.trees[Int(BodyType.kinematicBody.rawValue)]
@@ -266,7 +255,12 @@ extension World {
                 }
             }
 
-            let sweptBox = aabbUnion(box1, box2)
+            var sweptBox = aabbUnion(box1, box2)
+            if enableDynamicContinuous && rotationChord > 0 {
+                let radius = length(fastBodySim.maxExtent)
+                let arcBounds = aabbInflate(AABB(minVec3(sweep.c1, sweep.c2), maxVec3(sweep.c1, sweep.c2)), radius)
+                sweptBox = aabbUnion(sweptBox, aabbOffset(arcBounds, base))
+            }
             _ = staticTree.query(sweptBox, maskBits: defaultMaskBits, requireAllBits: false) {
                 proxyId, userData in
                 self.continuousQueryCallback(Int32(Int64(bitPattern: userData)), context)
@@ -293,10 +287,10 @@ extension World {
             // to return the advanced pose to world space.
             let q = nlerp(sweep.q1, sweep.q2, context.fraction)
             let c = lerp(sweep.c1, sweep.c2, context.fraction)
-            let origin = subPos(c, rotateVector(q, sweep.localCenter))
+            let origin = (c - rotateVector(q, sweep.localCenter))
 
             // Advance body
-            let transform = Transform(offsetPos(base, origin), q)
+            let transform = WorldTransform(offsetPos(base, origin), q)
             let center = offsetPos(base, c)
             fastBodySim.transform = transform
             fastBodySim.center = center

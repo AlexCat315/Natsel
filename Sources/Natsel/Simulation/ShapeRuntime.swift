@@ -319,13 +319,15 @@ func computeShapeAABB(_ shape: borrowing Shape, _ transform: Transform) -> AABB 
     }
 }
 
+/// Bounds are conservatively rounded outward on the double-to-float boundary.
+func computeShapeAABB(_ shape: borrowing Shape, _ transform: WorldTransform) -> AABB {
+    offsetAABB(computeShapeAABB(shape, Transform(Vec3(), transform.q)), transform.p)
+}
+
 /// Compute a world AABB for a shape inflated by an extra margin.
 func computeFatShapeAABB(_ shape: borrowing Shape, _ transform: WorldTransform, _ extra: Float) -> AABB {
-    let r = Vec3(extra, extra, extra)
-    var aabb = computeShapeAABB(shape, transform)
-    aabb.lowerBound = aabb.lowerBound - r
-    aabb.upperBound = aabb.upperBound + r
-    return aabb
+    let local = aabbInflate(computeShapeAABB(shape, Transform(Vec3(), transform.q)), extra)
+    return offsetAABB(local, transform.p)
 }
 
 /// Compute the swept AABB of a shape.

@@ -109,13 +109,13 @@ extension World {
     ) -> TreeStats {
         var treeStats = TreeStats()
         var fraction: Float = 1
-        var input = RayCastInput()
-        input.origin = toVec3(origin)
+        var input = BoxCastInput()
+        input.box = offsetAABB(AABB(Vec3(), Vec3()), origin)
         input.translation = translation
         input.maxFraction = 1
 
         for i in 0..<Int(BodyType.count) {
-            let treeResult = broadPhase.trees[i].rayCast(
+            let treeResult = broadPhase.trees[i].boxCast(
                 input, maskBits: filter.maskBits, requireAllBits: false
             ) { queryInput, _, userData in
                 let shapeId = Int32(Int64(bitPattern: userData))
@@ -127,8 +127,9 @@ extension World {
 
                 let transform = self.queryShapeTransform(shape, origin)
 
-                var localInput = queryInput
-                localInput.origin = Vec3()
+                var localInput = RayCastInput()
+                localInput.translation = translation
+                localInput.maxFraction = queryInput.maxFraction
                 let output = rayCastShape(shape, transform, localInput)
 
                 if output.hit {

@@ -531,3 +531,137 @@ and falls 3 m without; two crossing ropes catch each other between their vertice
 down at the speed momentum conservation gives (about 5.4 m/s); results are bit identical for 1 and
 6 workers. The earlier self collision, cloth on cloth, rope, waking, and rollback tests still pass.
 
+
+## Double precision world coordinates
+
+World positions now use `Pos` (three `Double` components) and `WorldTransform` (`Pos` translation,
+`Quat` rotation). `Vec3`, `Transform`, shape geometry, velocities, inertia, contact anchors, joint
+Jacobians, and the SIMD solver remain single precision. This is the default representation, with
+no build flag. Code that previously assigned a `Vec3` to a world position must explicitly promote
+it using `Pos(vector)`; creating `Pos` from `Double` coordinates avoids losing detail before the
+engine receives the position.
+
+The precision boundary is subtraction: `subPos(a, b)` subtracts in double before narrowing the
+relative displacement. Narrow phase collision, TOI sweeps, shape queries, buoyancy, and constraint
+preparation work relative to a nearby body or query origin. World-space query hits, body events,
+character positions, skeleton root offsets, pulley anchors, and snapshot positions retain double
+precision. `shapeRayCast` now returns `WorldCastOutput`; low-level `CastOutput` continues to contain
+a local `Vec3`. `shapeClosestPoint` accepts and returns `Pos`.
+
+Spatial trees keep compact float AABBs. Bounds are inflated locally before translating in double,
+then rounded outward. Ray broad phase uses a conservative box cast around the exact world origin;
+the narrow phase still casts a zero-origin ray. Tree box casts account for midpoint rounding when
+computing extents. `WorldAABB`, `shapeWorldAABB`, `bodyWorldAABB`, and `softBodyWorldAABB` expose
+precise bounds; existing AABB accessors expose conservative float bounds. At extreme coordinates
+these float boxes can become much wider than the shapes, increasing broad-phase candidates.
+Double positions improve local precision, not the precision of very large individual shapes or
+constraints spanning enormous distances. Double ULP also remains a limit (about 0.000122 world
+units at 10^12).
+
+Soft bodies store a double origin plus float vertex offsets. Initial origins lie on a 1024-unit
+grid; contacting soft bodies share one frame before contact detection and projection. Moving groups
+rebase when their local center exceeds 1024 times the world length scale. Rebasing moves current,
+previous, skinned, and skin-joint positions together. World vertex access materializes `Pos` values;
+`withSoftBodyLocalVertexPositions` instead lends the float buffer and its double origin without
+allocation. Skin poses accept `[WorldTransform]` (the `[Transform]` convenience overload promotes
+existing single precision world poses).
+
+State hashes include all 64 position bits. Snapshots retain both rigid positions and soft origins.
+Float-build trajectory goldens therefore change. The mesh, height-field, and compound simulation
+fixtures were regenerated with `BOX3D_DOUBLE_PRECISION=ON`; their generators hash all 24 position
+bytes. The wave-pile, mesh-drop, query-spawn, and ragdoll sleep/hash goldens use the C double build.
+The origin tests remain, alongside tests at positive/negative 10^9 and at 10^12 for fractional
+integration, world queries, conservative bounds, rigid/soft contacts, and rollback.
+
+To regenerate the large simulation fixtures independently:
+
+```sh
+cmake -S /path/to/box3d -B /tmp/box3d-double -DCMAKE_BUILD_TYPE=Release \
+  -DBOX3D_DOUBLE_PRECISION=ON -DBOX3D_SAMPLES=OFF -DBOX3D_UNIT_TESTS=ON
+cmake --build /tmp/box3d-double -j 4
+python3 Tools/Reference/regenerate_double_simulations.py /path/to/box3d /tmp/box3d-double
+```
+
+For camera-relative rendering, keep the camera itself in `Pos` and use
+`toRelativeTransform(world.bodyTransform(body), cameraPosition)`; avoid converting an absolute
+world position with `toVec3` before subtracting the camera. Fluid volumes also accept `WorldAABB`,
+so both the overlap test and the fluid surface height retain their world precision. Soft-to-soft
+contact grouping compares precise world bounds directly, preventing float-tree cell coarseness
+from combining unrelated pieces. Compact tree endpoints still require coordinates within the
+finite float range.
+
+## Collision quality and spatial indexing — 2026-10-26
+
+`isDoublePrecision()` now returns true, matching `Pos` and `WorldTransform`. This reports world
+position precision; local geometry, velocities, and the constraint solver continue to use Float.
+
+### Moving-pair CCD
+
+Set `world.enableDynamicContinuous = true` to enable the supplemental convex moving-pair pass.
+It is opt-in so the default continues to reproduce the upstream Box3D trajectories. The pass
+captures every awake body's start pose before finalization, compares swept **double precision**
+bounds, and orders impacts by fraction and stable candidate indices. Fast dynamic bodies can hit
+other dynamic bodies, bullets, and kinematic targets even when their endpoint bounds do not overlap.
+Rotating hull queries include a COM bounding sphere so intermediate arcs reach static candidates.
+
+The pass conservatively truncates dynamic motion at an accepted impact and resolves its normal
+velocity immediately, with both masses, rotational inertia at impact, and restitution. Sleeping
+targets receive their impulses after finalization releases its raw array views; newly awakened
+islands are explicitly kept awake for the remainder of the step. Hit events from these impacts
+can have a null ContactID because the persistent contact may only be created next step. Collision
+filters and pre-solve rejection apply. The legacy CCD sensor-hit list no longer drops hits after
+the eighth sensor.
+
+This is not a general TOI island solver: it does not integrate the remaining interval through an
+arbitrary chain of impacts. Moving triangle meshes and soft-body CCD are outside this pass. Use
+substeps for densely coupled high-speed scenes.
+
+### Soft/rigid contact quality
+
+A soft vertex retains up to four independent rigid surface planes instead of only the nearest
+plane. Parallel planes from one collider are merged; independent walls and floors remain active
+together. The primary plane arrays remain available to the edge detector. Normal velocity removal
+only cancels approach, and tangential friction excludes the separating normal velocity.
+
+The staged rigid/soft coupling is unchanged: rigid poses finalize before soft simulation, and soft
+reaction impulses affect rigid motion on the next step. A unified rigid/soft substep solver, rigid
+motion-aware soft CCD, and shared rigid velocity state across separate soft bodies remain future
+work. The four-plane cap is a contact reduction policy, not an intersection-free guarantee.
+
+### Moving compounds
+
+`createDynamicCompound(body, shapeDef, compound)` instantiates a convex-only baked Compound as
+fixtures on a dynamic or kinematic body and returns `DynamicCompoundInstance`. Each child has an
+ordinary ShapeID; `instance.childIndex(of: hit.shapeId)` maps query hits back to the baked child.
+Child transforms and materials are preserved, and mass is updated once after construction.
+`replaceDynamicCompound` validates/creates the replacement before removing the old fixtures;
+`destroyDynamicCompound` removes remaining live children without disturbing unrelated fixtures.
+Instances participate in existing contacts, sensors, terrain collision, CCD, and world rollback.
+
+Mesh children are rejected before any fixture is attached. This API uses one world proxy per child;
+the packed single-proxy `createCompoundShape` API remains static-only. A mutable moving compound
+with its own shared BVH and compound-to-compound child traversal is still a separate extension.
+
+### Spatial queries and grouping
+
+Soft grouping and soft/soft waking use a sweep along the widest world axis, followed by precise
+double AABB rejection. Pair output has canonical input-index order. Sparse scenes avoid the former
+unconditional n(n-1)/2 comparisons; fully overlapping scenes still have quadratic output.
+
+Soft-body ray casts lazily build a local face BVH for surfaces with at least 32 triangles. The cache
+is keyed by body generation and vertex revision, discarded on destruction/restore, and rebuilt
+after simulation, vertex edits, or teleports. Equal-fraction hits choose the lowest face index,
+matching the linear scan. `world.enableSoftBodyQueryAcceleration = false` retains the scan path for
+workloads with too few rays to amortize rebuilding a deforming surface's tree. Vertex edits and
+skinning teleports also refresh bounds immediately, so queries between steps see the edited surface.
+
+These changes do not replace the rigid world's absolute-float broad-phase trees with a partitioned
+large-world index. The remote-coordinate candidate inflation described above still applies there.
+
+Verification: debug and release each pass 510 tests in 134 suites; Address Sanitizer passes the
+18 tests in the five new suites. Existing C trajectory/contact fixtures are unchanged. New checks
+cover reversed creation order, bullet and ordinary moving pairs, rotation-only static impacts,
+more than eight sensor hits, restitution with unequal masses and sleeping targets, filters,
+rollback, worker parity at 10^12, rigid wall/floor corners, compound mass/materials/lifecycle,
+spatial pairs against an exhaustive oracle, and cached rays against the linear scan after edits,
+restores, and id reuse. Performance measurements and their limits are in `PERFORMANCE.md`.

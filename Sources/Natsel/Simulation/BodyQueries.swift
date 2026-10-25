@@ -333,14 +333,15 @@ extension World {
         for i in 0..<bodies.count where bodies[i].id == Int32(i) {
             let body = bodies[i]
             let sim = solverSets[Int(body.setIndex)].bodySims[Int(body.localIndex)]
-            var parts = [sim.transform.p.x, sim.transform.p.y, sim.transform.p.z, sim.transform.q.v.x,
+            let positionBits = [sim.transform.p.x, sim.transform.p.y, sim.transform.p.z].map { String($0.bitPattern, radix: 16) }
+            var parts = [sim.transform.q.v.x,
                          sim.transform.q.v.y, sim.transform.q.v.z, sim.transform.q.s]
             if body.setIndex == SetType.awakeSet.rawValue {
                 let s = solverSets[Int(SetType.awakeSet.rawValue)].bodyStates[Int(body.localIndex)]
                 parts += [s.linearVelocity.x, s.linearVelocity.y, s.linearVelocity.z,
                           s.angularVelocity.x, s.angularVelocity.y, s.angularVelocity.z]
             }
-            out.append("\(i) " + parts.map { String($0.bitPattern, radix: 16) }.joined(separator: " "))
+            out.append("\(i) " + positionBits.joined(separator: " ") + " " + parts.map { String($0.bitPattern, radix: 16) }.joined(separator: " "))
         }
         return out
     }
@@ -1003,7 +1004,7 @@ extension World {
 extension World {
     /// Ray cast a single shape from `origin`. The cast is re-centered on the origin so it stays
     /// precise far from the world origin; the returned point is a world position.
-    public func shapeRayCast(_ shapeId: ShapeID, _ origin: Pos, _ translation: Vec3) -> CastOutput {
+    public func shapeRayCast(_ shapeId: ShapeID, _ origin: Pos, _ translation: Vec3) -> WorldCastOutput {
         let shape = shapes[Int(shapeId.index1 - 1)]
         let transform = toRelativeTransform(bodyTransformQuick(shape.bodyId), origin)
 
@@ -1013,11 +1014,7 @@ extension World {
         input.translation = translation
         input.maxFraction = 1
 
-        var output = rayCastShape(shape, transform, input)
-        if output.hit {
-            output.point = offsetPos(origin, output.point)
-        }
-        return output
+        return WorldCastOutput(rayCastShape(shape, transform, input), origin: origin)
     }
 }
 
@@ -1317,16 +1314,16 @@ extension World {
     public func shapeAABB(_ shapeId: ShapeID) -> AABB {
         let shape = shapes[Int(shapeId.index1 - 1)]
         let transform = bodyTransformQuick(shape.bodyId)
-        return computeShapeAABB(shape, transform)
+        return offsetAABB(computeShapeAABB(shape, Transform(Vec3(), transform.q)), transform.p)
     }
 
     /// The closest point on the shape to a target, in world space.
-    public func shapeClosestPoint(_ shapeId: ShapeID, _ target: Vec3) -> Vec3 {
+    public func shapeClosestPoint(_ shapeId: ShapeID, _ target: Pos) -> Pos {
         let shape = shapes[Int(shapeId.index1 - 1)]
         let transform = bodyTransformQuick(shape.bodyId)
 
         // The low level query runs in the body frame so it stays precise far from the origin.
-        var local = target
+        var local = invTransformWorldPoint(transform, target)
         var output = DistanceOutput()
         var cache = SimplexCache()
 
@@ -1335,13 +1332,13 @@ extension World {
                 var input = DistanceInput()
                 input.proxyA = proxyA
                 input.proxyB = ShapeProxy(points: point, count: 1, radius: 0)
-                input.transform = transform
+                input.transform = .identity
                 input.useRadii = true
                 return shapeDistance(input, &cache)
             }
         }
 
-        return output.pointA
+        return transformWorldPoint(transform, output.pointA)
     }
 
     /// The number of materials a mesh shape carries.
@@ -1455,8 +1452,8 @@ extension World {
     public func bodyComputeAABB(_ bodyId: BodyID) -> AABB {
         let record = body(bodyId)
         if record.headShapeId == B3.nullIndex {
-            let p = toVec3(bodyTransformQuick(bodyIndex(bodyId)).p)
-            return AABB(p, p)
+            let p = bodyTransformQuick(bodyIndex(bodyId)).p
+            return offsetAABB(AABB(Vec3(), Vec3()), p)
         }
 
         var aabb = shapes[Int(record.headShapeId)].aabb

@@ -25,13 +25,13 @@ extension World {
         accept: (Vec3) -> Bool = { _ in true }
     ) -> QueryHit {
         var result = QueryHit()
-        var input = RayCastInput()
-        input.origin = toVec3(origin)
+        var input = BoxCastInput()
+        input.box = offsetAABB(AABB(Vec3(), Vec3()), origin)
         input.translation = translation
         input.maxFraction = 1
 
         for tree in broadPhase.trees {
-            _ = tree.rayCast(input, maskBits: filter.maskBits, requireAllBits: false) {
+            _ = tree.boxCast(input, maskBits: filter.maskBits, requireAllBits: false) {
                 queryInput, _, userData in
                 let shapeIndex = Int(Int64(bitPattern: userData))
                 let shape = self.shapes[shapeIndex]
@@ -39,8 +39,9 @@ extension World {
                     return queryInput.maxFraction
                 }
 
-                var localInput = queryInput
-                localInput.origin = Vec3()
+                var localInput = RayCastInput()
+                localInput.translation = translation
+                localInput.maxFraction = queryInput.maxFraction
                 let transform = toRelativeTransform(self.bodyTransformQuick(shape.bodyId), origin)
                 let output = rayCastShape(shape, transform, localInput)
                 guard output.hit, output.fraction < result.fraction, accept(output.normal) else {

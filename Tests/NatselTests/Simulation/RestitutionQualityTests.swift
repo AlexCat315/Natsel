@@ -116,7 +116,7 @@ struct RestitutionQualityTests {
 
             let speed = world.bodyLinearVelocity(ball).y
             if previousSpeed > 0 && speed <= 0 {
-                apexes.append(world.bodyTransform(ball).p.y)
+                apexes.append(Float(world.bodyTransform(ball).p.y))
             }
             previousSpeed = speed
         }

@@ -268,7 +268,7 @@ extension RestitutionPhaseTests {
         let world = makeWorld(gravityY: -10, iterations: Self.restitutionIterations)
 
         var floorDef = BodyDef()
-        floorDef.position = Pos(0, -0.25, 0)
+        floorDef.position = Pos(0, Float(-0.25), 0)
         let floor = world.createBody(floorDef)
         _ = world.createHullShape(floor, ShapeDef(), makeBoxHull(0.375, 0.25, 0.375))
 
@@ -316,7 +316,7 @@ extension RestitutionPhaseTests {
 
             if previousSpeed > 0 && speed <= 0 {
                 if result.bounceCount == 0 {
-                    result.firstApex = world.bodyTransform(box).p.y
+                    result.firstApex = Float(world.bodyTransform(box).p.y)
                     result.firstEnergyRatio = ratio
                 }
                 result.bounceCount += 1
@@ -634,7 +634,7 @@ extension RestitutionPhaseTests {
 
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = Pos(0, 0.6, 0)
+        def.position = Pos(0, Float(0.6), 0)
         let ball = world.createBody(def)
 
         var shapeDef = ShapeDef()
@@ -789,7 +789,7 @@ extension RestitutionPhaseTests {
             world.step(Self.timeStep, subStepCount: Self.subSteps)
             let speed = world.bodyLinearVelocity(ball).y
             if previousSpeed > 0 && speed <= 0 {
-                apexes.append(world.bodyTransform(ball).p.y)
+                apexes.append(Float(world.bodyTransform(ball).p.y))
             }
             previousSpeed = speed
             step += 1
@@ -854,7 +854,7 @@ extension RestitutionPhaseTests {
         for _ in 0..<300 {
             world.step(Self.timeStep, subStepCount: Self.subSteps)
             let y = world.bodyTransform(boxes[boxCount - 1]).p.y
-            drift = maxFloat(drift, absFloat(y - settled))
+            drift = maxFloat(drift, Float(abs(y - settled)))
             for box in boxes {
                 peakSpeed = maxFloat(peakSpeed, length(world.bodyLinearVelocity(box)))
             }

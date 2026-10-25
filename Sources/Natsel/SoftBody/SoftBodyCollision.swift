@@ -1,6 +1,5 @@
-// Soft body vs rigid shape collision detection. Once per step every vertex picks the closest
-// surface plane among the rigid shapes near it. The XPBD iterations then keep the vertex on the
-// positive side of that plane and exchange impulses with the rigid body.
+// Soft body vs rigid shape collision detection. Each vertex retains up to four distinct surface
+// planes. XPBD projects all of them, including independent walls and floors at corners.
 //
 // Vertices are processed in spatial patches. A patch is tested against a shape's bounds before any
 // vertex is, and triangle geometry is fetched once per patch.
@@ -32,6 +31,7 @@ extension World {
         record.colliders.removeAll(keepingCapacity: true)
         record.colliderIndices.withUnsafeMutableBufferPointer { $0.update(repeating: B3.nullIndex) }
         record.hasContact.withUnsafeMutableBufferPointer { $0.update(repeating: false) }
+        record.vertexPlaneCounts.withUnsafeMutableBufferPointer { $0.update(repeating: 0) }
         record.edgeContacts.removeAll(keepingCapacity: true)
         guard record.collideWithRigidBodies, count > 0 else { return }
 
@@ -41,7 +41,7 @@ extension World {
             for i in 0..<v.count { maxSpeedSquared = maxFloat(maxSpeedSquared, lengthSquared(v[i])) }
         }
         let margin = maxSpeedSquared.squareRoot() * dt + B3.speculativeDistance + record.vertexRadius
-        let queryBounds = aabbInflate(record.bounds, margin)
+        let queryBounds = offsetAABB(aabbInflate(record.bounds, margin), record.origin)
 
         // Candidate shapes in a deterministic order.
         var candidates: [Int32] = []
@@ -95,8 +95,9 @@ extension World {
             let shape = shapes[Int(shapeIndex)]
             let bodyIndex = shape.bodyId
             let body = bodies[Int(bodyIndex)]
-            let transform = bodyTransformQuick(bodyIndex)
-            let shapeBounds = aabbInflate(shape.aabb, margin)
+            let worldTransform = bodyTransformQuick(bodyIndex)
+            let transform = toRelativeTransform(worldTransform, record.origin)
+            let shapeBounds = aabbInflate(computeShapeAABB(shape, transform), margin)
 
             var collider = SoftBodyCollider()
             collider.shapeIndex = shapeIndex
@@ -116,7 +117,7 @@ extension World {
                 collider.linearVelocity = state.linearVelocity
                 collider.angularVelocity = state.angularVelocity
             } else {
-                collider.center = transform.p
+                collider.center = worldTransform.p
                 // A sleeping dynamic body is treated as static until something wakes it.
                 collider.isDynamic = false
             }
@@ -136,14 +137,19 @@ extension World {
 
                 for (vertex, hit) in scratch.hits {
                     let separation = hit.distance - radius
-                    guard separation < best[vertex] else { continue }
-                    best[vertex] = separation
                     let n = rotateVector(transform.q, hit.normal)
                     let point = transformPoint(transform, hit.point)
-                    record.planeNormals[vertex] = n
-                    record.planeOffsets[vertex] = dot(n, point) + radius
-                    record.colliderIndices[vertex] = colliderIndex
-                    used = true
+                    guard separation < margin else { continue }
+                    let offset = dot(n, point) + radius
+                    used = record.addVertexPlane(vertex, SoftVertexPlane(normal: n, offset: offset,
+                        separation: separation, collider: colliderIndex)) || used
+                    // Keep the closest plane for the edge detector's flat-surface rejection.
+                    if separation < best[vertex] {
+                        best[vertex] = separation
+                        record.planeNormals[vertex] = n
+                        record.planeOffsets[vertex] = offset
+                        record.colliderIndices[vertex] = colliderIndex
+                    }
                 }
             }
 
@@ -324,6 +330,33 @@ extension World {
                 }
             }
         }
+    }
+}
+
+extension SoftBodyRecord {
+    /// Merge parallel planes from one collider, then keep the deepest independent constraints.
+    mutating func addVertexPlane(_ vertex: Int, _ plane: SoftVertexPlane) -> Bool {
+        let start = vertex * Self.planesPerVertex
+        let count = Int(vertexPlaneCounts[vertex])
+        for k in 0..<count {
+            let old = vertexPlanes[start + k]
+            if old.collider == plane.collider && dot(old.normal, plane.normal) > 0.999 {
+                if plane.separation < old.separation { vertexPlanes[start + k] = plane }
+                return true
+            }
+        }
+        if count < Self.planesPerVertex {
+            vertexPlanes[start + count] = plane
+            vertexPlaneCounts[vertex] += 1
+            return true
+        }
+        var worst = 0
+        for k in 1..<count where vertexPlanes[start + k].separation > vertexPlanes[start + worst].separation { worst = k }
+        if plane.separation < vertexPlanes[start + worst].separation {
+            vertexPlanes[start + worst] = plane
+            return true
+        }
+        return false
     }
 }
 

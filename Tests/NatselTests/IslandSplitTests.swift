@@ -41,7 +41,7 @@ struct IslandSplitTests {
         for i in 0..<2 {
             def = BodyDef()
             def.type = .dynamicBody
-            def.position = Vec3(0, 0.55 + Float(i) * 1.01, 0)
+            def.position = Pos(0, 0.55 + Float(i) * 1.01, 0)
             let box = world.createBody(def)
             shapeDef = ShapeDef()
             shapeDef.density = 1000

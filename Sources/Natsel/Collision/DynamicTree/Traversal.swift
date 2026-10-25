@@ -310,7 +310,7 @@ struct TreeView {
         let originAABB = input.box
 
         let p1 = aabbCenter(originAABB)
-        let extension_ = aabbExtents(originAABB)
+        let extension_ = maxVec3(p1 - originAABB.lowerBound, originAABB.upperBound - p1)
 
         let d = input.translation
 

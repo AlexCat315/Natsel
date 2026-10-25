@@ -706,7 +706,7 @@ extension World {
         bodySimFor(id).maxExtent
     }
 
-    public func bodyMaxExtentOrigin(_ id: BodyID) -> Vec3 {
+    public func bodyMaxExtentOrigin(_ id: BodyID) -> Pos {
         bodySimFor(id).center
     }
 }

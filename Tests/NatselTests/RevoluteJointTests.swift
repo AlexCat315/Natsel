@@ -20,12 +20,12 @@ struct RevoluteJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1.5, 3, 0)
+        def.position = Pos(Float(1.5), 3, 0)
         def.angularVelocity = Vec3(1, 0.5, 0)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
@@ -68,7 +68,7 @@ struct RevoluteJointTests {
         var motor = sim.motorImpulse
         var lower = sim.lowerImpulse
         var upper = sim.upperImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -79,7 +79,7 @@ struct RevoluteJointTests {
         h = fnv(h, &lower, 4)
         h = fnv(h, &upper, 4)
 
-        #expect(h == 0xbea9_413b_c922_6ecb)
+        #expect(h == 0x3113790a0cb753ee)
         #expect(sim.motorImpulse.bitPattern == 0x3e55_5556)
     }
 
@@ -90,12 +90,12 @@ struct RevoluteJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1.5, 3, 0)
+        def.position = Pos(Float(1.5), 3, 0)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -128,7 +128,7 @@ struct RevoluteJointTests {
         var motor = sim.motorImpulse
         var lower = sim.lowerImpulse
         var upper = sim.upperImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -139,8 +139,8 @@ struct RevoluteJointTests {
         h = fnv(h, &lower, 4)
         h = fnv(h, &upper, 4)
 
-        #expect(h == 0x350b_3309_faef_b632)
-        #expect(sim.linearImpulse.x.bitPattern == 0xc053_0772)
-        #expect(sim.linearImpulse.y.bitPattern == 0x401a_0e11)
+        #expect(h == 0x6fa210df91e9e66a)
+        #expect(sim.linearImpulse.x.bitPattern == 0xc053077d)
+        #expect(sim.linearImpulse.y.bitPattern == 0x401a0db8)
     }
 }

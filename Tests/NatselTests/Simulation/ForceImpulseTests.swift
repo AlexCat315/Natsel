@@ -42,7 +42,7 @@ struct ForceImpulseTests {
 
         let mass = world.bodyMass(body)
         // Push along +x at a point above the center: torque = r x F points along -z.
-        world.applyBodyForce(body, Vec3(mass * 10, 0, 0), Pos(0, 0.5, 0))
+        world.applyBodyForce(body, Vec3(mass * 10, 0, 0), Pos(0, Float(0.5), 0))
         world.step(1.0 / 60.0, subStepCount: 1)
 
         let v = world.bodyLinearVelocity(body)
@@ -107,7 +107,7 @@ struct ForceImpulseTests {
         let body = makeBox(world)
 
         let mass = world.bodyMass(body)
-        world.applyBodyLinearImpulse(body, Vec3(mass * 3, 0, 0), Pos(0, 0.5, 0))
+        world.applyBodyLinearImpulse(body, Vec3(mass * 3, 0, 0), Pos(0, Float(0.5), 0))
 
         let v = world.bodyLinearVelocity(body)
         #expect(absFloat(v.x - 3) < 1e-5)

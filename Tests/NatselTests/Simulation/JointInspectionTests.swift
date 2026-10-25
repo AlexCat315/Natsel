@@ -417,7 +417,7 @@ extension JointInspectionTests {
         def.position = Pos(0, 0, 0)
         let bodyA = world.createBody(def)
 
-        def.position = Pos(0.5, 0, 0)
+        def.position = Pos(Float(0.5), 0, 0)
         let bodyB = world.createBody(def)
 
         var shapeDef = ShapeDef()
@@ -491,7 +491,7 @@ extension JointInspectionTests {
         def.position = Pos(0, 0, 0)
         let bodyA = world.createBody(def)
 
-        def.position = Pos(0.5, 0, 0)
+        def.position = Pos(Float(0.5), 0, 0)
         let bodyB = world.createBody(def)
 
         var shapeDef = ShapeDef()

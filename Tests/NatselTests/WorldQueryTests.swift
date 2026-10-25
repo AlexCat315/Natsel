@@ -26,7 +26,7 @@ struct WorldQueryTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(3, 0, 0)
+        def.position = Pos(3, 0, 0)
         let sphere = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -72,7 +72,7 @@ struct WorldQueryTests {
         let ray = world.castRayClosest(Pos(5, 0, 0), Vec3(-10, 0, 0))
         #expect(ray.hit)
         #expect(ray.fraction.bitPattern == 0x3e19999a)
-        #expect(ray.point == Pos(3.5, 0, 0))
+        #expect(ray.point == Pos(Float(3.5), 0, 0))
         #expect(ray.normal == Vec3(1, 0, 0))
         var hit = Int32(ray.hit ? 1 : 0)
         var fraction = ray.fraction
@@ -80,7 +80,7 @@ struct WorldQueryTests {
         var normal = ray.normal
         h = fnv(h, &hit, 4)
         h = fnv(h, &fraction, 4)
-        h = fnv(h, &point, 12)
+        h = fnv(h, &point, MemoryLayout<Pos>.size)
         h = fnv(h, &normal, 12)
 
         // shape cast
@@ -109,20 +109,20 @@ struct WorldQueryTests {
         }
         #expect(castHit)
         #expect(castFraction.bitPattern == 0x3e0fdf3b)
-        #expect(castPoint == Pos(3.5, 0, 0))
+        #expect(castPoint == Pos(Float(3.5), 0, 0))
         #expect(castNormal == Vec3(1, 0, 0))
         var castHitInt = Int32(castHit ? 1 : 0)
         var castPointCopy = castPoint
         var castNormalCopy = castNormal
         h = fnv(h, &castHitInt, 4)
         h = fnv(h, &castFraction, 4)
-        h = fnv(h, &castPointCopy, 12)
+        h = fnv(h, &castPointCopy, MemoryLayout<Pos>.size)
         h = fnv(h, &castNormalCopy, 12)
         var castNode = castStats.nodeVisits
         var castLeaf = castStats.leafVisits
         h = fnv(h, &castNode, 4)
         h = fnv(h, &castLeaf, 4)
 
-        #expect(h == 0x21b2_e8bf_5b3c_db18)
+        #expect(h == 0x6f2625d3e617b010)
     }
 }

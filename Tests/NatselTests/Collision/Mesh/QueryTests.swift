@@ -72,6 +72,7 @@ struct MeshQueryTests {
 
 private struct QueryDigest {
     var value: UInt64 = 14695981039346656037
+    mutating func add(_ value: Pos) { add(Float(value.x)); add(Float(value.y)); add(Float(value.z)) }
     mutating func add(_ word: UInt32) {
         for byte in 0..<4 {
             value ^= UInt64((word >> (8 * byte)) & 255)

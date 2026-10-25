@@ -20,12 +20,12 @@ struct WeldJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0.8, 3, 0)
+        def.position = Pos(Float(0.8), 3, 0)
         def.angularVelocity = Vec3(0.5, 0.2, 0)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
@@ -55,15 +55,15 @@ struct WeldJointTests {
         var avv = av
         var linear = sim.linearImpulse
         var angular = sim.angularImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
         h = fnv(h, &linear, 12)
         h = fnv(h, &angular, 12)
 
-        #expect(h == 0x9672_985f_d782_4ac4)
-        #expect(sim.linearImpulse.y.bitPattern == 0x402a_ab20)
-        #expect(sim.angularImpulse.z.bitPattern == 0xbf08_8924)
+        #expect(h == 0x303bd3ed3a2b458b)
+        #expect(sim.linearImpulse.y.bitPattern == 0x402aaaab)
+        #expect(sim.angularImpulse.z.bitPattern == 0xbf088888)
     }
 }

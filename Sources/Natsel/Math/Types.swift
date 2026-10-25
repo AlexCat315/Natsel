@@ -77,11 +77,26 @@ public struct Transform: Sendable, Equatable, BitwiseCopyable {
     public static let identity = Transform(Vec3(0, 0, 0), Quat(Vec3(0, 0, 0), 1))
 }
 
-/// A world position. Large world mode is not supported, so this is the same as `Vec3`.
-public typealias Pos = Vec3
+/// A double precision world position. Subtract two positions before narrowing to a local vector.
+public struct Pos: Sendable, Equatable, BitwiseCopyable {
+    public var x: Double = 0
+    public var y: Double = 0
+    public var z: Double = 0
+    @inlinable public init() {}
+    @inlinable public init<X: BinaryFloatingPoint, Y: BinaryFloatingPoint, Z: BinaryFloatingPoint>(_ x: X, _ y: Y, _ z: Z) { self.x = Double(x); self.y = Double(y); self.z = Double(z) }
+    @inlinable public init(_ v: Vec3) { x = Double(v.x); y = Double(v.y); z = Double(v.z) }
+    public static let zero = Pos()
+}
 
-/// A world transform. Large world mode is not supported, so this is the same as `Transform`.
-public typealias WorldTransform = Transform
+/// Double precision translation with a single precision rotation.
+public struct WorldTransform: Sendable, Equatable, BitwiseCopyable {
+    public var p = Pos()
+    public var q = Quat()
+    @inlinable public init() {}
+    @inlinable public init(_ p: Pos, _ q: Quat) { self.p = p; self.q = q }
+    @inlinable public init(_ p: Vec3, _ q: Quat) { self.p = Pos(p); self.q = q }
+    public static let identity = WorldTransform(Pos(), .identity)
+}
 
 /// A 3x3 matrix.
 public struct Matrix3: Sendable, Equatable, BitwiseCopyable {

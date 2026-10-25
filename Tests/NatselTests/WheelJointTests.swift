@@ -20,12 +20,12 @@ struct WheelJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0.5, 3, 0)
+        def.position = Pos(Float(0.5), 3, 0)
         def.angularVelocity = Vec3(0, 0, 1)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
@@ -77,7 +77,7 @@ struct WheelJointTests {
         var steer = sim.steeringSpringImpulse
         var lowSteer = sim.lowerSteeringImpulse
         var upSteer = sim.upperSteeringImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -91,7 +91,7 @@ struct WheelJointTests {
         h = fnv(h, &lowSteer, 4)
         h = fnv(h, &upSteer, 4)
 
-        #expect(h == 0x15f6_c4c3_aaff_79cb)
+        #expect(h == 0x3fff5777859878f3)
         #expect(sim.spinImpulse.bitPattern == 0x348c_939e)
         #expect(sim.steeringSpringImpulse.bitPattern == 0x3435_40c6)
     }

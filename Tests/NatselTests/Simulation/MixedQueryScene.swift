@@ -10,7 +10,7 @@ func makeReferenceQueryScene(_ scenario: Int, sensors: Bool = false) throws -> (
         for j in 0..<6 {
             var bodyDef = BodyDef()
             bodyDef.type = sensors ? .staticBody : j == 0 ? .dynamicBody : j == 1 ? .kinematicBody : .staticBody
-            bodyDef.position = origin + Vec3(Float(j % 3) * 0.75 - 1, 0, 0)
+            bodyDef.position = Pos(origin + Vec3(Float(j % 3) * 0.75 - 1, 0, 0))
             bodyDef.rotation = makeQuatFromAxisAngle(.axisY, Float(j) * 0.15)
             let body = world.createBody(bodyDef)
             var shapeDef = ShapeDef()
@@ -27,5 +27,5 @@ func makeReferenceQueryScene(_ scenario: Int, sensors: Bool = false) throws -> (
             default: _ = world.createCompoundShape(body, shapeDef, compound)
             }
         }
-        return (world, origin)
+        return (world, Pos(origin))
 }

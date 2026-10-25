@@ -14,7 +14,7 @@ struct WidePrepareTests {
             for j in 0..<4 {
                 var def = BodyDef()
                 def.type = .dynamicBody
-                def.position = Vec3(Float(j) * 1.1 - 1.5, 1.5 + Float(i), Float(i % 3) * 0.3)
+                def.position = Pos(Float(j) * 1.1 - 1.5, 1.5 + Float(i), Float(i % 3) * 0.3)
                 let body = w.createBody(def)
                 _ = w.createHullShape(body, ShapeDef(), makeBoxHull(0.5, 0.5, 0.5))
             }
@@ -97,7 +97,7 @@ extension WidePrepareTests {
                 for j in 0..<4 {
                     var def = BodyDef()
                     def.type = .dynamicBody
-                    def.position = Vec3(Float(j) * 1.1 - 1.5, 1.5 + Float(i), Float(i % 3) * 0.3)
+                    def.position = Pos(Float(j) * 1.1 - 1.5, 1.5 + Float(i), Float(i % 3) * 0.3)
                     let body = w.createBody(def)
                     _ = w.createHullShape(body, ShapeDef(), makeBoxHull(0.5, 0.5, 0.5))
                 }

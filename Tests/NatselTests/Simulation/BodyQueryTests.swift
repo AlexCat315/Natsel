@@ -80,7 +80,7 @@ struct BodyQueryTests {
         var shapeDef = ShapeDef()
         _ = world.createSphereShape(body, shapeDef, Sphere(center: Vec3(), radius: 1))
 
-        let origin = Pos(1.0e6, -2.0e6, 5.0e5)
+        let origin = Pos(Float(1.0e6), Float(-2.0e6), Float(5.0e5))
         let bodyTransform = WorldTransform(offsetPos(origin, Vec3(5, 0, 0)), Quat.identity)
         let result = world.bodyCastRay(
             body, origin, Vec3(10, 0, 0), .defaultFilter, 1, bodyTransform

@@ -29,7 +29,7 @@ struct GraphTests {
         for p in positions {
             def = BodyDef()
             def.type = .dynamicBody
-            def.position = p
+            def.position = Pos(p)
             let body = world.createBody(def)
             shapeDef = ShapeDef()
             shapeDef.density = 1000
@@ -38,7 +38,7 @@ struct GraphTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(-0.9, 0.9, 0)
+        def.position = Pos(Float(-0.9), Float(0.9), 0)
         let boxBody = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -121,7 +121,7 @@ struct GraphTests {
         // Wake a sleeping body.
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(20, 1, 0)
+        def.position = Pos(20, 1, 0)
         def.isAwake = false
         let sleeper = world.createBody(def)
         shapeDef = ShapeDef()

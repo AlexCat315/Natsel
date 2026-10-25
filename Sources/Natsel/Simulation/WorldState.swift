@@ -217,6 +217,8 @@ struct WorldSettingsState {
     var enableSleep = true
     var enableWarmStarting = true
     var enableContinuous = true
+    var enableDynamicContinuous = false
+    var enableSoftBodyQueryAcceleration = true
     var enableSpeculative = true
     var enableWideSolver = true
 }
@@ -295,6 +297,8 @@ extension World {
         settings.enableSleep = enableSleep
         settings.enableWarmStarting = enableWarmStarting
         settings.enableContinuous = enableContinuous
+        settings.enableDynamicContinuous = enableDynamicContinuous
+        settings.enableSoftBodyQueryAcceleration = enableSoftBodyQueryAcceleration
         settings.enableSpeculative = enableSpeculative
         settings.enableWideSolver = enableWideSolver
         state.settings = settings
@@ -307,6 +311,7 @@ extension World {
     @discardableResult
     public func restoreState(_ state: WorldState) -> Bool {
         guard state.world === self, locked == false else { return false }
+        softBodyRayCaches.removeAll(keepingCapacity: true)
 
         bodies = state.bodies
         replacePool(&bodyIdPool, state.bodyIdPool)
@@ -378,6 +383,8 @@ extension World {
         enableSleep = settings.enableSleep
         enableWarmStarting = settings.enableWarmStarting
         enableContinuous = settings.enableContinuous
+        enableDynamicContinuous = settings.enableDynamicContinuous
+        enableSoftBodyQueryAcceleration = settings.enableSoftBodyQueryAcceleration
         enableSpeculative = settings.enableSpeculative
         enableWideSolver = settings.enableWideSolver
         return true

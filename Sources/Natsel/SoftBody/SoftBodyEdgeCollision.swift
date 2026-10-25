@@ -75,7 +75,7 @@ extension SoftBodyRecord {
                 let a0 = 1 - s
                 let point = a0 * x[i0] + s * x[i1]
                 let ci = Int(plane.collider)
-                let r = point - colliders[ci].center
+                let r = point - subPos(colliders[ci].center, origin)
                 let shift = colliders[ci].displacement + cross(colliders[ci].rotation, r)
                 let penetration = plane.offset + dot(plane.normal, shift) - dot(plane.normal, point)
                 guard penetration > 0 else { continue }

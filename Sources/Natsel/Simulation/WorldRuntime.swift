@@ -687,6 +687,11 @@ public final class World {
     public var enableSleep = true
     public var enableWarmStarting = true
     public var enableContinuous = true
+    /// Also sweep convex dynamic bodies against dynamic and kinematic bodies, including bullets
+    /// against bullets. Opt in when moving pairs need CCD; the default retains Box3D trajectories.
+    public var enableDynamicContinuous = false
+    var dynamicContinuousImpulses: [DynamicContinuousImpulse] = []
+    var dynamicContinuousActiveBodies: [Int32] = []
     public var enableSpeculative = true
     var stepIndex: UInt64 = 0
     var inv_h: Float = 0
@@ -729,6 +734,11 @@ public final class World {
     /// Position based soft bodies. Simulated after rigid body finalization (SoftBody/).
     var softBodies: [SoftBodyRecord] = []
     var softBodyIdPool = IDPool()
+    /// Rebuilt lazily after vertex edits or simulation; derived data is never included in snapshots.
+    var softBodyRayCaches: [Int32: SoftBodyRayCache] = [:]
+    /// Lazily build face BVHs for repeated soft-body rays. Linear scans can be cheaper when a
+    /// deforming surface receives very few rays per step; results are identical in either mode.
+    public var enableSoftBodyQueryAcceleration = true
 
     var locked = false
     var inUse = true

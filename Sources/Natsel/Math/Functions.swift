@@ -400,80 +400,59 @@ public func computeCosSin(_ radians: Float) -> CosSin {
     invRotateVector(t.q, v - t.p)
 }
 
-// MARK: - World position boundary (single precision)
-
-/// Convert a vector to a world position.
-@inlinable public func toPos(_ v: Vec3) -> Pos { v }
-
-/// Lossy conversion of a world position to a float vector.
-@inlinable public func toVec3(_ p: Pos) -> Vec3 { p }
-
-/// Narrow a world coordinate to float, rounding toward negative infinity.
+// MARK: - World position boundary
+@inlinable public func toPos(_ v: Vec3) -> Pos { Pos(v) }
+/// Lossy absolute conversion. Prefer `subPos` with a nearby reference position.
+@inlinable public func toVec3(_ p: Pos) -> Vec3 { Vec3(Float(p.x), Float(p.y), Float(p.z)) }
 @inlinable public func roundDownFloat(_ x: Float) -> Float { x }
-
-/// Narrow a world coordinate to float, rounding toward positive infinity.
 @inlinable public func roundUpFloat(_ x: Float) -> Float { x }
-
-/// a - b, demoted to float. The primary precision boundary operation.
-@inlinable public func subPos(_ a: Pos, _ b: Pos) -> Vec3 { Vec3(a.x - b.x, a.y - b.y, a.z - b.z) }
-
-/// p + d
-@inlinable public func offsetPos(_ p: Pos, _ d: Vec3) -> Pos { Pos(p.x + d.x, p.y + d.y, p.z + d.z) }
-
-/// World position interpolation for sweeps and sampling.
+@inlinable public func roundDownFloat(_ x: Double) -> Float {
+    let f = Float(x); return Double(f) > x ? f.nextDown : f
+}
+@inlinable public func roundUpFloat(_ x: Double) -> Float {
+    let f = Float(x); return Double(f) < x ? f.nextUp : f
+}
+/// Subtract in double precision before narrowing the relative displacement.
+@inlinable public func subPos(_ a: Pos, _ b: Pos) -> Vec3 {
+    Vec3(Float(a.x - b.x), Float(a.y - b.y), Float(a.z - b.z))
+}
+@inlinable public func offsetPos(_ p: Pos, _ d: Vec3) -> Pos {
+    Pos(p.x + Double(d.x), p.y + Double(d.y), p.z + Double(d.z))
+}
 @inlinable public func lerpPosition(_ a: Pos, _ b: Pos, _ t: Float) -> Pos {
-    Pos((1 - t) * a.x + t * b.x, (1 - t) * a.y + t * b.y, (1 - t) * a.z + t * b.z)
+    let u = Double(t); return Pos(a.x + u * (b.x - a.x), a.y + u * (b.y - a.y), a.z + u * (b.z - a.z))
 }
-
-/// Transform a local point to a world position.
 @inlinable public func transformWorldPoint(_ t: WorldTransform, _ p: Vec3) -> Pos {
-    let r = rotateVector(t.q, p)
-    return Pos(t.p.x + r.x, t.p.y + r.y, t.p.z + r.z)
+    offsetPos(t.p, rotateVector(t.q, p))
 }
-
-/// Transform a world position to a local point.
 @inlinable public func invTransformWorldPoint(_ t: WorldTransform, _ p: Pos) -> Vec3 {
-    let d = Vec3(p.x - t.p.x, p.y - t.p.y, p.z - t.p.z)
-    return invRotateVector(t.q, d)
+    invRotateVector(t.q, subPos(p, t.p))
 }
-
-/// Compose a world transform with a local transform.
-@inlinable @inline(__always) public func mulWorldTransforms(_ a: WorldTransform, _ b: Transform) -> WorldTransform {
-    var c = WorldTransform()
-    c.q = mulQuat(a.q, b.q)
-    let r = rotateVector(a.q, b.p)
-    c.p = Pos(a.p.x + r.x, a.p.y + r.y, a.p.z + r.z)
-    return c
+@inlinable public func mulWorldTransforms(_ a: WorldTransform, _ b: Transform) -> WorldTransform {
+    WorldTransform(transformWorldPoint(a, b.p), mulQuat(a.q, b.q))
 }
-
-/// Relative transform of frame B in frame A. The narrow phase boundary.
-@inlinable @inline(__always) public func invMulWorldTransforms(_ a: WorldTransform, _ b: WorldTransform) -> Transform {
-    var c = Transform()
-    c.q = invMulQuat(a.q, b.q)
-    let d = Vec3(b.p.x - a.p.x, b.p.y - a.p.y, b.p.z - a.p.z)
-    c.p = invRotateVector(a.q, d)
-    return c
+@inlinable public func invMulWorldTransforms(_ a: WorldTransform, _ b: WorldTransform) -> Transform {
+    Transform(invTransformWorldPoint(a, b.p), invMulQuat(a.q, b.q))
 }
-
-/// Shift a world transform into the frame of a base position.
 @inlinable public func toRelativeTransform(_ t: WorldTransform, _ base: Pos) -> Transform {
-    Transform(Vec3(t.p.x - base.x, t.p.y - base.y, t.p.z - base.z), t.q)
+    Transform(subPos(t.p, base), t.q)
 }
-
-/// Promote a float transform to a world transform. Lossless.
-@inlinable public func makeWorldTransform(_ t: Transform) -> WorldTransform { t }
-
-/// Translate a local AABB by a world position, rounding outward.
+@inlinable public func makeWorldTransform(_ t: Transform) -> WorldTransform { WorldTransform(t.p, t.q) }
+/// Conservative world bounds: inflate locally before rounding outwards here.
 @inlinable public func offsetAABB(_ localBox: AABB, _ origin: Pos) -> AABB {
-    var out = AABB()
-    out.lowerBound.x = roundDownFloat(origin.x + localBox.lowerBound.x)
-    out.lowerBound.y = roundDownFloat(origin.y + localBox.lowerBound.y)
-    out.lowerBound.z = roundDownFloat(origin.z + localBox.lowerBound.z)
-    out.upperBound.x = roundUpFloat(origin.x + localBox.upperBound.x)
-    out.upperBound.y = roundUpFloat(origin.y + localBox.upperBound.y)
-    out.upperBound.z = roundUpFloat(origin.z + localBox.upperBound.z)
-    return out
+    AABB(
+        Vec3(roundDownFloat(origin.x + Double(localBox.lowerBound.x)),
+             roundDownFloat(origin.y + Double(localBox.lowerBound.y)),
+             roundDownFloat(origin.z + Double(localBox.lowerBound.z))),
+        Vec3(roundUpFloat(origin.x + Double(localBox.upperBound.x)),
+             roundUpFloat(origin.y + Double(localBox.upperBound.y)),
+             roundUpFloat(origin.z + Double(localBox.upperBound.z))))
 }
+@inlinable public func + (a: Pos, b: Vec3) -> Pos { offsetPos(a,b) }
+@inlinable public func - (a: Pos, b: Vec3) -> Pos { offsetPos(a,-b) }
+@inlinable public func - (a: Pos, b: Pos) -> Vec3 { subPos(a,b) }
+@inlinable public func transformPoint(_ t: WorldTransform, _ p: Vec3) -> Pos { transformWorldPoint(t,p) }
+@inlinable public func invTransformPoint(_ t: WorldTransform, _ p: Pos) -> Vec3 { invTransformWorldPoint(t,p) }
 
 // MARK: - Matrix
 
@@ -701,7 +680,7 @@ public func isValidPlane(_ a: Plane) -> Bool {
 }
 
 /// Is this a valid world position? Not NaN or infinity.
-public func isValidPosition(_ p: Pos) -> Bool { isValidVec3(p) }
+public func isValidPosition(_ p: Pos) -> Bool { p.x.isFinite && p.y.isFinite && p.z.isFinite }
 
 /// Is this a valid world transform? Not NaN or infinity. Rotation is normalized.
 public func isValidWorldTransform(_ t: WorldTransform) -> Bool { isValidPosition(t.p) && isValidQuat(t.q) }
@@ -933,3 +912,8 @@ public func isValidRay(_ input: RayCastInput) -> Bool {
         && isValidFloat(input.maxFraction) && 0 <= input.maxFraction
         && input.maxFraction < B3.huge
 }
+
+@inlinable public func mulAdd(_ a: Pos, _ s: Float, _ b: Vec3) -> Pos { offsetPos(a, s * b) }
+@inlinable public func mulSub(_ a: Pos, _ s: Float, _ b: Vec3) -> Pos { offsetPos(a, -s * b) }
+
+@inlinable public func distance(_ a: Pos, _ b: Pos) -> Float { length(subPos(a, b)) }

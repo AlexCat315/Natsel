@@ -434,3 +434,64 @@ Apple M1（4 性能核 + 4 能效核）、`swift build -c release`、4 子步，
 
 剩余开销主要在叠放布料的边-边候选测试；需要更快时可对单个软体关闭 `enableEdgeCollision`。
 
+
+## 双精度大世界
+
+世界位置 `Pos` 使用三个 `Double`，世界变换使用双精度平移和单精度旋转。碰撞、关节、
+速度及 SIMD 求解器仍使用局部单精度数据；先在双精度中减去参考位置，再进入单精度计算。
+软体采用双精度原点和单精度顶点偏移；`withSoftBodyLocalVertexPositions` 可直接读取顶点缓冲区，
+避免每帧构造双精度世界顶点数组。
+
+宽阶段树仍使用向外舍入的浮点包围盒，保留紧凑节点。极远坐标处包围盒会扩大，候选数可能增加，
+因此双精度世界坐标不意味着宽阶段成本与原点场景完全相同。精确包围盒使用 `WorldAABB` 及
+`shapeWorldAABB` / `bodyWorldAABB` / `softBodyWorldAABB` 获取。局部形状与超长关节仍受单精度限制；
+在 `10^12` 世界单位处，双精度坐标自身的间距约为 `0.000122`。
+
+2026-10-25，Apple M1 / Swift 6.4.1，Release，`NATSEL_WORKERS=4`。以修改前的 `5187e6a`
+独立源码快照为基线；编译完成后交替运行两个版本，每个场景各测三次，取最小耗时。以下为原点附近
+的整场景步进耗时，不包含建场景时间；不是极远坐标下的宽阶段压力测试。
+
+| 场景 | 步数 | 原单精度世界位置 | 双精度世界位置 | 耗时变化 |
+| --- | ---: | ---: | ---: | ---: |
+| large_pyramid | 200 | 624.74 ms | 645.33 ms | +3.3% |
+| joint_grid | 100 | 341.82 ms | 344.35 ms | +0.7% |
+| cloth | 300 | 426.50 ms | 432.07 ms | +1.3% |
+
+Debug 与 Release 各通过 492 项测试。复杂形状轨迹和接触哈希由独立 C 双精度构建生成；
+多线程结果继续逐位一致。浮点树包围盒的舍入中点补偿，以及软体分组的双精度包围盒检查，
+分别避免远处查询漏检和不相关软体误合组。
+
+## 碰撞质量与软体空间索引（2026-10-26）
+
+本轮增加可选的动态配对 CCD、软体顶点多平面接触、凸 Compound 的动态实例化，以及软体分组和射线索引。
+`enableDynamicContinuous` 默认关闭，以保留原有 Box3D 轨迹；打开后增加双精度扫掠配对和 TOI 冲量处理。
+原有十场景的 C/Swift 性能总表本轮没有重测，不能用下面的专项测量替代它。
+
+Apple M1、Swift 6.4.1、Release、单 worker。`soft_queries` 每步对一个 64×64 顶点、7,938 个面的软体
+投射 512 条射线；模拟每帧更新顶点版本，因此计时包含 BVH 重建。创建和首步预热在计时之外，计时共 29 步。
+同一个二进制交替开启/关闭 BVH，各运行三次：
+
+| 模式 | 第一次 ms | 第二次 ms | 第三次 ms | 最快 ms |
+| --- | ---: | ---: | ---: | ---: |
+| BVH | 147.75 | 130.52 | 130.14 | 130.14 |
+| 逐面扫描 | 553.58 | 551.86 | 551.49 | 551.49 |
+
+最快值之比约 **4.24×**。六次命中结果的校验值均为 `60958409.99992585`。这反映重复射线查询的收益；
+每帧只有少量射线时，重建成本可能高于扫描，可设置 `world.enableSoftBodyQueryAcceleration = false`。
+
+`sparse_soft` 包含 2,000 个相互分离、保持唤醒的软体，位于 `10^12` 附近。99 个计时步的三次结果为
+313.10 / 317.45 / 313.22 ms，最快约 **3.16 ms/步**。这是当前版本绝对耗时，没有测修改前同场景的耗时。
+分组的扫描算法另有确定性的工作量检查：沿任一主轴分离的 5,000 个包围盒，候选测试为 0；原逐对枚举
+需要 12,497,500 次。重叠场景仍可能产生二次数量的候选。
+
+复测：
+
+```sh
+swift build -c release
+NATSEL_WORKERS=1 NATSEL_SOFT_QUERY_BVH=1 .build/release/Benchmarks --benchmark=soft_queries --repeats=3
+NATSEL_WORKERS=1 NATSEL_SOFT_QUERY_BVH=0 .build/release/Benchmarks --benchmark=soft_queries --repeats=3
+NATSEL_WORKERS=1 .build/release/Benchmarks --benchmark=sparse_soft --repeats=3
+```
+
+完整时间、校验值和二进制 SHA-256 保存在 `Tools/Benchmarks/Results/quality-2026-10-26.json`。
+本轮的碰撞边界、接口和剩余限制见 `PORTING.md` 的 “Collision quality and spatial indexing”。

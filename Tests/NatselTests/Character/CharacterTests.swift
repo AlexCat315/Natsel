@@ -41,7 +41,7 @@ struct CharacterTests {
     func walk() {
         let world = makeWorld()
         var def = CharacterDef()
-        def.position = Vec3(0, 2, 0)
+        def.position = Pos(0, 2, 0)
         let character = CharacterVirtual(world: world, def)!
         drive(world, character, Vec3(), 120)
         #expect(character.groundState == .onGround)
@@ -60,7 +60,7 @@ struct CharacterTests {
         let world = makeWorld()
         addStaticBox(world, Vec3(2, 1, 0), Vec3(0.2, 1, 5))
         var def = CharacterDef()
-        def.position = Vec3(0, 0.05, 0)
+        def.position = Pos(0, Float(0.05), 0)
         let character = CharacterVirtual(world: world, def)!
         drive(world, character, Vec3(), 30)
         drive(world, character, Vec3(2, 0, 2), 120)
@@ -81,7 +81,7 @@ struct CharacterTests {
         let cs = computeCosSin(angle)
         addStaticBox(world, Vec3(1 + 3 * cs.cosine, 3 * cs.sine - 0.5 * cs.cosine, 0), Vec3(3, 0.5, 3), rotation: rotation)
         var def = CharacterDef()
-        def.position = Vec3(-1, 0.05, 0)
+        def.position = Pos(-1, Float(0.05), 0)
         def.enableStairStepping = false
         let character = CharacterVirtual(world: world, def)!
         drive(world, character, Vec3(), 30)
@@ -102,12 +102,12 @@ struct CharacterTests {
                              Vec3(2.5, stepHeight * Float(k + 1) * 0.5, 3))
             }
             var def = CharacterDef()
-            def.position = Vec3(0, 0.05, 0)
+            def.position = Pos(0, Float(0.05), 0)
             let character = CharacterVirtual(world: world, def)!
             drive(world, character, Vec3(), 30)
             drive(world, character, Vec3(2, 0, 0), 180)
             if climbs {
-                #expect(character.position.y > 3 * stepHeight, "step \(stepHeight)")
+                #expect(character.position.y > Double(3 * stepHeight), "step \(stepHeight)")
                 #expect(character.groundState == .onGround)
             } else {
                 #expect(character.position.y < 0.1, "step \(stepHeight)")
@@ -126,7 +126,7 @@ struct CharacterTests {
         addStaticBox(world, Vec3(4 * cs.cosine, 2 - 4 * cs.sine - 0.5 * cs.cosine, 0), Vec3(4, 0.5, 3), rotation: rotation)
         addStaticBox(world, Vec3(-2, 1, 0), Vec3(2, 1, 3))
         var def = CharacterDef()
-        def.position = Vec3(-1, 2.05, 0)
+        def.position = Pos(-1, Float(2.05), 0)
         let character = CharacterVirtual(world: world, def)!
         drive(world, character, Vec3(), 30)
         var airborne = 0
@@ -149,12 +149,12 @@ struct CharacterTests {
         let world = makeWorld()
         var bodyDef = BodyDef()
         bodyDef.type = .kinematicBody
-        bodyDef.position = Vec3(0, 1, 0)
+        bodyDef.position = Pos(0, 1, 0)
         bodyDef.linearVelocity = Vec3(1, 0, 0)
         let platform = world.createBody(bodyDef)
         _ = world.createHullShape(platform, ShapeDef(), makeBoxHull(2, 0.1, 2))
         var def = CharacterDef()
-        def.position = Vec3(0, 1.15, 0)
+        def.position = Pos(0, Float(1.15), 0)
         let character = CharacterVirtual(world: world, def)!
         drive(world, character, Vec3(), 120)
         #expect(character.groundState == .onGround)
@@ -169,7 +169,7 @@ struct CharacterTests {
         let world = makeWorld()
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(1.5, 0.25, 0)
+        bodyDef.position = Pos(Float(1.5), Float(0.25), 0)
         let box = world.createBody(bodyDef)
         var shapeDef = ShapeDef()
         shapeDef.density = 100
@@ -177,7 +177,7 @@ struct CharacterTests {
         _ = world.createHullShape(box, shapeDef, makeBoxHull(0.25, 0.25, 0.25))
 
         var def = CharacterDef()
-        def.position = Vec3(0, 0.05, 0)
+        def.position = Pos(0, Float(0.05), 0)
         let character = CharacterVirtual(world: world, def)!
         #expect(character.innerBodyId.isNull == false)
         drive(world, character, Vec3(), 10)
@@ -197,7 +197,7 @@ struct CharacterTests {
         let world = makeWorld()
         addStaticBox(world, Vec3(3, 1.5, 0), Vec3(1, 0.2, 2))
         var def = CharacterDef()
-        def.position = Vec3(0, 0.05, 0)
+        def.position = Pos(0, Float(0.05), 0)
         let character = CharacterVirtual(world: world, def)!
         drive(world, character, Vec3(), 30)
         #expect(character.setShape(radius: 0.3, height: 1.0))

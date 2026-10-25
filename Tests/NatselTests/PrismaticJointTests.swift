@@ -20,12 +20,12 @@ struct PrismaticJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0.5, 3, 0)
+        def.position = Pos(Float(0.5), 3, 0)
         def.linearVelocity = Vec3(1, 0.5, 1)
         def.angularVelocity = Vec3(0.3, 0.2, 1)
         let bodyB = world.createBody(def)
@@ -67,7 +67,7 @@ struct PrismaticJointTests {
         var motor = sim.motorImpulse
         var lower = sim.lowerImpulse
         var upper = sim.upperImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -78,7 +78,7 @@ struct PrismaticJointTests {
         h = fnv(h, &lower, 4)
         h = fnv(h, &upper, 4)
 
-        #expect(h == 0x7481_d57a_ddc3_2a5e)
+        #expect(h == 0x893491e710bd8659)
     }
 
     @Test("slider matches the C reference")
@@ -88,12 +88,12 @@ struct PrismaticJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0.5, 3, 0)
+        def.position = Pos(Float(0.5), 3, 0)
         def.linearVelocity = Vec3(1, 0.5, 0)
         def.angularVelocity = Vec3(0, 0, 1)
         let bodyB = world.createBody(def)
@@ -135,7 +135,7 @@ struct PrismaticJointTests {
         var motor = sim.motorImpulse
         var lower = sim.lowerImpulse
         var upper = sim.upperImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -146,7 +146,7 @@ struct PrismaticJointTests {
         h = fnv(h, &lower, 4)
         h = fnv(h, &upper, 4)
 
-        #expect(h == 0xaecc_d9ba_ad95_7ce7)
+        #expect(h == 0x5cda3695213ce40b)
         #expect(sim.perpImpulse.x.bitPattern == 0x402a_aaab)
         #expect(sim.springImpulse.bitPattern == 0xbed5_5556)
         #expect(sim.motorImpulse.bitPattern == 0x3ed5_5556)

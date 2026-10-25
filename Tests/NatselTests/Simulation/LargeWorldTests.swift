@@ -1,8 +1,7 @@
 import Testing
 @testable import Natsel
 
-// Large-world behaviour ported from test/test_collision.c. The double precision branches are
-// compile-time excluded from the C float build, so only the origin assertions apply here.
+// Large-world behaviour ported from the C collision and large-world tests.
 @Suite("Large world")
 struct LargeWorldTests {
     /// Two cubes overlapping by 0.1 along x produce a four point face manifold at the origin.
@@ -11,8 +10,8 @@ struct LargeWorldTests {
         let boxA = makeBoxHull(0.5, 0.5, 0.5)
         let boxB = makeBoxHull(0.5, 0.5, 0.5)
 
-        let xfA = Transform(Vec3(), Quat.identity)
-        let xfB = Transform(Vec3(0.9, 0, 0), Quat.identity)
+        let xfA = WorldTransform(Vec3(), Quat.identity)
+        let xfB = WorldTransform(Vec3(0.9, 0, 0), Quat.identity)
 
         var buffer = [LocalManifoldPoint](repeating: LocalManifoldPoint(), count: 8)
         var manifold = LocalManifold()
@@ -37,7 +36,7 @@ struct LargeWorldTests {
         shape.geometry = .hull(box)
         shape.type = .hullShape
 
-        let aabb = computeFatShapeAABB(shape, Transform(Vec3(), Quat.identity), 0)
+        let aabb = computeFatShapeAABB(shape, WorldTransform(Vec3(), Quat.identity), 0)
         let eps = Float.ulpOfOne
 
         #expect(absFloat(aabb.lowerBound.x + 0.5) <= eps)
@@ -81,7 +80,7 @@ struct LargeWorldTests {
         )
         #expect(result.hit)
         if result.hit {
-            let gap = result.point.y - (-farFar + 0.5)
+            let gap = result.point.y - Double(-farFar + 0.5)
             #expect(absFloat(gap) < 0.01)
         }
     }
@@ -145,9 +144,9 @@ extension LargeWorldTests {
 
     /// Fire a fast bullet at a thin wall. Returns the bullet's final x. If continuous collision
     /// works the bullet stops at the wall instead of tunneling past it.
-    @Test("a fast bullet does not tunnel through a thin wall")
-    func bulletStops() {
-        let base = Pos(0, 0, 0)
+    @Test("a fast bullet does not tunnel through a thin wall", arguments: [0.0, 1.0e9, -1.0e9, 1.0e12])
+    func bulletStops(_ offset: Double) {
+        let base = Pos(offset, offset, offset)
         let world = World()
 
         // Thin static wall at x = 5, spanning y and z.
@@ -178,9 +177,9 @@ extension LargeWorldTests {
     }
 
     /// The origin-relative queries hit at the origin with the expected geometry.
-    @Test("origin relative queries report the expected geometry")
-    func queriesAtOrigin() {
-        let base = Pos(0, 0, 0)
+    @Test("origin relative queries report the expected geometry", arguments: [0.0, 1.0e9, -1.0e9, 1.0e12])
+    func queriesAtOrigin(_ offset: Double) {
+        let base = Pos(offset, offset, offset)
         let world = World()
 
         var def = BodyDef()
@@ -200,7 +199,7 @@ extension LargeWorldTests {
             let proxy = ShapeProxy(points: ptr, count: 1, radius: 0.25)
             _ = world.castShape(base, proxy, Vec3(10, 0, 0)) { _, point, _, _ in
                 castHit = true
-                castRelX = point.x - base.x
+                castRelX = Float(point.x - base.x)
                 return 0
             }
         }

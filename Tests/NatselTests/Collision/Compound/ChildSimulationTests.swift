@@ -10,7 +10,7 @@ struct CompoundSimulationTests {
         world.enableSleep = index >= 36
         var bodyDef = BodyDef()
         bodyDef.rotation = makeQuatFromAxisAngle(.axisY, 0.2)
-        bodyDef.position = Vec3(0.125, -0.25, -0.125)
+        bodyDef.position = Pos(Float(0.125), Float(-0.25), Float(-0.125))
         let ground = world.createBody(bodyDef)
         let compound = try #require(referenceCompound((index % 18) / 3))
         var shapeDef = ShapeDef()
@@ -18,7 +18,7 @@ struct CompoundSimulationTests {
         if scenario < 54 { _ = world.createCompoundShape(ground, shapeDef, compound) }
         bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(-0.625, 2, 0.625)
+        bodyDef.position = Pos(Float(-0.625), 2, Float(0.625))
         bodyDef.rotation = makeQuatFromAxisAngle(.axisY, 0.3)
         bodyDef.linearVelocity = Vec3(0.35, -0.1, 0.2)
         bodyDef.angularVelocity = Vec3(0.1, 0.2, 0.15)

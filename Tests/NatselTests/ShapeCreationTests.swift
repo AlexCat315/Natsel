@@ -9,7 +9,7 @@ struct ShapeCreationTests {
 
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1, 2, 3)
+        def.position = Pos(1, 2, 3)
         let body = world.createBody(def)
 
         var shapeDef = ShapeDef()
@@ -44,11 +44,11 @@ struct ShapeCreationTests {
         #expect(shape.materialCount == 1)
         #expect(shape.generation == 1)
         #expect(shape.localCentroid == Vec3())
-        #expect(shape.aabb.lowerBound.x.bitPattern == 0x3ef5_c28f)
+        #expect(shape.aabb.lowerBound.x.bitPattern == 0x3ef5c290)
         #expect(shape.aabb.lowerBound.y.bitPattern == 0x3fbd_70a4)
         #expect(shape.aabb.upperBound.z.bitPattern == 0x4061_47ae)
         var fat = world.fatAABBs[0]
-        #expect(fat.lowerBound.x.bitPattern == 0x3edc_28f5)
+        #expect(fat.lowerBound.x.bitPattern == 0x3edc28f6)
         #expect(fat.upperBound.z.bitPattern == 0x4064_7ae1)
 
         // Capsule
@@ -56,7 +56,7 @@ struct ShapeCreationTests {
         #expect(shape.proxyKey == 6)
         #expect(shape.prevShapeId == 2)
         #expect(shape.nextShapeId == 0)
-        #expect(shape.aabb.lowerBound.y.bitPattern == 0x3ef5_c28f)
+        #expect(shape.aabb.lowerBound.y.bitPattern == 0x3ef5c290)
         #expect(shape.aabb.upperBound.y.bitPattern == 0x4061_47ae)
         fat = world.fatAABBs[1]
         #expect(fat.upperBound.y.bitPattern == 0x4064_7ae1)
@@ -66,7 +66,7 @@ struct ShapeCreationTests {
         #expect(shape.proxyKey == 10)
         #expect(shape.prevShapeId == 3)
         #expect(shape.nextShapeId == 1)
-        #expect(shape.aabb.lowerBound.x.bitPattern == 0xbca3_d70a)
+        #expect(shape.aabb.lowerBound.x.bitPattern == 0xbca3d700)
         #expect(shape.aabb.upperBound.z.bitPattern == 0x40c0_a3d7)
         #expect(shape.hull!.hash == 0xfc96_8302_32f7_676a)
 

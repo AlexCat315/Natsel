@@ -109,9 +109,9 @@ func createWavePile(_ world: World) -> WavePileScene {
         for i in 0..<5 {
             for j in 0..<5 {
                 let jitter = scene.random.vec3Uniform(-0.3, 0.3)
-                bodyDef.position.x = spacing * (Float(i) - 0.5 * 4) + jitter.x
-                bodyDef.position.y = 2.5 + 1.6 * Float(layer) + 0.3 * jitter.y
-                bodyDef.position.z = spacing * (Float(j) - 0.5 * 4) + jitter.z
+                bodyDef.position.x = Double(spacing * (Float(i) - 0.5 * 4) + jitter.x)
+                bodyDef.position.y = Double(2.5 + 1.6 * Float(layer) + 0.3 * jitter.y)
+                bodyDef.position.z = Double(spacing * (Float(j) - 0.5 * 4) + jitter.z)
                 bodyDef.rotation = scene.random.quat()
 
                 let body = world.createBody(bodyDef)

@@ -12,7 +12,7 @@ struct MeshContactLifecycleTests {
         _ = world.createMeshShape(ground, ShapeDef(), geometry)
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0.13, 0.39, 0.17)
+        bodyDef.position = Pos(Float(0.13), Float(0.39), Float(0.17))
         let body = world.createBody(bodyDef)
         let shape = world.createSphereShape(body, ShapeDef(), Sphere(center: .zero, radius: 0.4))
         world.step(1 / 60, subStepCount: 4)
@@ -22,7 +22,7 @@ struct MeshContactLifecycleTests {
             #expect(!world.isBodyAwake(world.body(body)))
         }
         switch action {
-        case 0: world.setBodyTransform(body, Vec3(20, 20, 20), .identity)
+        case 0: world.setBodyTransform(body, Pos(20, 20, 20), .identity)
         case 1, 3: world.destroyShape(shape, updateBodyMass: true)
         default: world.destroyBody(body)
         }
@@ -30,7 +30,7 @@ struct MeshContactLifecycleTests {
         #expect(world.contacts.allSatisfy { $0.contactId == B3.nullIndex })
         #expect(world.constraintGraph.colors.allSatisfy { $0.contacts.isEmpty && $0.convexContacts.isEmpty })
         // Reuse the freed IDs and advance again to catch stale graph/island references.
-        bodyDef.position = Vec3(10, 10, 10)
+        bodyDef.position = Pos(10, 10, 10)
         let replacement = world.createBody(bodyDef)
         _ = world.createSphereShape(replacement, ShapeDef(), Sphere(center: .zero, radius: 0.4))
         world.step(1 / 60, subStepCount: 4)

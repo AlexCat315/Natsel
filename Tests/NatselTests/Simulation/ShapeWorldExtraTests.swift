@@ -72,14 +72,14 @@ struct ShapeWorldExtraTests {
         let shape = world.createSphereShape(body, shapeDef, Sphere(center: Vec3(), radius: 1))
 
         // A target far along +x projects onto the sphere surface at (1, 0, 0).
-        let point = world.shapeClosestPoint(shape, Vec3(5, 0, 0))
+        let point = world.shapeClosestPoint(shape, Pos(5, 0, 0))
         #expect(absFloat(point.x - 1) < 1e-4)
         #expect(absFloat(point.y) < 1e-4)
         #expect(absFloat(point.z) < 1e-4)
 
         // A target inside projects onto the surface too.
-        let inside = world.shapeClosestPoint(shape, Vec3(0.25, 0, 0))
-        #expect(absFloat(length(inside) - 1) < 1e-3 || length(inside) < 1e-3)
+        let inside = world.shapeClosestPoint(shape, Pos(Float(0.25), 0, 0))
+        #expect(absFloat(length(subPos(inside, .zero)) - 1) < 1e-3 || length(subPos(inside, .zero)) < 1e-3)
     }
 
     @Test("mesh material count and per-triangle material round trip")

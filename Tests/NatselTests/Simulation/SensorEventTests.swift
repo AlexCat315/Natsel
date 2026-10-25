@@ -12,7 +12,7 @@ struct SensorEventTests {
         // Wall from x = 1 to x = 2
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Pos(1.5, 11, 0)
+        def.position = Pos(Float(1.5), 11, 0)
         let wall = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.enableSensorEvents = true
@@ -23,7 +23,7 @@ struct SensorEventTests {
         def.type = .dynamicBody
         def.isBullet = true
         def.gravityScale = 0
-        def.position = Pos(7.39814, 4, 0)
+        def.position = Pos(Float(7.39814), 4, 0)
         def.linearVelocity = Vec3(-20, 0, 0)
         let bullet = world.createBody(def)
 

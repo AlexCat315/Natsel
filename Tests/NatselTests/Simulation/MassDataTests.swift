@@ -65,9 +65,9 @@ struct MassDataTests {
 
         // World center of mass is the body origin plus the local center under identity rotation.
         let worldCenter = world.bodyWorldCenter(body)
-        #expect(absFloat(worldCenter.x - (5 + center.x)) < 1e-5)
-        #expect(absFloat(worldCenter.y - (-3 + center.y)) < 1e-5)
-        #expect(absFloat(worldCenter.z - (2 + center.z)) < 1e-5)
+        #expect(absFloat(worldCenter.x - Double(5 + center.x)) < 1e-5)
+        #expect(absFloat(worldCenter.y - Double(-3 + center.y)) < 1e-5)
+        #expect(absFloat(worldCenter.z - Double(2 + center.z)) < 1e-5)
     }
 
     /// A 90 degree turn about z swaps the x and y principal moments, so diag(1/2, 1/4, 1/8) becomes

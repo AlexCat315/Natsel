@@ -20,12 +20,12 @@ struct MotorJointTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(0, 3, 0)
+        def.position = Pos(0, 3, 0)
         let bodyA = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1, 3, 0)
+        def.position = Pos(1, 3, 0)
         let bodyB = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -64,7 +64,7 @@ struct MotorJointTests {
         var angV = sim.angularVelocityImpulse
         var ls = sim.linearSpringImpulse
         var angS = sim.angularSpringImpulse
-        h = fnv(h, &p, 12)
+        h = fnv(h, &p, MemoryLayout<Pos>.size)
         h = fnv(h, &q, 16)
         h = fnv(h, &vv, 12)
         h = fnv(h, &avv, 12)
@@ -73,8 +73,8 @@ struct MotorJointTests {
         h = fnv(h, &ls, 12)
         h = fnv(h, &angS, 12)
 
-        #expect(h == 0x449b_7787_bbbe_f84d)
-        #expect(sim.linearVelocityImpulse.x.bitPattern == 0x3d2f_3d32)
+        #expect(h == 0x69cf509b57a20931)
+        #expect(sim.linearVelocityImpulse.x.bitPattern == 0x3d2f3d33)
         #expect(sim.angularVelocityImpulse.x.bitPattern == 0x3e55_5555)
     }
 }

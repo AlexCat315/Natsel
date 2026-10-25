@@ -312,7 +312,13 @@ extension World {
         views.invTimeStep = context.inv_dt
         finalizeViews = views
 
+        let continuousStarts = enableContinuous && enableDynamicContinuous
+            ? awakeSet.bodySims.map { ContinuousStart(center: $0.center, rotation: $0.transform.q) } : []
         runStage(.finalizeBodies, 0, count, minimum: Self.parallelBodyItems)
+
+        if !continuousStarts.isEmpty {
+            solveDynamicContinuous(continuousStarts, views.sims, views.states)
+        }
 
         // Merge the per-thread island data.
         taskContexts[0].awakeIslandBitSet = finalizeThreads[0].islands
@@ -638,6 +644,21 @@ extension World {
 
             finalizeBodies(&context)
             endSolverSession()
+            // Sleeping targets can only be migrated after finalization releases its raw views.
+            for bodyId in Set(dynamicContinuousActiveBodies).sorted() {
+                let oldCount = solverSets[Int(SetType.awakeSet.rawValue)].islandSims.count
+                wakeBody(bodyId)
+                let newCount = solverSets[Int(SetType.awakeSet.rawValue)].islandSims.count
+                for i in oldCount..<newCount { taskContexts[0].awakeIslandBitSet.setBitGrow(UInt32(i)) }
+                let islandId = bodies[Int(bodyId)].islandId
+                taskContexts[0].awakeIslandBitSet.setBitGrow(UInt32(islands[Int(islandId)].localIndex))
+                bodies[Int(bodyId)].sleepTime = 0
+            }
+            for impact in dynamicContinuousImpulses {
+                applyBodyLinearImpulse(makeBodyID(impact.body), impact.impulse, impact.point, false)
+            }
+            dynamicContinuousImpulses.removeAll(keepingCapacity: true)
+            dynamicContinuousActiveBodies.removeAll(keepingCapacity: true)
             profile.transforms = getMillisecondsAndReset(&ticks)
 
             // Refit the kinematic and dynamic trees after body finalization, matching b3Solve.

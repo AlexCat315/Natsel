@@ -11,7 +11,7 @@ struct ContactEventTests {
         // Static ground
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Pos(0, -0.5, 0)
+        def.position = Pos(0, Float(-0.5), 0)
         let ground = world.createBody(def)
         var groundShapeDef = ShapeDef()
         let groundShape = world.createHullShape(ground, groundShapeDef, makeBoxHull(10, 0.5, 10))
@@ -104,7 +104,7 @@ struct ContactHitEventTests {
         // Static ground
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Pos(0, -0.5, 0)
+        def.position = Pos(0, Float(-0.5), 0)
         let ground = world.createBody(def)
         var groundShapeDef = ShapeDef()
         _ = world.createHullShape(ground, groundShapeDef, makeBoxHull(10, 0.5, 10))

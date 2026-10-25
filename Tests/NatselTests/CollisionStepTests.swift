@@ -27,7 +27,7 @@ struct CollisionStepTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0, 1.5, 0)
+        def.position = Pos(0, Float(1.5), 0)
         let box = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -35,7 +35,7 @@ struct CollisionStepTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0.6, 2.2, 0)
+        def.position = Pos(Float(0.6), Float(2.2), 0)
         let sphere = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -50,7 +50,7 @@ struct CollisionStepTests {
             var transform = world.bodyTransform(id)
             var v = world.bodyLinearVelocity(id)
             var w = world.bodyAngularVelocity(id)
-            h = fnv(h, &transform.p, 12)
+            h = fnv(h, &transform.p, MemoryLayout<Pos>.size)
             h = fnv(h, &transform.q, 16)
             h = fnv(h, &v, 12)
             h = fnv(h, &w, 12)
@@ -112,7 +112,7 @@ struct CollisionStepTests {
         }
 
         #expect(count == 2)
-        #expect(ch == 0x03ed_e5bc_d152_16df)
-        #expect(h == 0x5eae_c5ea_45b5_1319)
+        #expect(ch == 0x109b01715eff77e)
+        #expect(h == 0xe6f80c379a85f8fd)
     }
 }

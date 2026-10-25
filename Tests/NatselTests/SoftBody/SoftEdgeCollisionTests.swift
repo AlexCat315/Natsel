@@ -6,14 +6,14 @@ private func lowGroundWorld(workers: Int32 = 1) -> World {
     let world = World()
     world.workerCount = workers
     var def = BodyDef()
-    def.position = Vec3(0, -3, 0)
+    def.position = Pos(0, -3, 0)
     _ = world.createHullShape(world.createBody(def), ShapeDef(), makeBoxHull(20, 1, 20))
     return world
 }
 
 /// Height of the highest vertex: whether the body was caught at all.
 private func maxY(_ world: World, _ id: SoftBodyID) -> Float {
-    world.softBodyVertexPositions(id).map { $0.y }.max()!
+    world.softBodyVertexPositions(id).map { Float($0.y) }.max()!
 }
 
 private func run(_ world: World, _ steps: Int) {
@@ -32,12 +32,12 @@ struct SoftEdgeCollisionTests {
             // x = +-0.15, beside the lower strip.
             var lower = SoftBodyDef(settings: makeStrip(columns: 2, columnSpacing: 0.06, rows: 20, rowSpacing: 0.1,
                                                         pinned: { _, z in z == 0 || z == 19 }),
-                                    position: Vec3(0, 0.5, 0))
+                                    position: Pos(0, Float(0.5), 0))
             lower.collisionThickness = 0.02
             lower.enableEdgeCollision = edges
             _ = world.createSoftBody(lower)
             var upper = SoftBodyDef(settings: makeStrip(columns: 2, columnSpacing: 0.06, rows: 8, rowSpacing: 0.3),
-                                    position: Vec3(0, 1.2, 0), rotation: makeQuatFromAxisAngle(.axisY, 0.5 * Float.pi))
+                                    position: Pos(0, Float(1.2), 0), rotation: makeQuatFromAxisAngle(.axisY, 0.5 * Float.pi))
             upper.collisionThickness = 0.02
             upper.enableEdgeCollision = edges
             let id = world.createSoftBody(upper)
@@ -56,21 +56,21 @@ struct SoftEdgeCollisionTests {
         func drop(edges: Bool) -> Float {
             let world = lowGroundWorld()
             var lower = SoftBodyDef(settings: SoftBodySettings.makeRope(count: 10, spacing: 0.2, pinned: false),
-                                    position: Vec3(-0.9, 0.5, 0), rotation: makeQuatFromAxisAngle(.axisZ, 0.5 * Float.pi))
+                                    position: Pos(Float(-0.9), Float(0.5), 0), rotation: makeQuatFromAxisAngle(.axisZ, 0.5 * Float.pi))
             lower.collisionThickness = 0.03
             lower.enableEdgeCollision = edges
             lower.gravityScale = 0
             let a = world.createSoftBody(lower)
             for v in 0..<10 { world.setSoftBodyVertexInverseMass(a, Int32(v), 0) }
             var upper = SoftBodyDef(settings: SoftBodySettings.makeRope(count: 10, spacing: 0.2, pinned: false),
-                                    position: Vec3(0, 1.5, 0.9), rotation: makeQuatFromAxisAngle(.axisX, 0.5 * Float.pi))
+                                    position: Pos(0, Float(1.5), Float(0.9)), rotation: makeQuatFromAxisAngle(.axisX, 0.5 * Float.pi))
             upper.collisionThickness = 0.03
             upper.enableEdgeCollision = edges
             let b = world.createSoftBody(upper)
             run(world, 90)
             // The middle of the falling rope.
             let p = world.softBodyVertexPositions(b)
-            return p.min { abs($0.z) < abs($1.z) }!.y
+            return Float(p.min { abs($0.z) < abs($1.z) }!.y)
         }
         let held = drop(edges: true)
         let fell = drop(edges: false)
@@ -83,7 +83,7 @@ struct SoftEdgeCollisionTests {
         func drop(edges: Bool, dynamicRod: Bool = false) -> (Float, World, BodyID) {
             let world = lowGroundWorld()
             var rodDef = BodyDef()
-            rodDef.position = Vec3(0, 1, 0)
+            rodDef.position = Pos(0, 1, 0)
             if dynamicRod {
                 rodDef.type = .dynamicBody
                 rodDef.gravityScale = 0
@@ -92,7 +92,7 @@ struct SoftEdgeCollisionTests {
             _ = world.createCapsuleShape(rod, ShapeDef(), Capsule(center1: Vec3(0, 0, -2), center2: Vec3(0, 0, 2), radius: 0.01))
             // Vertices at x = +-0.125, +-0.375: the rod at x = 0 passes between them.
             var cloth = SoftBodyDef(settings: SoftBodySettings.makeCloth(columns: 8, rows: 8, spacing: 0.25),
-                                    position: Vec3(0, 2.5, 0))
+                                    position: Pos(0, Float(2.5), 0))
             cloth.enableEdgeCollision = edges
             cloth.friction = 0.6
             let id = world.createSoftBody(cloth)
@@ -117,13 +117,13 @@ struct SoftEdgeCollisionTests {
         func simulate(_ workers: Int32) -> [Pos] {
             let world = lowGroundWorld(workers: workers)
             var rodDef = BodyDef()
-            rodDef.position = Vec3(0, 0.5, 0)
+            rodDef.position = Pos(0, Float(0.5), 0)
             _ = world.createCapsuleShape(world.createBody(rodDef), ShapeDef(),
                                          Capsule(center1: Vec3(-3, 0, 0), center2: Vec3(3, 0, 0), radius: 0.02))
             var ids: [SoftBodyID] = []
             for k in 0..<4 {
                 var def = SoftBodyDef(settings: makeStrip(columns: 3, columnSpacing: 0.08, rows: 12, rowSpacing: 0.15),
-                                      position: Vec3(0.4 * Float(k) - 0.6, 1 + 0.3 * Float(k), 0),
+                                      position: Pos(0.4 * Float(k) - 0.6, 1 + 0.3 * Float(k), 0),
                                       rotation: makeQuatFromAxisAngle(.axisY, 0.7 * Float(k)))
                 def.enableSelfCollision = true
                 ids.append(world.createSoftBody(def))

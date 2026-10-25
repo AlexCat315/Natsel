@@ -27,7 +27,7 @@ struct BounceTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(0, 3.0, 0)
+        def.position = Pos(0, Float(3.0), 0)
         let ball = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000
@@ -43,14 +43,14 @@ struct BounceTests {
         var w = world.bodyAngularVelocity(ball)
 
         var h: UInt64 = 14_695_981_039_346_656_037
-        h = fnv(h, &transform.p, 12)
+        h = fnv(h, &transform.p, MemoryLayout<Pos>.size)
         h = fnv(h, &transform.q, 16)
         h = fnv(h, &v, 12)
         h = fnv(h, &w, 12)
 
         print("BOUNCE p \(transform.p.y) v \(v.y) hash \(String(h, radix: 16))")
-        #expect(h == 0xffee_0af1_588c_ad6e)
-        #expect(transform.p.y.bitPattern == 0x3f82_e893)
+        #expect(h == 0xfe95ed71ec4d2c55)
+        #expect(Float(transform.p.y).bitPattern == 0x3f82e891)
         #expect(v.y.bitPattern == 0xbfde_ac09)
     }
 }

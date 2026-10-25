@@ -28,7 +28,7 @@ struct StackTests {
         for i in 0..<3 {
             def = BodyDef()
             def.type = .dynamicBody
-            def.position = Vec3(0, 0.55 + Float(i) * 1.05, 0)
+            def.position = Pos(0, 0.55 + Float(i) * 1.05, 0)
             let box = world.createBody(def)
             shapeDef = ShapeDef()
             shapeDef.density = 1000
@@ -45,7 +45,7 @@ struct StackTests {
             var transform = world.bodyTransform(id)
             var v = world.bodyLinearVelocity(id)
             var w = world.bodyAngularVelocity(id)
-            h = fnv(h, &transform.p, 12)
+            h = fnv(h, &transform.p, MemoryLayout<Pos>.size)
             h = fnv(h, &transform.q, 16)
             h = fnv(h, &v, 12)
             h = fnv(h, &w, 12)
@@ -87,11 +87,11 @@ struct StackTests {
 
         print("STACK bodyhash \(String(h, radix: 16)) contacts \(count) chash \(String(ch, radix: 16))")
         #expect(count == 3)
-        #expect(ch == 0x859d_3f6d_763d_edd0)
-        #expect(h == 0x2677_a7fa_2518_0758)
+        #expect(ch == 0x3b5f182b45a9977a)
+        #expect(h == 0x8992527b78b1c587)
 
         let p1 = world.bodyTransform(boxes[1]).p
-        #expect(p1.x.bitPattern == 0x3df2_af57)
-        #expect(p1.y.bitPattern == 0x4000_551a)
+        #expect(Float(p1.x).bitPattern == 0x3df298e1)
+        #expect(Float(p1.y).bitPattern == 0x4000555c)
     }
 }

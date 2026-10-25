@@ -12,7 +12,7 @@ private struct Rig {
         ground = world.createBody(BodyDef())
         var def = BodyDef()
         def.type = .dynamicBody
-        def.position = offset
+        def.position = Pos(offset)
         body = world.createBody(def)
         _ = world.createHullShape(body, ShapeDef(), makeBoxHull(0.2, 0.1, 0.1))
     }
@@ -23,7 +23,7 @@ private struct Rig {
         def.base.bodyIdA = ground
         def.base.bodyIdB = body
         def.base.localFrameA = .identity
-        def.base.localFrameB = Transform(-world.bodyPosition(body), .identity)
+        def.base.localFrameB = Transform(subPos(.zero, world.bodyPosition(body)), .identity)
         configure(&def)
         return world.createSixDOFJoint(def)
     }

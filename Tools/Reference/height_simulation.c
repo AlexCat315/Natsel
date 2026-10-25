@@ -41,7 +41,7 @@ int main(void) {
         for(int step=0;step<180;++step) {
             b3World_Step(worldId,1.0f/60.0f,4);
             b3WorldTransform xf=b3Body_GetTransform(body);
-            bodies=Vector(bodies,xf.p); bodies=Vector(bodies,xf.q.v); bodies=Scalar(bodies,xf.q.s);
+            bodies=Position(bodies,xf.p); bodies=Vector(bodies,xf.q.v); bodies=Scalar(bodies,xf.q.s);
             bodies=Vector(bodies,b3Body_GetLinearVelocity(body)); bodies=Vector(bodies,b3Body_GetAngularVelocity(body));
             contacts=Contacts(contacts,b3GetWorldFromId(worldId));
             if((step+1)%30==0) printf("scenario %d step %d bodies 0x%016llx contacts 0x%016llx\n",scenario,step+1,(unsigned long long)bodies,(unsigned long long)contacts);

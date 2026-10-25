@@ -9,17 +9,17 @@ struct BodyTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Vec3(1, 2, 3)
+        def.position = Pos(1, 2, 3)
         let s1 = world.createBody(def)
 
         def = BodyDef()
         def.type = .kinematicBody
-        def.position = Vec3(0, 1, 0)
+        def.position = Pos(0, 1, 0)
         let k1 = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(1, 2, 3)
+        def.position = Pos(1, 2, 3)
         def.rotation = makeQuatFromAxisAngle(Vec3(0, 0, 1), 0.5)
         def.linearVelocity = Vec3(0.5, -1.25, 2)
         def.angularVelocity = Vec3(0.1, 0.2, -0.3)
@@ -30,13 +30,13 @@ struct BodyTests {
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(-2, 0, 0)
+        def.position = Pos(-2, 0, 0)
         def.isAwake = false
         let d2 = world.createBody(def)
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(5, 5, 5)
+        def.position = Pos(5, 5, 5)
         def.isEnabled = false
         let d3 = world.createBody(def)
 
@@ -62,7 +62,7 @@ struct BodyTests {
         #expect(body.islandId == B3.nullIndex)
         #expect(body.flags == 0x0000_6000)
         var sim = world.bodySimFor(s1)
-        #expect(sim.transform.p == Vec3(1, 2, 3))
+        #expect(sim.transform.p == Pos(1, 2, 3))
         #expect(sim.transform.q.s.bitPattern == 0x3f80_0000)
         #expect(sim.center.x == 1)
         #expect(sim.invMass == 0)
@@ -102,7 +102,7 @@ struct BodyTests {
         #expect(body.islandId == B3.nullIndex)
 
         // Forces
-        world.applyBodyForce(d1, Vec3(10, 20, 30), Vec3(1.5, 2.5, 3.5), false)
+        world.applyBodyForce(d1, Vec3(10, 20, 30), Pos(Float(1.5), Float(2.5), Float(3.5)), false)
         world.applyBodyTorque(d1, Vec3(1, -2, 3), false)
         sim = world.bodySimFor(d1)
         #expect(sim.force.x.bitPattern == 0x4120_0000)
@@ -110,15 +110,15 @@ struct BodyTests {
         #expect(sim.torque.z.bitPattern == 0x4100_0000)
 
         // Impulse
-        world.applyBodyLinearImpulse(d1, Vec3(1, 2, 3), Vec3(1.5, 2.5, 3.5), false)
+        world.applyBodyLinearImpulse(d1, Vec3(1, 2, 3), Pos(Float(1.5), Float(2.5), Float(3.5)), false)
         #expect(world.bodyLinearVelocity(d1).x.bitPattern == 0x3f00_0000)
         #expect(world.bodyLinearVelocity(d1).y.bitPattern == 0xbfa0_0000)
         #expect(world.bodyAngularVelocity(d1).x.bitPattern == 0x3dcc_cccd)
 
         // Transform
-        world.setBodyTransform(d1, Vec3(4, 5, 6), Quat.identity)
+        world.setBodyTransform(d1, Pos(4, 5, 6), Quat.identity)
         sim = world.bodySimFor(d1)
-        #expect(sim.transform.p == Vec3(4, 5, 6))
+        #expect(sim.transform.p == Pos(4, 5, 6))
         #expect(sim.transform.q.s.bitPattern == 0x3f80_0000)
         #expect(sim.center == Pos(4, 5, 6))
 
@@ -136,9 +136,9 @@ struct BodyTests {
         #expect(got.inertia.cy.y.bitPattern == 0x4000_0000)
 
         let center = world.bodyWorldCenter(d1)
-        #expect(center.x.bitPattern == 0x4083_3333)
-        #expect(center.y.bitPattern == 0x40a6_6666)
-        #expect(center.z.bitPattern == 0x40c9_999a)
+        #expect(Float(center.x).bitPattern == 0x4083_3333)
+        #expect(Float(center.y).bitPattern == 0x40a6_6666)
+        #expect(Float(center.z).bitPattern == 0x40c9_999a)
 
         let inverse = world.bodyWorldInverseRotationalInertia(d1)
         #expect(inverse.cx.x.bitPattern == 0x3f80_0000)

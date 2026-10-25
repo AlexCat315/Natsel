@@ -15,13 +15,13 @@ extension World {
     ) -> SoftBodyRayResult {
         var best = SoftBodyRayResult()
         var input = RayCastInput()
-        input.origin = origin
         input.translation = translation
         input.maxFraction = 1
         for i in softBodies.indices where softBodies[i].id != B3.nullIndex {
             let record = softBodies[i]
             guard shouldQueryCollide(record.filter, filter) else { continue }
             input.maxFraction = best.fraction
+            input.origin = subPos(origin, record.origin)
             guard rayCastAABB(record.bounds, input) else { continue }
             let hit = rayCastSoftBodyRecord(record, origin, translation, maxFraction: best.fraction)
             if hit.hit && hit.fraction < best.fraction {
@@ -38,19 +38,41 @@ extension World {
         var result = SoftBodyRayResult()
         result.fraction = maxFraction
         let doubleSided = record.facesDoubleSided
+        let localOrigin = subPos(origin, record.origin)
+        var tree: DynamicTree?
+        if enableSoftBodyQueryAcceleration && record.settings.faces.count >= 32 {
+            if let cached = softBodyRayCaches[record.id], cached.generation == record.generation,
+                cached.revision == record.spatialRevision {
+                tree = cached.tree
+            } else {
+                let cache = SoftBodyRayCache(record)
+                softBodyRayCaches[record.id] = cache
+                tree = cache.tree
+            }
+        }
         record.positions.withUnsafeBufferPointer { x in
-            for (f, face) in record.settings.faces.enumerated() {
+            func testFace(_ f: Int) {
+                let face = record.settings.faces[f]
                 let a = x[Int(face.vertex.x)]
                 let b = x[Int(face.vertex.y)]
                 let c = x[Int(face.vertex.z)]
-                guard let (t, normal) = rayTriangle(origin, translation, a, b, c, doubleSided: doubleSided),
-                    t < result.fraction
-                else { continue }
+                guard let (t, normal) = rayTriangle(localOrigin, translation, a, b, c, doubleSided: doubleSided),
+                    t < result.fraction || (result.hit && t == result.fraction && Int32(f) < result.faceIndex)
+                else { return }
                 result.hit = true
                 result.fraction = t
                 result.faceIndex = Int32(f)
                 result.normal = normal
                 result.point = mulAdd(origin, t, translation)
+            }
+            if let tree {
+                let input = RayCastInput(origin: localOrigin, translation: translation, maxFraction: maxFraction)
+                _ = tree.rayCast(input, maskBits: .max) { _, _, data in
+                    testFace(Int(data))
+                    return result.fraction
+                }
+            } else {
+                for f in record.settings.faces.indices { testFace(f) }
             }
         }
         return result

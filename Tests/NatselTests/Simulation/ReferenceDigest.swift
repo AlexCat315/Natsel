@@ -2,6 +2,11 @@
 
 struct PhysicsReferenceDigest {
     var value: UInt64 = 14695981039346656037
+    mutating func add(_ value: Pos) {
+        for scalar in [value.x, value.y, value.z] {
+            add(UInt32(truncatingIfNeeded: scalar.bitPattern)); add(UInt32(truncatingIfNeeded: scalar.bitPattern >> 32))
+        }
+    }
     mutating func add(_ word: UInt32) {
         for byte in 0..<4 {
             value ^= UInt64((word >> (8 * byte)) & 255)

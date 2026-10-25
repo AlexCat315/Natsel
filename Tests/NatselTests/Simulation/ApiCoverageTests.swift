@@ -110,13 +110,13 @@ struct ApiCoverageTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Pos(0, -0.5, 0)
+        def.position = Pos(0, Float(-0.5), 0)
         let ground = world.createBody(def)
         _ = world.createHullShape(ground, ShapeDef(), makeBoxHull(10, 0.5, 10))
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Pos(0, 0.5, 0)
+        def.position = Pos(0, Float(0.5), 0)
         let box = world.createBody(def)
         var shapeDef = ShapeDef()
         shapeDef.density = 1000

@@ -4,7 +4,7 @@ import Testing
 private func disk(_ world: World, _ position: Vec3, _ radius: Float) -> BodyID {
     var def = BodyDef()
     def.type = .dynamicBody
-    def.position = position
+    def.position = Pos(position)
     let body = world.createBody(def)
     _ = world.createCapsuleShape(body, ShapeDef(), Capsule(center1: Vec3(0, 0, -0.05), center2: Vec3(0, 0, 0.05), radius: radius))
     return body
@@ -15,7 +15,7 @@ private func hinge(_ world: World, _ ground: BodyID, _ body: BodyID, motorSpeed:
     var def = RevoluteJointDef()
     def.base.bodyIdA = ground
     def.base.bodyIdB = body
-    def.base.localFrameA = Transform(world.bodyPosition(body), .identity)
+    def.base.localFrameA = Transform(subPos(world.bodyPosition(body), .zero), .identity)
     def.base.localFrameB = Transform(Vec3(), .identity)
     if let motorSpeed {
         def.enableMotor = true
@@ -83,7 +83,7 @@ struct CouplingJointTests {
 
         var bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0, -0.4, 0)
+        bodyDef.position = Pos(0, Float(-0.4), 0)
         let rack = world.createBody(bodyDef)
         _ = world.createHullShape(rack, ShapeDef(), makeBoxHull(2, 0.1, 0.1))
         var slide = PrismaticJointDef()
@@ -108,7 +108,7 @@ struct CouplingJointTests {
         }
         let translation = world.bodyPosition(rack).x
         #expect(angle.angle > 3)
-        #expect(abs(translation - 0.25 * angle.angle) < 0.01)
+        #expect(abs(translation - Double(0.25 * angle.angle)) < 0.01)
         #expect(abs(world.bodyPosition(rack).y + 0.4) < 1.0e-3)
     }
 
@@ -119,7 +119,7 @@ struct CouplingJointTests {
         func box(_ x: Float, _ density: Float) -> BodyID {
             var def = BodyDef()
             def.type = .dynamicBody
-            def.position = Vec3(x, 0, 0)
+            def.position = Pos(x, 0, 0)
             let body = world.createBody(def)
             var shapeDef = ShapeDef()
             shapeDef.density = density
@@ -134,8 +134,8 @@ struct CouplingJointTests {
         def.base.bodyIdB = heavy
         def.base.localFrameA = Transform(Vec3(0, 0.2, 0), .identity)
         def.base.localFrameB = Transform(Vec3(0, 0.2, 0), .identity)
-        def.groundAnchorA = Vec3(-1, 3, 0)
-        def.groundAnchorB = Vec3(1, 3, 0)
+        def.groundAnchorA = Pos(-1, 3, 0)
+        def.groundAnchorB = Pos(1, 3, 0)
         def.ratio = 1
         def.base.collideConnected = true
         let pulley = world.createPulleyJoint(def)
@@ -150,7 +150,7 @@ struct CouplingJointTests {
         #expect(world.bodyPosition(light).y > 0.5)
         // Expected acceleration (m2 - m1) / (m1 + m2) g = g / 3.
         let expected = 0.5 * (10.0 / 3.0) * 1.0
-        #expect(abs(world.bodyPosition(light).y - Float(expected)) < 0.1)
+        #expect(abs(world.bodyPosition(light).y - Double(expected)) < 0.1)
         #expect(world.jointConstraintForce(pulley).map { length($0) > 0 } == true)
 
         // Slack rope: the light box falls freely until the rope tightens again.

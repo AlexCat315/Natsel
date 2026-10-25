@@ -105,7 +105,7 @@ struct ContactUpdateTests {
         for p in positions {
             def = BodyDef()
             def.type = .dynamicBody
-            def.position = p
+            def.position = Pos(p)
             let body = world.createBody(def)
 
             shapeDef = ShapeDef()
@@ -116,7 +116,7 @@ struct ContactUpdateTests {
         // Dynamic hull box sitting on the ground and touching sphere A.
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Vec3(-0.9, 0.9, 0)
+        def.position = Pos(Float(-0.9), Float(0.9), 0)
         let boxBody = world.createBody(def)
         shapeDef = ShapeDef()
         shapeDef.density = 1000

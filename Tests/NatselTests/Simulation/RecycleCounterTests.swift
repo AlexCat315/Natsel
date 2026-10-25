@@ -20,14 +20,14 @@ struct RecycleCounterTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Pos(0, -0.5, 0)
+        def.position = Pos(0, Float(-0.5), 0)
         let ground = world.createBody(def)
         var shapeDef = ShapeDef()
         _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
 
         def = BodyDef()
         def.type = .dynamicBody
-        def.position = Pos(0, 0.5, 0)
+        def.position = Pos(0, Float(0.5), 0)
         let box = world.createBody(def)
         shapeDef.enableSpeculativeContact = enableSpeculative
         _ = world.createHullShape(box, shapeDef, makeBoxHull(0.5, 0.5, 0.5))
@@ -59,7 +59,7 @@ struct RecycleCounterTests {
 
         var def = BodyDef()
         def.type = .staticBody
-        def.position = Pos(0, -0.5, 0)
+        def.position = Pos(0, Float(-0.5), 0)
         let ground = world.createBody(def)
         var shapeDef = ShapeDef()
         _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
@@ -81,7 +81,7 @@ struct RecycleCounterTests {
         for _ in 0..<30 {
             world.step(1.0 / 60.0, subStepCount: 4)
             let p = world.bodyTransform(body).p
-            minSeparation = minFloat(minSeparation, p.y - radius)
+            minSeparation = minFloat(minSeparation, Float(p.y) - radius)
         }
 
         // The sphere must stay out of the ground within the linear slop.

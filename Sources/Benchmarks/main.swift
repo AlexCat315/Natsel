@@ -30,6 +30,8 @@ var benchmarks: [Benchmark] = [
     Benchmark(name: "path_beads", create: createPathBeads, step: nil, destroy: nil, totalStepCount: 300),
     Benchmark(name: "ragdoll_motors", create: createRagdollMotors, step: stepRagdollMotors, destroy: destroyRagdollMotors, totalStepCount: 300),
     Benchmark(name: "rollback", create: createRollback, step: stepRollback, destroy: destroyRollback, totalStepCount: 200),
+    Benchmark(name: "soft_queries", create: createSoftQueries, step: stepSoftQueries, destroy: destroySoftQueries, totalStepCount: 30),
+    Benchmark(name: "sparse_soft", create: createSparseSoftBodies, step: nil, destroy: nil, totalStepCount: 100),
 ]
 
 var singleBenchmark: Int = -1

@@ -5,7 +5,7 @@ private func groundWorld(workers: Int32 = 1) -> World {
     let world = World()
     world.workerCount = workers
     var def = BodyDef()
-    def.position = Vec3(0, -1, 0)
+    def.position = Pos(0, -1, 0)
     _ = world.createHullShape(world.createBody(def), ShapeDef(), makeBoxHull(20, 1, 20))
     return world
 }
@@ -43,7 +43,7 @@ private func minimumSelfDistance(_ world: World, _ id: SoftBodyID) -> Float {
 /// A long strip hanging above the ground: it folds onto itself as it lands.
 private func dropStrip(_ world: World, selfCollision: Bool) -> SoftBodyID {
     var def = SoftBodyDef(settings: SoftBodySettings.makeCloth(columns: 5, rows: 36, spacing: 0.05),
-                          position: Vec3(0, 1.0, 0), rotation: makeQuatFromAxisAngle(.axisX, 0.5 * Float.pi))
+                          position: Pos(0, Float(1.0), 0), rotation: makeQuatFromAxisAngle(.axisX, 0.5 * Float.pi))
     def.enableSelfCollision = selfCollision
     def.iterationCount = 8
     def.friction = 0.5
@@ -92,17 +92,17 @@ struct SoftContactTests {
         func run(_ collide: Bool) -> (Float, Float) {
             let world = groundWorld()
             var bottom = SoftBodyDef(settings: SoftBodySettings.makeCloth(columns: 12, rows: 12, spacing: 0.1),
-                                     position: Vec3(0, 0.05, 0))
+                                     position: Pos(0, Float(0.05), 0))
             bottom.collideWithSoftBodies = collide
             let lower = world.createSoftBody(bottom)
             var top = SoftBodyDef(settings: SoftBodySettings.makeCloth(columns: 8, rows: 8, spacing: 0.1),
-                                  position: Vec3(0.05, 0.6, 0.05))
+                                  position: Pos(Float(0.05), Float(0.6), Float(0.05)))
             top.collideWithSoftBodies = collide
             let upper = world.createSoftBody(top)
             for _ in 0..<120 { world.step(1.0 / 60.0, subStepCount: 4) }
             let average = { (id: SoftBodyID) -> Float in
                 let p = world.softBodyVertexPositions(id)
-                return p.reduce(0) { $0 + $1.y } / Float(p.count)
+                return p.reduce(0) { $0 + Float($1.y) } / Float(p.count)
             }
             return (average(upper) - average(lower), world.softBodyCollisionThickness(upper))
         }
@@ -116,11 +116,11 @@ struct SoftContactTests {
     func ropes() {
         let world = groundWorld()
         var lower = SoftBodyDef(settings: SoftBodySettings.makeRope(count: 30, spacing: 0.05, pinned: false),
-                                position: Vec3(0, 0.05, 0.7), rotation: makeQuatFromAxisAngle(.axisX, 0.5 * Float.pi))
+                                position: Pos(0, Float(0.05), Float(0.7)), rotation: makeQuatFromAxisAngle(.axisX, 0.5 * Float.pi))
         lower.collisionThickness = 0.04
         let a = world.createSoftBody(lower)
         var upper = SoftBodyDef(settings: SoftBodySettings.makeRope(count: 30, spacing: 0.05, pinned: false),
-                                position: Vec3(-0.7, 0.4, 0), rotation: makeQuatFromAxisAngle(.axisZ, 0.5 * Float.pi))
+                                position: Pos(Float(-0.7), Float(0.4), 0), rotation: makeQuatFromAxisAngle(.axisZ, 0.5 * Float.pi))
         upper.collisionThickness = 0.04
         let b = world.createSoftBody(upper)
         for _ in 0..<120 { world.step(1.0 / 60.0, subStepCount: 4) }
@@ -137,7 +137,7 @@ struct SoftContactTests {
             var ids: [SoftBodyID] = []
             for k in 0..<4 {
                 var def = SoftBodyDef(settings: SoftBodySettings.makeCloth(columns: 10, rows: 10, spacing: 0.1),
-                                      position: Vec3(Float(k / 2) * 3, 0.3 + 0.4 * Float(k % 2), 0))
+                                      position: Pos(Float(k / 2) * 3, 0.3 + 0.4 * Float(k % 2), 0))
                 def.enableSelfCollision = k == 0
                 ids.append(world.createSoftBody(def))
             }
@@ -155,11 +155,11 @@ struct SoftContactTests {
     func waking() {
         let world = groundWorld()
         let resting = world.createSoftBody(SoftBodyDef(
-            settings: SoftBodySettings.makeCloth(columns: 8, rows: 8, spacing: 0.1), position: Vec3(0, 0.02, 0)))
+            settings: SoftBodySettings.makeCloth(columns: 8, rows: 8, spacing: 0.1), position: Pos(0, Float(0.02), 0)))
         for _ in 0..<120 { world.step(1.0 / 60.0, subStepCount: 4) }
         #expect(world.softBodyIsAwake(resting) == false)
         let falling = world.createSoftBody(SoftBodyDef(
-            settings: SoftBodySettings.makeCloth(columns: 6, rows: 6, spacing: 0.1), position: Vec3(0, 1, 0)))
+            settings: SoftBodySettings.makeCloth(columns: 6, rows: 6, spacing: 0.1), position: Pos(0, 1, 0)))
         var woke = false
         for _ in 0..<60 {
             world.step(1.0 / 60.0, subStepCount: 4)

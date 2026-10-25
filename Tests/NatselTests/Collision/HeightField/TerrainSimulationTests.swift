@@ -9,7 +9,7 @@ struct HeightFieldSimulationTests {
         world.enableSleep = scenario >= 36
         var bodyDef = BodyDef()
         bodyDef.rotation = makeQuatFromAxisAngle(.axisY, 0.2)
-        bodyDef.position = Vec3(-2.25, 0, -1.25)
+        bodyDef.position = Pos(Float(-2.25), 0, Float(-1.25))
         let ground = world.createBody(bodyDef)
         let field = try #require(referenceHeightField((scenario % 18) / 3))
         var shapeDef = ShapeDef()
@@ -24,7 +24,7 @@ struct HeightFieldSimulationTests {
         _ = world.createHeightFieldShape(ground, shapeDef, field)
         bodyDef = BodyDef()
         bodyDef.type = .dynamicBody
-        bodyDef.position = Vec3(0.13, 2, 0.17)
+        bodyDef.position = Pos(Float(0.13), 2, Float(0.17))
         bodyDef.rotation = makeQuatFromAxisAngle(.axisY, 0.3)
         bodyDef.linearVelocity = Vec3(0.35, -0.1, 0.2)
         bodyDef.angularVelocity = Vec3(0.1, 0.2, 0.15)

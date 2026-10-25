@@ -27,7 +27,7 @@ struct RagdollDeterminismTests {
         func bits(_ f: Float) -> String { String(format: "%08X", f.bitPattern) }
         for (b, bone) in human.bones.enumerated() {
             let xf = world.bodyTransform(bone.bodyId)
-            print("HUM \(b) \(bits(xf.p.x)) \(bits(xf.p.y)) \(bits(xf.p.z)) \(bits(xf.q.v.x)) \(bits(xf.q.v.y)) \(bits(xf.q.v.z)) \(bits(xf.q.s))")
+            print("HUM \(b) \(String(Float(xf.p.x).bitPattern, radix: 16)) \(String(Float(xf.p.y).bitPattern, radix: 16)) \(String(Float(xf.p.z).bitPattern, radix: 16)) \(bits(xf.q.v.x)) \(bits(xf.q.v.y)) \(bits(xf.q.v.z)) \(bits(xf.q.s))")
         }
     }
 
@@ -40,14 +40,14 @@ struct RagdollDeterminismTests {
         var p = Pos(-13 + 15 * 0.5, 15, -15 + 15 * 0.5)
         for i in 0..<2 {
             createHuman(&humans[i], world, p, 5, 1, 0.7, 0, nil, false)
-            p.x += sep
+            p.x += Double(sep)
         }
         for _ in 0..<n { world.step(1.0 / 60.0, subStepCount: 4) }
         func bits(_ f: Float) -> String { String(format: "%08X", f.bitPattern) }
         for (h, human) in humans.enumerated() {
             for (b, bone) in human.bones.enumerated() {
                 let xf = world.bodyTransform(bone.bodyId)
-                print("HUM2 \(h) \(b) \(bits(xf.p.x)) \(bits(xf.p.y)) \(bits(xf.p.z)) \(bits(xf.q.v.x)) \(bits(xf.q.v.y)) \(bits(xf.q.v.z)) \(bits(xf.q.s))")
+                print("HUM2 \(h) \(b) \(String(Float(xf.p.x).bitPattern, radix: 16)) \(String(Float(xf.p.y).bitPattern, radix: 16)) \(String(Float(xf.p.z).bitPattern, radix: 16)) \(bits(xf.q.v.x)) \(bits(xf.q.v.y)) \(bits(xf.q.v.z)) \(bits(xf.q.s))")
             }
         }
     }
@@ -149,7 +149,7 @@ struct RagdollDeterminismTests {
             for (k, human) in group.humans.enumerated() {
                 for (b, bone) in human.bones.enumerated() {
                     let xf = world.bodyTransform(bone.bodyId)
-                    print("RAG \(g) \(k) \(b) \(bits(xf.p.x)) \(bits(xf.p.y)) \(bits(xf.p.z)) \(bits(xf.q.v.x)) \(bits(xf.q.v.y)) \(bits(xf.q.v.z)) \(bits(xf.q.s))")
+                    print("RAG \(g) \(k) \(b) \(String(Float(xf.p.x).bitPattern, radix: 16)) \(String(Float(xf.p.y).bitPattern, radix: 16)) \(String(Float(xf.p.z).bitPattern, radix: 16)) \(bits(xf.q.v.x)) \(bits(xf.q.v.y)) \(bits(xf.q.v.z)) \(bits(xf.q.s))")
                 }
             }
         }
@@ -185,8 +185,8 @@ struct RagdollDeterminismTests {
         }
 
         #expect(done)
-        #expect(sleepStep == 291)
-        #expect(hash == 0xFF4C_605B)
+        #expect(sleepStep == 263)
+        #expect(hash == 0xA542_3F98)
     }
 
     private struct Group {
@@ -215,10 +215,10 @@ struct RagdollDeterminismTests {
         var bodyDef = BodyDef()
         let shapeDef = ShapeDef()
         var data = FallingRagdollData(groups: [], gridMesh: gridMesh, torusMesh: torusMesh)
-        bodyDef.position.x = -0.5 * span + 0.5 * Self.gridSize
+        bodyDef.position.x = Double(-0.5 * span + 0.5 * Self.gridSize)
 
         for i in 0..<Self.gridCount {
-            bodyDef.position.z = -0.5 * span + 0.5 * Self.gridSize
+            bodyDef.position.z = Double(-0.5 * span + 0.5 * Self.gridSize)
             for j in 0..<Self.gridCount {
                 let body = world.createBody(bodyDef)
                 _ = world.createMeshShape(body, shapeDef, gridMesh)
@@ -239,9 +239,9 @@ struct RagdollDeterminismTests {
                 }
                 data.groups.append(group)
 
-                bodyDef.position.z += Self.gridSize
+                bodyDef.position.z += Double(Self.gridSize)
             }
-            bodyDef.position.x += Self.gridSize
+            bodyDef.position.x += Double(Self.gridSize)
         }
 
         return data
