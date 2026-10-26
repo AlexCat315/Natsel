@@ -192,8 +192,10 @@ final class B3Thread: @unchecked Sendable {
             if let name = start.name, !name.isEmpty {
                 #if canImport(Darwin)
                 pthread_setname_np(String(name.prefix(15)))
-                #else
+                #elseif canImport(Bionic)
                 pthread_setname_np(pthread_self(), String(name.prefix(15)))
+                #else
+                Thread.current.name = String(name.prefix(15))
                 #endif
             }
             start.function()
