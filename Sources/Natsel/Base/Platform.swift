@@ -4,8 +4,13 @@ internal import Darwin
 internal import Glibc
 #elseif canImport(Musl)
 internal import Musl
+#elseif canImport(Bionic)
+internal import Bionic
+#elseif os(Windows)
+internal import WinSDK
 #endif
 internal import Dispatch
+private import Foundation
 import Synchronization
 
 // MARK: - Timer
@@ -14,6 +19,8 @@ import Synchronization
 public func getTicks() -> UInt64 {
     #if canImport(Darwin)
     return mach_absolute_time()
+    #elseif os(Windows)
+    return DispatchTime.now().uptimeNanoseconds
     #else
     var ts = timespec()
     clock_gettime(CLOCK_MONOTONIC, &ts)
@@ -48,15 +55,23 @@ public func getMillisecondsAndReset(_ ticks: inout UInt64) -> Float {
 
 /// Yield to be used in a busy loop.
 public func yieldThread() {
+    #if os(Windows)
+    _ = SwitchToThread()
+    #else
     sched_yield()
+    #endif
 }
 
 /// Sleep the current thread for a number of milliseconds.
 public func sleepThread(_ milliseconds: Int32) {
+    #if os(Windows)
+    Sleep(DWORD(max(0, milliseconds)))
+    #else
     var ts = timespec()
     ts.tv_sec = Int(milliseconds / 1000)
     ts.tv_nsec = Int(milliseconds % 1000) * 1_000_000
     nanosleep(&ts, nil)
+    #endif
 }
 
 // MARK: - Processor topology
@@ -75,13 +90,20 @@ let performanceCoreCount: Int = {
     }
     return 1
     #else
-    return max(1, Int(sysconf(Int32(_SC_NPROCESSORS_ONLN))))
+    return max(1, ProcessInfo.processInfo.activeProcessorCount)
     #endif
 }()
 
 // MARK: - Threading primitives
 
 final class B3Mutex: @unchecked Sendable {
+    #if os(Windows)
+    private var mutex = SRWLOCK()
+
+    init() { InitializeSRWLock(&mutex) }
+    func lock() { AcquireSRWLockExclusive(&mutex) }
+    func unlock() { ReleaseSRWLockExclusive(&mutex) }
+    #else
     private let mutex: UnsafeMutablePointer<pthread_mutex_t>
 
     init() {
@@ -102,6 +124,7 @@ final class B3Mutex: @unchecked Sendable {
     func unlock() {
         pthread_mutex_unlock(mutex)
     }
+    #endif
 }
 
 final class B3Semaphore: @unchecked Sendable {
@@ -141,7 +164,9 @@ final class B3Thread: @unchecked Sendable {
         }
     }
 
-    #if canImport(Darwin)
+    #if os(Windows)
+    private var thread: HANDLE?
+    #elseif canImport(Darwin)
     private var thread: pthread_t?
     #else
     private var thread = pthread_t()
@@ -150,22 +175,43 @@ final class B3Thread: @unchecked Sendable {
     /// Name may be nil, otherwise it is copied.
     init(name: String?, _ function: @escaping () -> Void) {
         let start = Unmanaged.passRetained(Start(function: function, name: name)).toOpaque()
+        #if os(Windows)
+        thread = CreateThread(nil, 0, { param in
+            let start = Unmanaged<Start>.fromOpaque(param!).takeRetainedValue()
+            start.function()
+            return 0
+        }, start, 0, nil)
+        if thread == nil {
+            Unmanaged<Start>.fromOpaque(start).release()
+            preconditionFailure("Could not create physics worker thread")
+        }
+        #else
         pthread_create(&thread, nil, { param in
-            let start = Unmanaged<Start>.fromOpaque(param).takeRetainedValue()
+            let parameter: UnsafeMutableRawPointer? = param
+            let start = Unmanaged<Start>.fromOpaque(parameter!).takeRetainedValue()
             if let name = start.name, !name.isEmpty {
                 #if canImport(Darwin)
                 pthread_setname_np(String(name.prefix(15)))
-                #else
+                #elseif canImport(Bionic)
                 pthread_setname_np(pthread_self(), String(name.prefix(15)))
+                #else
+                Thread.current.name = String(name.prefix(15))
                 #endif
             }
             start.function()
             return nil
         }, start)
+        #endif
     }
 
     func join() {
-        #if canImport(Darwin)
+        #if os(Windows)
+        if let thread {
+            _ = WaitForSingleObject(thread, DWORD.max)
+            _ = CloseHandle(thread)
+            self.thread = nil
+        }
+        #elseif canImport(Darwin)
         if let thread {
             pthread_join(thread, nil)
         }

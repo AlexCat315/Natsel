@@ -548,10 +548,12 @@ extension World {
         // Each pair fills its own list; the lists are joined in pair order, so the result does not
         // depend on the threads.
         let shared = data
+        let sharedPairs = pairs
+        let sharedEdgePairs = edgePairs
         nonisolated(unsafe) let records = records
         var lists = [[SoftContact]](repeating: [], count: pairs.count)
-        func detect(_ k: Int, _ list: inout [SoftContact], sourceRange: Range<Int>? = nil) {
-            let pair = pairs[k]
+        @Sendable func detect(_ k: Int, _ list: inout [SoftContact], sourceRange: Range<Int>? = nil) {
+            let pair = sharedPairs[k]
             let p = records + group[pair.slotP]
             let t = records + group[pair.slotT]
             let friction = (p.pointee.friction * t.pointee.friction).squareRoot()
@@ -585,8 +587,8 @@ extension World {
         for list in lists { contacts.append(contentsOf: list) }
 
         var edgeLists = [[SoftEdgeContact]](repeating: [], count: edgePairs.count)
-        func detectEdges(_ k: Int, _ list: inout [SoftEdgeContact], sourceRange: Range<Int>? = nil) {
-            let pair = edgePairs[k]
+        @Sendable func detectEdges(_ k: Int, _ list: inout [SoftEdgeContact], sourceRange: Range<Int>? = nil) {
+            let pair = sharedEdgePairs[k]
             let p = records + group[pair.slotP]
             let t = records + group[pair.slotT]
             let friction = (p.pointee.friction * t.pointee.friction).squareRoot()

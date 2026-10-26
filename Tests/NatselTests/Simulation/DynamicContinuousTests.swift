@@ -155,4 +155,34 @@ struct DynamicContinuousTests {
         }
         #expect(run(1) == run(4))
     }
+
+    @Test("static CCD publishes transient impacts with contact flags and supports rollback")
+    func staticImpactEvents() {
+        let world = World()
+        world.gravity = .zero
+        world.hitEventThreshold = 1_000
+        let mover = ball(world, -3, 360, bullet: true)
+        let target = ball(world, 0, 0, bullet: false, type: .staticBody)
+        let moverShape = world.makeShapeID(world.body(mover).headShapeId)
+        let targetShape = world.makeShapeID(world.body(target).headShapeId)
+        world.enableShapeContactEvents(moverShape, true)
+        let initial = world.saveState()
+        world.step(1 / 60, subStepCount: 2)
+        let impacts = world.continuousImpacts()
+        #expect(impacts.count == 1)
+        #expect(impacts.first?.shapeIdA == targetShape)
+        #expect(impacts.first?.shapeIdB == moverShape)
+        #expect((impacts.first?.normal.x ?? 0) < -0.9)
+        #expect((impacts.first?.approachSpeed ?? 0) > 350)
+        #expect(world.bodyPosition(mover).x < 0)
+        #expect(world.contactEvents().hitEvents.isEmpty)
+        let withImpact = world.saveState()
+        #expect(world.restoreState(initial))
+        #expect(world.continuousImpacts().isEmpty)
+        #expect(world.restoreState(withImpact))
+        #expect(world.continuousImpacts() == impacts)
+        world.step(0)
+        #expect(world.continuousImpacts().isEmpty)
+        #expect(impacts.count == 1)
+    }
 }

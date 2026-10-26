@@ -121,15 +121,19 @@ extension World {
                                workerSatHits.withUnsafeMutableBufferPointer { satHitsBuffer in
                                 contacts.withUnsafeMutableBufferPointer { contactBuffer in
                                     contactIndices.withUnsafeBufferPointer { indexBuffer in
-                                        let bitBase = bitBuffer.baseAddress!
-                                        let recycledBase = recycledBuffer.baseAddress!
-                                        let satCallsBase = satCallsBuffer.baseAddress!
-                                        let satHitsBase = satHitsBuffer.baseAddress!
-                                        let contactBase = contactBuffer.baseAddress!
+                                        nonisolated(unsafe) let world = self
+                                        nonisolated(unsafe) let awakeSims = awakeSims
+                                        nonisolated(unsafe) let staticSims = staticSims
+                                        nonisolated(unsafe) let fat = fat
+                                        nonisolated(unsafe) let bitBase = bitBuffer.baseAddress!
+                                        nonisolated(unsafe) let recycledBase = recycledBuffer.baseAddress!
+                                        nonisolated(unsafe) let satCallsBase = satCallsBuffer.baseAddress!
+                                        nonisolated(unsafe) let satHitsBase = satHitsBuffer.baseAddress!
+                                        nonisolated(unsafe) let contactBase = contactBuffer.baseAddress!
                                         // Read the count here: inside the workers `contacts` is
                                         // still borrowed for writing by this closure.
                                         let contactCount = contactBuffer.count
-                                        let indexBase = indexBuffer.baseAddress!
+                                        nonisolated(unsafe) let indexBase = indexBuffer.baseAddress!
                                         let indexCount = indexBuffer.count
                                         DispatchQueue.concurrentPerform(iterations: Int(workers)) { w in
                                             let start = w * chunk
@@ -142,7 +146,7 @@ extension World {
                                             var localScratch = MeshContactScratch()
                                             withUnsafeMutablePointer(to: &localScratch) { scratch in
                                                 for i in start..<end {
-                                                    collideOneContact(
+                                                    world.collideOneContact(
                                                         indexBase[i], &bitBase[w], store: &localStore,
                                                         &recycledCount, scratch, awakeSims, staticSims, fat)
                                                 }

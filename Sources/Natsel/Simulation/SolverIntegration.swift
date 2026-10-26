@@ -556,6 +556,7 @@ extension World {
         sensorBeginEvents.removeAll()
         contactBeginEvents.removeAll()
         contactHitEvents.removeAll()
+        continuousImpactEvents.removeAll(keepingCapacity: true)
 
         updateBroadPhasePairs()
         profile.pairs = getMillisecondsAndReset(&ticks)

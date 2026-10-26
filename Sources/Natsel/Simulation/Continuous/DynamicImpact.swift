@@ -170,7 +170,8 @@ extension World {
                 }
                 let shapeA = shapes[Int(a.shape)]
                 let shapeB = shapes[Int(b.shape)]
-                if -approach > hitEventThreshold && ((shapeA.flags | shapeB.flags) & ShapeFlags.enableHitEvents.rawValue) != 0 {
+                let flags = shapeA.flags | shapeB.flags
+                if flags & (ShapeFlags.enableContactEvents.rawValue | ShapeFlags.enableHitEvents.rawValue) != 0 {
                     var event = ContactHitEvent()
                     event.shapeIdA = makeShapeID(a.shape)
                     event.shapeIdB = makeShapeID(b.shape)
@@ -179,7 +180,10 @@ extension World {
                     event.approachSpeed = -approach
                     event.userMaterialIdA = materialA.userMaterialId
                     event.userMaterialIdB = materialB.userMaterialId
-                    contactHitEvents.append(event)
+                    continuousImpactEvents.append(event)
+                    if -approach > hitEventThreshold && flags & ShapeFlags.enableHitEvents.rawValue != 0 {
+                        contactHitEvents.append(event)
+                    }
                 }
             }
             for (mover, other, n) in [(a, b, normal), (b, a, -normal)]

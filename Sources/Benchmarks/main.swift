@@ -2,6 +2,16 @@
 
 import Foundation
 import Natsel
+private import Dispatch
+#if os(Windows)
+private import ucrt
+#elseif canImport(Glibc)
+private import Glibc
+#elseif canImport(Musl)
+private import Musl
+#elseif canImport(Bionic)
+private import Bionic
+#endif
 
 struct Benchmark {
     let name: String
