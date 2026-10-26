@@ -94,6 +94,49 @@ func createCloth(_ world: World) {
 
 // MARK: - soft_cubes
 
+/// GuavaStudio's 64x64 cloth acceptance scene, with its authored vertex order and self collision.
+nonisolated(unsafe) private var selfCollidingCloth64: (World, SoftBodyID)?
+
+func createSelfCollidingCloth64(_ world: World) {
+    world.gravity = Vec3(0, -9.81, 0)
+    var settings = SoftBodySettings()
+    for z in 0..<64 {
+        for x in 0..<64 {
+            settings.vertices.append(SoftBodyVertex(position: Vec3((Float(x) - 31.5) * 0.05, 0, (Float(z) - 31.5) * 0.05),
+                invMass: z == 0 ? 0 : 20))
+        }
+    }
+    for z in 0..<63 {
+        for x in 0..<63 {
+            let a = UInt32(z * 64 + x), b = a + 64, c = b + 1, d = a + 1
+            settings.faces.append(SoftBodyFace(a, b, c))
+            settings.faces.append(SoftBodyFace(a, c, d))
+        }
+    }
+    settings.createConstraints([SoftBodyVertexAttributes(compliance: 1.0e-5, shearCompliance: 1.0e-5, bendCompliance: 1.0e-5)], bendType: .distance)
+    settings.calculateRestValues()
+    var def = SoftBodyDef(settings: settings, position: Pos(0, 8, 0))
+    def.iterationCount = 5
+    def.linearDamping = 0.05
+    def.vertexRadius = 0.02
+    def.maxLinearVelocity = 500
+    def.enableSleep = false
+    def.enableSelfCollision = true
+    def.facesDoubleSided = true
+    selfCollidingCloth64 = (world, world.createSoftBody(def))
+}
+
+func destroySelfCollidingCloth64() {
+    if recordHash, let (world, id) = selfCollidingCloth64 {
+        var hash: UInt64 = 0xcbf29ce484222325
+        for p in world.softBodyVertexPositions(id) {
+            for bits in [p.x.bitPattern, p.y.bitPattern, p.z.bitPattern] { hash = (hash ^ bits) &* 0x100000001b3 }
+        }
+        print("cloth_positions_hash: \(String(hash, radix: 16))")
+    }
+    selfCollidingCloth64 = nil
+}
+
 /// 27 volumetric cubes dropped in a pile.
 func createSoftCubes(_ world: World) {
     let ground = world.createBody(BodyDef())

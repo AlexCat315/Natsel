@@ -137,6 +137,28 @@ struct SoftEdgeCollisionTests {
             $0.x.bitPattern == $1.x.bitPattern && $0.y.bitPattern == $1.y.bitPattern && $0.z.bitPattern == $1.z.bitPattern
         })
     }
+
+    @Test("one large self-colliding cloth is bit identical with chunked contact detection")
+    func singleClothWorkers() {
+        func simulate(_ workers: Int32) -> [Pos] {
+            let world = lowGroundWorld(workers: workers)
+            var def = SoftBodyDef(settings: makeStrip(columns: 24, columnSpacing: 0.05, rows: 24, rowSpacing: 0.05,
+                pinned: { _, row in row == 0 }), position: Pos(0, 1.5, 0))
+            def.enableSelfCollision = true
+            def.enableSleep = false
+            def.vertexRadius = 0.02
+            let id = world.createSoftBody(def)
+            run(world, 60)
+            return world.softBodyVertexPositions(id)
+        }
+        let serial = simulate(1)
+        for workers: Int32 in [2, 4, 8] {
+            let parallel = simulate(workers)
+            #expect(zip(serial, parallel).allSatisfy {
+                $0.x.bitPattern == $1.x.bitPattern && $0.y.bitPattern == $1.y.bitPattern && $0.z.bitPattern == $1.z.bitPattern
+            })
+        }
+    }
 }
 
 /// A cloth with separate column and row spacing, in the xz plane centered on the origin.

@@ -495,3 +495,33 @@ NATSEL_WORKERS=1 .build/release/Benchmarks --benchmark=sparse_soft --repeats=3
 
 完整时间、校验值和二进制 SHA-256 保存在 `Tools/Benchmarks/Results/quality-2026-10-26.json`。
 本轮的碰撞边界、接口和剩余限制见 `PORTING.md` 的 “Collision quality and spatial indexing”。
+
+## 大型布料自碰撞（2026-10-26）
+
+当前按独立引擎方向优化：旧 C 哈希用于诊断，同版本、不同 worker 数的确定性和物理质量仍需通过测试。
+面与边的扫掠包围盒改用可重拟合 BVH，避免跨多个网格单元重复插入和排序；静止邻域排除缓存用于
+提前剪枝。大型单软体的候选检测可按源顶点/边分段并行，按固定段序合并，约束求解顺序保持一致。
+
+Apple M1 / macOS arm64 / Swift 6.4.1，Release，`cloth_self64`。该场景按原始顶点顺序创建
+64×64 布料，固定一行、开启自碰撞，5 次软体迭代，每次世界步进为 1/60 秒、4 个刚体子步。
+先预热 60 步，再测量 180 步。优化前单 worker 测一次；优化后各 worker 配置测三次，表中为
+三次运行各自 P95 的中位数，不是每步平均耗时。
+
+| 版本 / workers | 步进 P95 | 相对优化前 |
+| --- | ---: | ---: |
+| 优化前 / 1 | 39.302 ms | 1× |
+| 优化后 / 1 | 15.178 ms | 2.59× |
+| 优化后 / 4 | 8.476 ms | 4.64× |
+| 优化后 / 7 | 6.321 ms | 6.22× |
+
+所有运行最终顶点位置校验值均为 `772246b7f26de325`；软体专用校验值由 `NATSEL_HASH=1` 输出。
+原 `worldStateHash` 不覆盖纯软体顶点，不能用于此场景的结果验证。完整 518 项测试通过，其中
+新增单布料在 1/2/4/8 workers 下顶点逐位一致的回归检查。该场景尚未达到 GuavaStudio 为
+120 FPS 分配的 1 ms 完整物理 CPU 预算；这里没有测量游戏逻辑或渲染，不能据此保证整帧帧率。
+
+```sh
+swift build -c release --product Benchmarks
+NATSEL_WORKERS=1 NATSEL_HASH=1 .build/release/Benchmarks --benchmark=cloth_self64 --repeats=3 --record-steps
+NATSEL_WORKERS=4 NATSEL_HASH=1 .build/release/Benchmarks --benchmark=cloth_self64 --repeats=3 --record-steps
+NATSEL_WORKERS=7 NATSEL_HASH=1 .build/release/Benchmarks --benchmark=cloth_self64 --repeats=3 --record-steps
+```

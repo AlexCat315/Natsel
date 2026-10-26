@@ -9,6 +9,7 @@ struct Benchmark {
     let step: ((World, Int) -> Void)?
     let destroy: (() -> Void)?
     let totalStepCount: Int
+    var warmupStepCount: Int = 1
 }
 
 var benchmarks: [Benchmark] = [
@@ -25,6 +26,7 @@ var benchmarks: [Benchmark] = [
     Benchmark(name: "paddle", create: createPaddle, step: nil, destroy: nil, totalStepCount: 50),
     Benchmark(name: "vehicles", create: createVehicles, step: stepVehicles, destroy: destroyVehicles, totalStepCount: 600),
     Benchmark(name: "cloth", create: createCloth, step: nil, destroy: nil, totalStepCount: 300),
+    Benchmark(name: "cloth_self64", create: createSelfCollidingCloth64, step: nil, destroy: destroySelfCollidingCloth64, totalStepCount: 240, warmupStepCount: 60),
     Benchmark(name: "soft_cubes", create: createSoftCubes, step: nil, destroy: nil, totalStepCount: 300),
     Benchmark(name: "cloth_stack", create: createClothStack, step: nil, destroy: nil, totalStepCount: 300),
     Benchmark(name: "path_beads", create: createPathBeads, step: nil, destroy: nil, totalStepCount: 300),
@@ -84,6 +86,7 @@ for (index, benchmark) in benchmarks.enumerated() {
     print("benchmark: \(benchmark.name), steps = \(stepCount)")
 
     var minTime = Double.greatestFiniteMagnitude
+    var measuredWorkerCount: Int32 = 1
 
     for runIndex in 0..<runCount {
         let world = World()
@@ -93,6 +96,7 @@ for (index, benchmark) in benchmarks.enumerated() {
         if let workers = benchmarkEnvironment["NATSEL_WORKERS"].flatMap(Int32.init) {
             world.workerCount = workers
         }
+        measuredWorkerCount = world.workerCount
         if benchmarkEnvironment["NATSEL_CCD"] == "0" {
             world.enableContinuous = false
         }
@@ -102,19 +106,23 @@ for (index, benchmark) in benchmarks.enumerated() {
         }
         if traceSteps { print("create \(String(world.worldStateHash(), radix: 16)) bodies \(world.bodyCount)") }
 
-        if benchmark.step != nil {
-            benchmark.step!(world, 0)
+        let warmupCount = max(1, min(stepCount, benchmark.warmupStepCount))
+        for stepIndex in 0..<warmupCount {
+            benchmark.step?(world, stepIndex)
+            world.step(1.0 / 60.0, subStepCount: 4)
         }
 
-        world.step(1.0 / 60.0, subStepCount: 4)
-
         var acc = Profile()
+        var stepSamples: [UInt64] = []
+        if recordSteps { stepSamples.reserveCapacity(stepCount - warmupCount) }
         let start = DispatchTime.now().uptimeNanoseconds
-        for stepIndex in 1..<stepCount {
+        for stepIndex in warmupCount..<stepCount {
             if benchmark.step != nil {
                 benchmark.step!(world, stepIndex)
             }
+            let stepStarted = recordSteps ? DispatchTime.now().uptimeNanoseconds : 0
             world.step(1.0 / 60.0, subStepCount: 4)
+            if recordSteps { stepSamples.append(DispatchTime.now().uptimeNanoseconds - stepStarted) }
             meshTraceEnabled = meshTraceStep == stepIndex + 1
             if traceSteps { print("step \(stepIndex) \(String(world.worldStateHash(), radix: 16))") }
             if dumpStep == stepIndex {
@@ -131,7 +139,7 @@ for (index, benchmark) in benchmarks.enumerated() {
             acc.sleepIslands += pr.sleepIslands; acc.constraints += pr.constraints; acc.restitution += pr.restitution; acc.refit += pr.refit; acc.bullets += pr.bullets; acc.step += pr.step
         }
         let end = DispatchTime.now().uptimeNanoseconds
-        let n = Float(stepCount - 1)
+        let n = Float(max(1, stepCount - warmupCount))
         if recordPhases {
             print(String(format: "AVG %@ step=%.3f pairs=%.3f collide=%.3f prepare=%.3f warm=%.3f push=%.3f solve=%.3f store=%.3f intV=%.3f intP=%.3f finalize=%.2f hit=%.2f sleep=%.2f restit=%.2f refit=%.2f bullets=%.2f",
                 benchmark.name, acc.step/n, acc.pairs/n, acc.collide/n, acc.prepareConstraints/n, acc.warmStart/n,
@@ -146,6 +154,13 @@ for (index, benchmark) in benchmarks.enumerated() {
             print("PHASE steps=\(stepCount) pairs=\(p.pairs) collide=\(p.collide) prepare=\(p.prepareConstraints) warm=\(p.warmStart) push=\(p.solveImpulses) solve=\(p.relaxImpulses) store=\(p.storeImpulses) intVel=\(p.integrateVelocities) intPos=\(p.integratePositions) substeps=\(p.constraints) hit=\(p.hitEvents) jnt=\(p.jointEvents) finalize=\(p.transforms) refit=\(p.refit) sleep=\(p.sleepIslands) total=\(ms)")
         }
         print("run \(runIndex) : \(ms) (ms)")
+        if recordSteps, !stepSamples.isEmpty {
+            stepSamples.sort()
+            func percentile(_ fraction: Double) -> Double {
+                Double(stepSamples[Int(Double(stepSamples.count - 1) * fraction)]) / 1_000_000
+            }
+            print(String(format: "step_ms p50=%.3f p95=%.3f p99=%.3f", percentile(0.50), percentile(0.95), percentile(0.99)))
+        }
         fflush(nil)
         minTime = Swift.min(minTime, ms)
 
@@ -161,7 +176,7 @@ for (index, benchmark) in benchmarks.enumerated() {
     let counters = worldCounters
     print("body \(counters.body) / shape \(counters.shape) / contact \(counters.contact)")
     print("")
-    print("\(benchmark.name).csv: threads,ms 1,\(minTime)")
+    print("\(benchmark.name).csv: threads,ms \(measuredWorkerCount),\(minTime)")
 }
 
 print("======================================")

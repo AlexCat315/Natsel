@@ -216,6 +216,8 @@ struct SoftBodyRecord {
     var excludedFaces: [Int32] = []
     var excludedEdgeStarts: [Int32] = []
     var excludedEdges: [Int32] = []
+    var contactFaceTree = SoftContactTree()
+    var contactEdgeTree = SoftContactTree()
     var selfExclusionDistance: Float = 0
     /// Contact history: the side of each vertex-face pair this body touched last step, keyed by
     /// `softContactKey`.
