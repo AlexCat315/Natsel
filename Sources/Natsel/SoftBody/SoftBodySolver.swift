@@ -42,7 +42,10 @@ extension World {
                     }
                 }
             } else {
-                for group in singles { simulateSoftBodyGroup(records, group, dt, gravity, parallel: false) }
+                for group in singles {
+                    let detectionWorkers = singles.count == 1 && records[group[0]].vertexCount >= 512 ? workers : 1
+                    simulateSoftBodyGroup(records, group, dt, gravity, parallel: false, detectionWorkers: detectionWorkers)
+                }
             }
             for group in clusters {
                 let work = group.reduce(0) { $0 + records[$1].vertexCount }
@@ -61,7 +64,8 @@ extension World {
     /// between the constraints and the rigid body collisions. Runs on any thread; touches only the
     /// group's records.
     func simulateSoftBodyGroup(
-        _ records: UnsafeMutablePointer<SoftBodyRecord>, _ group: [Int], _ dt: Float, _ gravity: Vec3, parallel: Bool
+        _ records: UnsafeMutablePointer<SoftBodyRecord>, _ group: [Int], _ dt: Float, _ gravity: Vec3, parallel: Bool,
+        detectionWorkers: Int = 1
     ) {
         nonisolated(unsafe) let records = records
         nonisolated(unsafe) let world = self
@@ -89,7 +93,7 @@ extension World {
         var edgeContacts: [SoftEdgeContact] = []
         let needsContacts = group.count > 1 || records[group[0]].enableSelfCollision
         if needsContacts {
-            detectSoftContacts(records, group, dt, &contacts, &edgeContacts, parallel: parallel)
+            detectSoftContacts(records, group, dt, &contacts, &edgeContacts, parallel: parallel, detectionWorkers: detectionWorkers)
         } else {
             records[group[0]].faceSides.removeAll(keepingCapacity: true)
         }

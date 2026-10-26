@@ -1,8 +1,16 @@
-# Natsel porting notes
+# Natsel development and porting notes
 
-Natsel is a Swift port of the Box3D C physics engine. The goal is algorithmic parity with the C
-sources (including floating-point operation order) so the determinism hashes from
-`test/test_determinism.c` can be reproduced.
+## Current development direction
+
+Natsel is developed as an independent physics engine. Compatibility with the old C reference
+and prior-version state hashes is a diagnostic, not a requirement for every optimization.
+Intentional changes to floating-point evaluation or solver order may change those hashes.
+The hard requirements are repeatability within the same version/configuration, worker-count
+determinism, and independently tested collision, constraint, conservation, and replay quality.
+Document intentional compatibility changes together with their performance and quality results.
+
+The porting rules below describe the original C-compatible implementation and remain useful
+when working on paths whose exact compatibility is still being measured.
 
 ## Platform and style
 
@@ -13,7 +21,7 @@ sources (including floating-point operation order) so the determinism hashes fro
 - Internal C-isms keep their original names (`b3Assert`, `b3Validate`, `b3Alloc`, `hash64NonZero`)
   so the ported code reads against the C sources.
 
-## Determinism rules
+## Original C-parity rules
 
 - Preserve operand order. `dot(a, b)` is always `a.x*b.x + a.y*b.y + a.z*b.z` (left associative),
   matching both `b3Dot` and `b3DotW4`.
