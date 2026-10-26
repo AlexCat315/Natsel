@@ -10,6 +10,7 @@ final class ContinuousContext {
     var base = Pos()
     var sweep = Sweep()
     var fraction: Float = 1
+    var impact: (surface: Int32, mover: Int32, output: TOIOutput)?
 
     var sensorHits: [(sensorId: Int32, visitorId: Int32, fraction: Float)] = []
     var distanceIterations: Int32 = 0
@@ -145,6 +146,7 @@ extension World {
             }
         } else if 0 < output.fraction && output.fraction < context.fraction {
             context.fraction = output.fraction
+            context.impact = (shapeId, fastShapeIdValue, output)
             context.distanceIterations = maxInt(
                 context.distanceIterations, output.distanceIterations
             )
@@ -209,6 +211,7 @@ extension World {
         context.base = base
         context.sweep = sweep
         context.fraction = 1
+        context.impact = nil
         context.sensorHits.removeAll(keepingCapacity: true)
         context.distanceIterations = 0
         context.pushBackIterations = 0
@@ -309,6 +312,32 @@ extension World {
             dv.z = (fastBodyState.flags & BodyFlags.lockLinearZ.rawValue) != 0 ? 0 : dv.z
             fastBodyState.linearVelocity = v + dv
             states[Int(bodySimIndex)] = fastBodyState
+
+            if let impact = context.impact {
+                let a = shapes[Int(impact.surface)], b = shapes[Int(impact.mover)]
+                let flags = a.flags | b.flags
+                if flags & (ShapeFlags.enableContactEvents.rawValue | ShapeFlags.enableHitEvents.rawValue) != 0 {
+                    let point = offsetPos(base, impact.output.point)
+                    let other = bodies[Int(a.bodyId)]
+                    let otherSim = other.setIndex == SetType.awakeSet.rawValue
+                        ? sims[Int(other.localIndex)] : solverSets[Int(other.setIndex)].bodySims[Int(other.localIndex)]
+                    let otherState = other.setIndex == SetType.awakeSet.rawValue ? states[Int(other.localIndex)] : BodyState()
+                    let va = otherState.linearVelocity + cross(otherState.angularVelocity, subPos(point, otherSim.center))
+                    let vb = fastBodyState.linearVelocity + cross(fastBodyState.angularVelocity, subPos(point, center))
+                    var event = ContactHitEvent()
+                    event.shapeIdA = makeShapeID(impact.surface)
+                    event.shapeIdB = makeShapeID(impact.mover)
+                    event.point = point
+                    event.normal = impact.output.normal
+                    event.approachSpeed = max(0, -dot(vb - va, event.normal))
+                    event.userMaterialIdA = a.material(0).userMaterialId
+                    event.userMaterialIdB = b.material(0).userMaterialId
+                    continuousImpactEvents.append(event)
+                    if event.approachSpeed > hitEventThreshold && flags & ShapeFlags.enableHitEvents.rawValue != 0 {
+                        contactHitEvents.append(event)
+                    }
+                }
+            }
 
             // The move event was written before CCD, so correct it with the impact pose
             if bodySimIndex < bodyMoveEvents.count {

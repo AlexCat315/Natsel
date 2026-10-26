@@ -1,0 +1,25 @@
+name: Natsel platform tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2025-vs2026]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: SwiftyLab/setup-swift@v1.14.1
+        with:
+          swift-version: '6.4.1'
+      - name: Test native engine and benchmark build
+        run: swift test

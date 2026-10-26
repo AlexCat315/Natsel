@@ -70,7 +70,7 @@ extension World {
         nonisolated(unsafe) let records = records
         nonisolated(unsafe) let world = self
         /// Run per body work, on the workers when allowed. Bodies only touch their own records.
-        func forEachBody(_ body: @escaping (Int, Int) -> Void) {
+        func forEachBody(_ body: @escaping @Sendable (Int, Int) -> Void) {
             if parallel {
                 group.withUnsafeBufferPointer { list in
                     nonisolated(unsafe) let list = list

@@ -2,6 +2,12 @@
 internal import Darwin
 #elseif canImport(Glibc)
 internal import Glibc
+#elseif canImport(Musl)
+internal import Musl
+#elseif canImport(Bionic)
+internal import Bionic
+#elseif os(Windows)
+internal import ucrt
 #endif
 
 // MARK: - Hull storage

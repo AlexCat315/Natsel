@@ -144,6 +144,7 @@ public final class WorldState {
     fileprivate var contactBeginEvents: [ContactBeginTouchEvent] = []
     fileprivate var contactEndEvents = EndEventBuffer<ContactEndTouchEvent>()
     fileprivate var contactHitEvents: [ContactHitEvent] = []
+    fileprivate var continuousImpactEvents: [ContactHitEvent] = []
     fileprivate var jointEvents: [JointEvent] = []
 
     // Step scalars.
@@ -275,6 +276,7 @@ extension World {
         state.contactBeginEvents = contactBeginEvents
         state.contactEndEvents = contactEndEvents
         state.contactHitEvents = contactHitEvents
+        state.continuousImpactEvents = continuousImpactEvents
         state.jointEvents = jointEvents
 
         state.inv_h = inv_h
@@ -360,6 +362,7 @@ extension World {
         contactBeginEvents = state.contactBeginEvents
         contactEndEvents = state.contactEndEvents
         contactHitEvents = state.contactHitEvents
+        continuousImpactEvents = state.continuousImpactEvents
         jointEvents = state.jointEvents
 
         stepIndex = state.stepIndex

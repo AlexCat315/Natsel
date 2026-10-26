@@ -1,5 +1,7 @@
 import Builtin
+#if canImport(simd)
 private import simd
+#endif
 
 // 4-wide solver types (simd_wide.h, contact_solver_wide.inl).
 //
@@ -147,8 +149,20 @@ struct FloatW: @unchecked Sendable {
 @inline(__always) func transpose4(
     _ a: FloatW, _ b: FloatW, _ c: FloatW, _ d: FloatW
 ) -> (FloatW, FloatW, FloatW, FloatW) {
+    #if canImport(simd)
     let t = simd_transpose(simd_float4x4(a.simd, b.simd, c.simd, d.simd))
     return (FloatW(t.columns.0), FloatW(t.columns.1), FloatW(t.columns.2), FloatW(t.columns.3))
+    #else
+    return portableTranspose4(a, b, c, d)
+    #endif
+}
+
+/// Lane-only transpose for platforms without Apple's simd matrix module.
+@inline(__always) func portableTranspose4(
+    _ a: FloatW, _ b: FloatW, _ c: FloatW, _ d: FloatW
+) -> (FloatW, FloatW, FloatW, FloatW) {
+    (FloatW(a.x, b.x, c.x, d.x), FloatW(a.y, b.y, c.y, d.y),
+     FloatW(a.z, b.z, c.z, d.z), FloatW(a.w, b.w, c.w, d.w))
 }
 
 /// Four 3-vectors, one per lane. `x`, `y`, and `z` each hold four lanes.

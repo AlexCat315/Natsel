@@ -21,6 +21,15 @@ when working on paths whose exact compatibility is still being measured.
 - Internal C-isms keep their original names (`b3Assert`, `b3Validate`, `b3Alloc`, `hash64NonZero`)
   so the ported code reads against the C sources.
 
+The platform layer uses POSIX primitives on Unix/Android and native Windows locks and threads.
+Platforms without Apple's `simd` module use a lane-preserving portable wide transpose.
+Dispatch callbacks explicitly describe their Sendable captures and disjoint buffer access.
+
+`World.continuousImpacts()` exposes transient CCD impacts requested by contact/hit event flags,
+including impacts resolved before a persistent manifold exists. It is independent of the hit-speed
+threshold, resets each step, and participates in save/restore. Ordinary begin/end contact semantics
+are unchanged. Static CCD also supplies thresholded hit events, matching moving-pair CCD.
+
 ## Original C-parity rules
 
 - Preserve operand order. `dot(a, b)` is always `a.x*b.x + a.y*b.y + a.z*b.z` (left associative),

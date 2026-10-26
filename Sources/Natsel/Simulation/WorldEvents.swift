@@ -36,6 +36,10 @@ extension World {
         }
     }
 
+    /// Transient CCD impacts from the last step, including impacts resolved before a persistent
+    /// contact exists. Requested by contact/hit event flags and independent of hitEventThreshold.
+    public func continuousImpacts() -> [ContactHitEvent] { continuousImpactEvents }
+
     /// The number of contacts in the world that are touching.
     public func touchingContactCount() -> Int32 {
         Int32(contacts.reduce(0) { count, contact in

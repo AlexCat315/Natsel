@@ -598,6 +598,7 @@ public final class World {
     var contactBeginEvents: [ContactBeginTouchEvent] = []
     var contactEndEvents = EndEventBuffer<ContactEndTouchEvent>()
     var contactHitEvents: [ContactHitEvent] = []
+    var continuousImpactEvents: [ContactHitEvent] = []
     var jointEvents: [JointEvent] = []
 
     /// Per-thread task storage.
