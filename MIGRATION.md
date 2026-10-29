@@ -24,7 +24,7 @@ Updated as batches land. "Lines" are source lines.
 | Containers | 10 | 1,110 | 11 | translated |
 | Types | 10 | 2,425 | 11 | translated |
 | Collision | 52 | 13,680 | 53 | translated |
-| Simulation | 63 | 24,647 | 25 | in progress (world, bodies, shapes, solver infra, joints A) |
+| Simulation | 63 | 24,647 | 31 | in progress (world, bodies, shapes, solver infra, joints A, mesh contact, debug draw) |
 | Character | 1 | 567 | 0 | **pending** |
 | Vehicle | 5 | 2,290 | 0 | **pending** |
 | Skeleton | 4 | 696 | 0 | **pending** |
@@ -54,9 +54,34 @@ Migrated core so far: 20,386 Rust lines across 97 files. Remaining Swift: ~34,00
   six_dof_joint, coupling_joints, world_state}.rs` (8,064 Rust lines). 25 of 63 simulation files
   done, 23 files in `src/simulation/`. No `todo!()`/`unimplemented!()` anywhere in the port so far.
   39,475 Rust lines total.
+- Batch 3b (mesh contact completion): `simulation/mesh_contact/{materials, persistence, triangles,
+  update}.rs` from the last four Swift `MeshContact` files (268 Swift lines, 268+ Rust lines).
+  29 of 63 simulation files done. `MeshTriangleManifold`/`MeshSurvivor` now exist as
+  `cache/reduction/selection` import them; `World::compute_mesh_manifolds` matches both landed call
+  sites (`contact_update.rs`, `compound_contact.rs`) with `material_indices: Option<&[u16]>`.
+  Swift's `ArraySlice<LocalManifoldPoint>` became the `Copy` pointer-view `MeshPointSlice`; the
+  scratch-arena stages pass owned `Vec`s between select → cluster → persist where Swift relied on
+  COW aliasing.
 - Agent sizing lesson: a single subagent tops out around 150 tool calls, which is roughly
   900–1,500 Swift lines of faithful translation. Batches are now capped at ~900 Swift lines and
   split one-file-per-agent when a file exceeds ~700 lines.
+- Batch 4 (debug draw): `simulation/world_debug_draw.rs` (901 Rust lines) and
+  `simulation/world_debug_draw_extras.rs` (166 Rust lines) from `WorldDebugDraw.swift` +
+  `WorldDebugDrawExtras.swift` (646 Swift lines). 31 of 63 simulation files done. The extras pass
+  assumes `vehicle::vehicle_types::VehicleID`, the `VehicleRecord`/`SoftBodyRecord` field shapes
+  recorded above, and `World::vehicle_wheel_transform` with Swift's default wheel axes passed
+  explicitly (the `world_mover.rs` precedent for defaulted Swift arguments).
+- Batch 4 (test scaffolding): `src/lib.rs` gained `#[cfg(test)] mod tests;`, and `src/tests/**/mod.rs`
+  was generated from the Swift test tree — 12 `mod.rs` files declaring all 134 test modules, one per
+  `Tests/NatselTests/**/*.swift`, with `world_position_assertions` the only `pub mod`.
+  `Tests/NatselTests/WorldPositionAssertions.swift` is ported to
+  `src/tests/world_position_assertions.rs`: `abs_float`, plus a single generic
+  `distance<A: IntoPos, B: IntoPos>` that replaces Swift's two `Pos`/`Vec3` overloads, so a call site
+  reads the same in both languages. `IntoPos` is the only new abstraction the port needs there.
+- Concurrency lesson: more than ~4 parallel translation subagents makes the model queue fail
+  ("Queuing failed") and the whole wave is lost. Batches 5+ dispatch at most 4 agents at a time and
+  verify landed files before starting the next wave. Shared briefs live in `.migration/test-agent-brief.md`
+  and `.migration/bench-agent-brief.md`.
 
 ## Known defects (baseline, to fix in the final build phase)
 
@@ -115,6 +140,9 @@ Foreign paths assumed before their file landed (the file must define exactly the
 `solver_prepare::{ContactPrepareItem, ContactPrepareViews, WideJointPrepareItem}`,
 `solver_stages::SolverViews`, `wide_joint_solver::SolverJointData`,
 `vehicle::vehicle_runtime::VehicleRecord`,
+`vehicle::vehicle_types::VehicleID`,
+`vehicle::vehicle_runtime::World::vehicle_wheel_transform` (Swift's default `wheelRight`/`wheelUp`
+axes are passed explicitly by the debug-draw caller),
 `soft_body::soft_body_runtime::SoftBodyRecord`,
 `soft_body::soft_body_ray_cache::SoftBodyRayCache`.
 
@@ -206,3 +234,27 @@ Foreign paths assumed before their file landed (the file must define exactly the
 - Every batch updates the Progress table and Batch log in this file.
 - Platform coverage stays complete: threading, prefetch, and time primitives in `base/platform.rs`
   keep aarch64, x86_64, and generic paths; nothing may be implemented only for one target.
+
+## Test translation conventions
+
+- `Tests/NatselTests/**/*.swift` → `src/tests/**/*.rs`, same relative path, snake_case file names.
+  The `mod.rs` tree is already generated; write only the leaf test files assigned to you.
+- The suite is inside the crate (`#[cfg(test)] mod tests;` in `src/lib.rs`), which replaces Swift's
+  `@testable import`: use `use crate::...` and reach `pub(crate)` items directly.
+- Swift Testing → built-in harness: `@Suite struct X` → `mod`-level grouping is already the file, so
+  each `@Test("name") func f()` becomes `#[test] fn f()` with the Swift name in snake_case and the
+  display string kept in a `// "…"` comment above it. `#expect(cond)` → `assert!(cond)`;
+  `#expect(a == b)` → `assert_eq!`; `#expect(throws: ..)` → `#[should_panic]` or an explicit
+  `catch_unwind` only where the Swift test asserted a throw; `Issue.record` → a `panic!` with the
+  same message.
+- Approximate comparisons keep the Swift tolerance exactly (`isApproximate` / epsilon arguments).
+- `World` is a Rust struct: `let world = World()` becomes `let mut world = World::default()` (check
+  the real constructor in `src/simulation/world_runtime.rs`), and every mutation the Swift test did
+  through the class reference becomes a `&mut` call. Same for `CharacterVirtual`, `Ragdoll` and
+  vehicles, which borrow the world (`&'w mut World`).
+- Shared helpers in `Tests/NatselTests/WorldPositionAssertions.swift` are `pub(crate)` in
+  `src/tests/world_position_assertions.rs`; other test files call them rather than redefining them.
+- Do not weaken a test to make it pass and do not delete a case. If a Swift assertion cannot hold
+  because the port changed semantics, keep the assertion and flag it in the report.
+- `Sources/Benchmarks/*.swift` → `src/bin/benchmarks.rs` plus `src/bin/benchmarks/{scenes,
+  feature_scenes,quality_scenes}.rs` (`mod scenes;` resolves into the `benchmarks/` directory).
