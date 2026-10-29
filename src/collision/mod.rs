@@ -13,6 +13,7 @@ pub mod height_field;
 pub mod hull;
 pub mod hull_builder;
 pub mod hull_mover;
+pub mod hull_queries;
 pub mod internal_math;
 pub mod manifold;
 pub mod mesh;

@@ -1,1 +1,3 @@
-//! Character mover plane solver.
+//! Mover helpers.
+
+pub mod plane_solver;

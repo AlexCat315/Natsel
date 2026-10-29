@@ -4,11 +4,13 @@ use std::sync::Arc;
 
 use crate::base::constants as b3;
 use crate::base::hash::hash64_non_zero;
+use crate::collision::geometry_storage::GeometryStorage;
 use crate::math::functions::*;
 use crate::math::types::{AABB, Transform, Vec3};
 use crate::types::geometry::{MeshTriangle, MeshNode};
 
 use super::build::{mesh_hash_inputs, prepare_mesh, MeshBuildOptions, PreparedMesh};
+use super::layout::{MeshData, MeshStorageLayout};
 
 #[derive(Clone)]
 struct MeshInner {
@@ -75,16 +77,107 @@ impl TriangleMesh {
             &prepared.materials,
             &prepared.flags,
         );
-        data.hash = hash64_non_zero(&hash_input, hash_input.len() as i32);
+        data.hash = hash64_non_zero(&hash_input);
 
+        Self::from_parts(
+            data,
+            prepared.vertices,
+            prepared.triangles,
+            prepared.nodes,
+            prepared.materials,
+            prepared.flags,
+        )
+    }
+
+    fn from_parts(
+        data: MeshData,
+        vertices: Vec<Vec3>,
+        triangles: Vec<MeshTriangle>,
+        nodes: Vec<MeshNode>,
+        materials: Vec<u8>,
+        flags: Vec<u8>,
+    ) -> Self {
         Self {
             inner: Arc::new(MeshInner { data }),
-            vertices: Arc::new(prepared.vertices),
-            triangles: Arc::new(prepared.triangles),
-            nodes: Arc::new(prepared.nodes),
-            materials: Arc::new(prepared.materials),
-            flags: Arc::new(prepared.flags),
+            vertices: Arc::new(vertices),
+            triangles: Arc::new(triangles),
+            nodes: Arc::new(nodes),
+            materials: Arc::new(materials),
+            flags: Arc::new(flags),
         }
+    }
+
+    /// Rebuild a triangle mesh from a serialized blob.
+    pub fn from_storage(storage: GeometryStorage) -> Option<Self> {
+        let data = unsafe { std::ptr::read_unaligned(storage.base() as *const MeshData) };
+        if data.version != b3::MESH_VERSION {
+            return None;
+        }
+        let byte_count = data.byte_count;
+        if byte_count < (std::mem::size_of::<MeshData>() as i32) || byte_count as usize > storage.byte_count() {
+            return None;
+        }
+        let region = |offset: i32, count: i32, stride: usize| -> bool {
+            offset >= 0
+                && count >= 0
+                && (offset as usize) + (count as usize) * stride <= byte_count as usize
+        };
+        if !region(data.node_offset, data.node_count, std::mem::size_of::<MeshNode>())
+            || !region(data.vertex_offset, data.vertex_count, std::mem::size_of::<Vec3>())
+            || !region(data.triangle_offset, data.triangle_count, std::mem::size_of::<MeshTriangle>())
+            || !region(data.material_offset, data.material_count, 1)
+            || !region(data.flags_offset, data.triangle_count, 1)
+        {
+            return None;
+        }
+
+        let nodes = unsafe {
+            storage
+                .slice_ref::<MeshNode>(data.node_offset as usize, data.node_count as usize)
+                .to_vec()
+        };
+        let vertices = unsafe {
+            storage
+                .slice_ref::<Vec3>(data.vertex_offset as usize, data.vertex_count as usize)
+                .to_vec()
+        };
+        let triangles = unsafe {
+            storage
+                .slice_ref::<MeshTriangle>(data.triangle_offset as usize, data.triangle_count as usize)
+                .to_vec()
+        };
+        let materials = unsafe {
+            storage
+                .slice_ref::<u8>(data.material_offset as usize, data.material_count as usize)
+                .to_vec()
+        };
+        let flags = unsafe {
+            storage
+                .slice_ref::<u8>(data.flags_offset as usize, data.triangle_count as usize)
+                .to_vec()
+        };
+
+        Some(Self::from_parts(data, vertices, triangles, nodes, materials, flags))
+    }
+
+    /// Serialize the mesh into a contiguous allocation layout.
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let layout = MeshStorageLayout::new(
+            self.nodes.len(),
+            self.vertices.len(),
+            self.triangles.len(),
+            self.inner.data.material_count as usize,
+        );
+        let mut bytes = vec![0u8; layout.byte_count];
+        unsafe {
+            std::ptr::write_unaligned(bytes.as_mut_ptr() as *mut MeshData, self.inner.data);
+            write_array(&mut bytes, layout.nodes, &self.nodes);
+            write_array(&mut bytes, layout.vertices, &self.vertices);
+            write_array(&mut bytes, layout.triangles, &self.triangles);
+            write_array(&mut bytes, layout.materials, &self.materials);
+            write_array(&mut bytes, layout.flags, &self.flags);
+        }
+        bytes
     }
 
     pub fn header(&self) -> &super::layout::MeshData {
@@ -147,6 +240,17 @@ impl TriangleMesh {
             self.vertices[t.index3 as usize],
         ]
     }
+}
+
+unsafe fn write_array<T>(bytes: &mut [u8], offset: usize, values: &[T]) {
+    if values.is_empty() {
+        return;
+    }
+    std::ptr::copy_nonoverlapping(
+        values.as_ptr() as *const u8,
+        bytes.as_mut_ptr().add(offset),
+        std::mem::size_of::<T>() * values.len(),
+    );
 }
 
 /// Compute the world AABB of a mesh instance.
