@@ -24,7 +24,7 @@ Updated as batches land. "Lines" are source lines.
 | Containers | 10 | 1,110 | 11 | translated |
 | Types | 10 | 2,425 | 11 | translated |
 | Collision | 52 | 13,680 | 53 | translated |
-| Simulation | 63 | 24,647 | 14 | in progress (world runtime + leaf types landed) |
+| Simulation | 63 | 24,647 | 25 | in progress (world, bodies, shapes, solver infra, joints A) |
 | Character | 1 | 567 | 0 | **pending** |
 | Vehicle | 5 | 2,290 | 0 | **pending** |
 | Skeleton | 4 | 696 | 0 | **pending** |
@@ -47,6 +47,16 @@ Migrated core so far: 20,386 Rust lines across 97 files. Remaining Swift: ~34,00
   `simulation/continuous/{impact, compound_impact}.rs`,
   `simulation/mesh_contact/{cache, reduction, selection}.rs` — 2,506 lines.
   14 of 63 simulation files done.
+- Batch 2 (solver infrastructure + bodies): `simulation/{body_api, body_queries, shape_runtime,
+  constraint_graph, solver_integration, solver_prepare, solver_set_ops, solver_stages}.rs`
+  (6,621 Rust lines). 20 of 63 simulation files done.
+- Batch 3 (joints A + snapshot): `simulation/{joint, path_joint, wheel_joint, parallel_joint,
+  six_dof_joint, coupling_joints, world_state}.rs` (8,064 Rust lines). 25 of 63 simulation files
+  done, 23 files in `src/simulation/`. No `todo!()`/`unimplemented!()` anywhere in the port so far.
+  39,475 Rust lines total.
+- Agent sizing lesson: a single subagent tops out around 150 tool calls, which is roughly
+  900–1,500 Swift lines of faithful translation. Batches are now capped at ~900 Swift lines and
+  split one-file-per-agent when a file exceeds ~700 lines.
 
 ## Known defects (baseline, to fix in the final build phase)
 

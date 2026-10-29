@@ -136,6 +136,23 @@ impl HashSet {
         self.items[index].key == key
     }
 
+    /// Prefetch the bucket a hashed key probes first.
+    ///
+    /// Swift reached into `pairSet.items! + Int(hash & (pairSet.capacity - 1))` directly from
+    /// `flushCandidatePairs`; `items` and `capacity` are private here, so the hint lives on the
+    /// set itself. Prefetch is a pure performance hint and reads no value, so results are
+    /// unchanged.
+    #[inline(always)]
+    pub fn prefetch_hash_slot(&self, hash: u32) {
+        if self.capacity == 0 {
+            return;
+        }
+        let index = (hash & (self.capacity - 1)) as usize;
+        // SAFETY: `index` is masked into `0..capacity` and `items.len() == capacity` for every
+        // constructed set, so the pointer is in bounds for the whole allocation.
+        unsafe { crate::base::platform::b3_prefetch(self.items.as_ptr().add(index)) };
+    }
+
     pub fn byte_count(&self) -> i32 {
         self.capacity as i32 * std::mem::size_of::<SetItem>() as i32
     }
