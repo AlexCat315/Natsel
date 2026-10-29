@@ -1,0 +1,29 @@
+[package]
+name = "natsel"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+description = "A deterministic 3D physics engine"
+
+[features]
+default = []
+validate = []
+
+[lib]
+name = "natsel"
+path = "src/lib.rs"
+
+[[bin]]
+name = "benchmarks"
+path = "src/bin/benchmarks.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+overflow-checks = false
+debug-assertions = false
+
+[profile.test]
+opt-level = 2
