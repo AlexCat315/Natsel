@@ -1,6 +1,6 @@
 
 
-// Joint solver pipeline and the distance joint (distance_joint.c).
+// Joint solver pipeline and the distance joint.
 
 extension World {
     /// Fetch the body sim for a body id from whatever set owns it.

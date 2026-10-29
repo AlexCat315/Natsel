@@ -28,13 +28,13 @@ public typealias AssertHandler = @Sendable (_ condition: String, _ fileName: Sta
 public typealias LogHandler = @Sendable (_ message: String) -> Void
 
 nonisolated(unsafe) private var assertHandler: AssertHandler = { condition, fileName, lineNumber in
-    print("BOX3D ASSERTION: \(condition), \(fileName), line \(lineNumber)")
+    print("NATSEL ASSERTION: \(condition), \(fileName), line \(lineNumber)")
     // return true to break to debugger
     return true
 }
 
 nonisolated(unsafe) private var logHandler: LogHandler = { message in
-    print("Box3D: \(message)")
+    print("Natsel: \(message)")
 }
 
 /// Override the default assert callback.

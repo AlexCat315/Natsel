@@ -79,7 +79,7 @@ func boundsOverlap(_ min1: Vec3, _ max1: Vec3, _ min2: Vec3, _ max2: Vec3) -> Bo
     return separation.x <= 0 && separation.y <= 0 && separation.z <= 0
 }
 
-/// Literal scalar form of simd.c's triangle/AABB separating-axis tests.
+/// Scalar triangle/AABB separating-axis tests.
 func boundsTriangleOverlap(_ center: Vec3, _ extent: Vec3, _ a: Vec3, _ b: Vec3, _ c: Vec3) -> Bool {
     let v1 = a - center
     let v2 = b - center

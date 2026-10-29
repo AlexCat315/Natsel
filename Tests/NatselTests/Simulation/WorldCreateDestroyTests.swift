@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// World lifecycle checks ported from test/test_world.c.
 @Suite("World create and destroy")
 struct WorldLifecycleTests {
     @Test("empty world steps without complaint")

@@ -1,6 +1,6 @@
 
 
-// Runtime shape data and geometry helpers (shape.c and the hull portion of hull.c).
+// Runtime shape data and geometry helpers.
 
 // MARK: - Shape flags
 
@@ -22,7 +22,7 @@ public struct ShapeFlags: OptionSet, Sendable, BitwiseCopyable {
 
 // MARK: - Geometry
 
-/// The geometry carried by a shape. This replaces the C union.
+/// The geometry carried by a shape.
 public enum ShapeGeometry: @unchecked Sendable {
     case sphere(Sphere)
     case capsule(Capsule)

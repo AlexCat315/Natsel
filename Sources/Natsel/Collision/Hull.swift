@@ -16,7 +16,7 @@ internal import ucrt
 ///
 /// A hull owns a single zeroed allocation holding the `HullData` header followed by the vertex,
 /// point, edge, face, structure-of-arrays, and edge-cosine arrays. The header offsets address that
-/// same allocation, mirroring the C layout where the arrays hang off the end of the struct. The
+/// same allocation, with the arrays following the header. The
 /// allocation is zeroed so padding can never leak into the content hash.
 public final class Hull: @unchecked Sendable {
     let storage: GeometryStorage
@@ -131,7 +131,7 @@ func hullSoaStride(_ count: Int32) -> Int32 {
     (count + 8 - 1) & ~(8 - 1)
 }
 
-/// Byte offsets for a hull allocation. Mirrors the C sizing of `b3HullData` trailing arrays.
+/// Byte offsets for a hull allocation and its trailing arrays.
 struct HullLayout {
     var byteCount = 0
     var vertexOffset = 0
@@ -478,7 +478,7 @@ func isValidHull(_ hull: Hull) -> Bool {
 
 /// Find the vertex that is farthest in the given direction.
 ///
-/// The C version uses a 4-wide SIMD scan with a per-lane running maximum and then a final
+/// The support query uses a four-wide SIMD scan with a per-lane running maximum and then a final
 /// lane-ordered tie break. That is equivalent to a forward scalar scan keeping the first maximum,
 /// so this scalar loop reproduces the same vertex (needed for deterministic contact features).
 func findHullSupportVertex(_ hull: Hull, _ direction: Vec3) -> Int32 {
@@ -556,7 +556,7 @@ func computeHullHash(_ hull: Hull) {
 
 // MARK: - Box hulls
 
-/// The box hull topology template. The same vertex, edge, and face ordering as the C constant,
+/// The box hull topology template uses a fixed vertex, edge, and face ordering,
 /// so box contacts produce the same feature ids.
 private let boxVertexEdges: [UInt8] = [8, 1, 0, 9, 13, 3, 5, 11]
 

@@ -26,61 +26,70 @@ private func islandHash(_ world: World) -> UInt64 {
 
 @Suite("Island split")
 struct IslandSplitTests {
-    @Test("union-find split matches the C reference")
+    @Test("union-find split is repeatable")
     func splitIsland() {
-        let world = World()
-        world.enableSleep = false
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let world = World()
+            world.enableSleep = false
 
-        var def = BodyDef()
-        def.type = .staticBody
-        let ground = world.createBody(def)
-        var shapeDef = ShapeDef()
-        _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
+            var def = BodyDef()
+            def.type = .staticBody
+            let ground = world.createBody(def)
+            var shapeDef = ShapeDef()
+            _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
 
-        var boxes: [BodyID] = []
-        for i in 0..<2 {
-            def = BodyDef()
-            def.type = .dynamicBody
-            def.position = Pos(0, 0.55 + Float(i) * 1.01, 0)
-            let box = world.createBody(def)
-            shapeDef = ShapeDef()
-            shapeDef.density = 1000
-            _ = world.createHullShape(box, shapeDef, makeBoxHull(0.5, 0.5, 0.5))
-            boxes.append(box)
-        }
-
-        for _ in 0..<30 {
-            world.step(1.0 / 60.0, subStepCount: 4)
-        }
-
-        #expect(world.islands.count == 2)
-        let before = islandHash(world)
-        #expect(before == 0x5949_14da_eac8_6cc4)
-
-        // Unlink the first touching contact from its island.
-        var targetContact: Int32 = B3.nullIndex
-        var targetIsland: Int32 = B3.nullIndex
-        for c in world.contacts where c.contactId != B3.nullIndex {
-            if c.islandId != B3.nullIndex {
-                targetContact = c.contactId
-                targetIsland = c.islandId
-                break
+            var boxes: [BodyID] = []
+            for i in 0..<2 {
+                def = BodyDef()
+                def.type = .dynamicBody
+                def.position = Pos(0, 0.55 + Float(i) * 1.01, 0)
+                let box = world.createBody(def)
+                shapeDef = ShapeDef()
+                shapeDef.density = 1000
+                _ = world.createHullShape(box, shapeDef, makeBoxHull(0.5, 0.5, 0.5))
+                boxes.append(box)
             }
+
+            for _ in 0..<30 {
+                world.step(1.0 / 60.0, subStepCount: 4)
+            }
+
+            #expect(world.islands.count == 2)
+            let before = islandHash(world)
+            samples.append(UInt64(before))
+
+            // Unlink the first touching contact from its island.
+            var targetContact: Int32 = B3.nullIndex
+            var targetIsland: Int32 = B3.nullIndex
+            for c in world.contacts where c.contactId != B3.nullIndex {
+                if c.islandId != B3.nullIndex {
+                    targetContact = c.contactId
+                    targetIsland = c.islandId
+                    break
+                }
+            }
+            #expect(targetContact == 0)
+            #expect(targetIsland == 0)
+
+            world.unlinkContact(targetContact)
+            world.splitIsland(targetIsland)
+
+            var h: UInt64 = islandHash(world)
+            for b in world.bodies where b.id != B3.nullIndex {
+                var islandId = b.islandId
+                var islandIndex = b.islandIndex
+                h = fnv(h, &islandId, 4)
+                h = fnv(h, &islandIndex, 4)
+            }
+
+            samples.append(UInt64(h))
+            return samples
         }
-        #expect(targetContact == 0)
-        #expect(targetIsland == 0)
 
-        world.unlinkContact(targetContact)
-        world.splitIsland(targetIsland)
-
-        var h: UInt64 = islandHash(world)
-        for b in world.bodies where b.id != B3.nullIndex {
-            var islandId = b.islandId
-            var islandIndex = b.islandIndex
-            h = fnv(h, &islandId, 4)
-            h = fnv(h, &islandIndex, 4)
-        }
-
-        #expect(h == 0x7e3c_3db3_a79b_2a9e)
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 }

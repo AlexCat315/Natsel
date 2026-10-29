@@ -1,6 +1,6 @@
 
 
-// Island graph maintenance (island.c).
+// Island graph maintenance.
 
 extension World {
     /// Merge two islands. Keeps the bigger island to reduce cache misses.

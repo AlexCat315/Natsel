@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// A bullet passing through a sensor shape must produce exactly one begin and one end event.
-// Ported from test/test_world.c TestSensor.
 @Suite("Sensor events")
 struct SensorEventTests {
     @Test("bullet through a sensor produces one begin and one end event")

@@ -4,7 +4,7 @@
 
 ## Vec3 与 Transform
 
-公开 API 是 Swift 风格的：`Vec3`、`Quat`、`Transform`、`BodyID`、`World`，以及 `makeBoxHull`、`computeCosSin` 等自由函数，没有 C 风格的前缀。
+公开 API 是 Swift 风格的：`Vec3`、`Quat`、`Transform`、`BodyID`、`World`，以及 `makeBoxHull`、`computeCosSin` 等自由函数。
 
 ```swift
 let position = Vec3(0, 5, 0)

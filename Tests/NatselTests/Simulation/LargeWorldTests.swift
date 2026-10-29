@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Large-world behaviour ported from the C collision and large-world tests.
 @Suite("Large world")
 struct LargeWorldTests {
     /// Two cubes overlapping by 0.1 along x produce a four point face manifold at the origin.
@@ -86,7 +85,6 @@ struct LargeWorldTests {
     }
 }
 
-// MARK: - Scene ported from test/test_large_world.c
 
 extension LargeWorldTests {
     private static let stackCount = 6

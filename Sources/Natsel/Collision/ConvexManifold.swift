@@ -1,6 +1,6 @@
-// Separating axis test and hull contact generation. The C SIMD implementation reduces edge
+// Separating axis test and hull contact generation. The SIMD implementation reduces edge
 // candidates in ascending index order, so the scalar loops below produce the same winner. The
-// wide support query is reproduced including the mantissa index embedding so near ties resolve
+// wide support query includes the mantissa index embedding so near ties resolve
 // to the same vertex.
 
 
@@ -115,7 +115,7 @@ func clipSegmentToHullFace(_ segment: UnsafeMutablePointer<ClipVertex>, _ hull: 
 
 // MARK: - Edge candidate test
 
-/// Inscribed sphere edge test. https://box2d.org/posts/2026/09/inscribed-spheres/
+/// Inscribed sphere edge test.
 func testEdgeCandidateSorted(_ a1: Float, _ a2: Float, _ c: Float, _ bound: Float) -> Bool {
     let hi = maxFloat(a1, a2)
     let lo = minFloat(a1, a2)
@@ -139,7 +139,7 @@ func testEdgeCandidateSorted(_ a1: Float, _ a2: Float, _ c: Float, _ bound: Floa
 
 // MARK: - Wide helpers
 
-/// Round a count up to the SIMD width (4 on ARM, matching the C build).
+/// Round a count up to the SIMD width (four lanes).
 func roundUpToSIMDWidth(_ count: Int32) -> Int32 {
     (count + 4 - 1) & ~(4 - 1)
 }
@@ -208,9 +208,9 @@ func filterEdgeCandidates(
     return keptCount
 }
 
-/// Four-wide support query, preserving the index bits embedded by the C kernel.
+/// Four-wide support query, preserving the embedded vertex index bits.
 ///
-/// The C version minimizes `bias - dot(normal, vertex)` with the vertex index embedded in the low
+/// The support query minimizes `bias - dot(normal, vertex)` with the vertex index embedded in the low
 /// mantissa bits and then performs a horizontal minimum. Because the values are positive, that is
 /// a plain numeric minimum over all lanes, including the padded tail (which repeats vertex 0 with
 /// a higher embedded index, so it never wins a tie). The exact support is recomputed afterwards
@@ -333,7 +333,7 @@ func computeSeparatingAxis(
     _ hullA: Hull, _ hullB: Hull, _ xfB: Transform, _ earlyReturn: Bool,
     _ scratch: UnsafeMutableRawPointer
 ) -> AxisQuery {
-    // Match C's uninitialized scratch: every consumed element is written first. One aligned
+    // Every consumed scratch element is written before it is read. One aligned
     // slab avoids clearing 25 maximum-sized arrays for each hull pair.
     precondition(B3.maxHullVertices <= 128 && B3.maxHullFaces <= 128 && B3.maxHullEdges <= 128)
     do {
@@ -659,7 +659,7 @@ func computeSeparatingAxis(
         let linearSlop = B3.linearSlop
         let EPS = -linearSlop * linearSlop
 
-        // Scalar edge/edge test. This matches the C scalar fallback, which is required to agree with
+        // Scalar edge/edge test. The scalar fallback must agree with
         // the SIMD path for cross platform determinism.
         for j in 0..<Int(nb) {
             let edge = halfEdgesB + Int(edgeIndicesB[j])

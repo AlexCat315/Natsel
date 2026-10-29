@@ -28,7 +28,7 @@ public struct TreeNode: Sendable, BitwiseCopyable {
     /// bits 0-29: index of the sibling pair node or the proxy id for a leaf
     public var flagIndex: UInt32 = 0
 
-    /// The height of an internal node or the shape index for a leaf. This is the C union.
+    /// The height of an internal node or the shape index for a leaf.
     var u: Int32 = 0
 
     public var height: Int32 { get { u } set { u = newValue } }
@@ -798,7 +798,7 @@ public final class DynamicTree {
 
     /// Get the number of bytes used by this tree.
     public var byteCount: Int32 {
-        var size = 256  // approximate C struct size
+        var size = 256  // estimated storage overhead
         size += Int(nodeCapacity) * MemoryLayout<TreeNode>.stride
         size += Int(nodeCapacity) * MemoryLayout<Int32>.stride
         size += Int(proxyCapacity) * MemoryLayout<TreeProxy>.stride

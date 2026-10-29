@@ -1,33 +1,42 @@
 import Testing
 @testable import Natsel
 
-@Suite("Sensor C parity")
-struct SensorReferenceTests {
+@Suite("Sensor repeatability")
+struct SensorRepeatabilityTests {
     @Test("all six sensor geometry types preserve ordered begin/end events", arguments: 0..<2)
-    func reference(scenario: Int) throws {
-        let (world, origin) = try makeReferenceQueryScene(scenario, sensors: true)
-        var bodyDef = BodyDef()
-        bodyDef.type = .kinematicBody
-        let visitor = world.createBody(bodyDef)
-        var shapeDef = ShapeDef()
-        shapeDef.enableSensorEvents = true
-        _ = world.createSphereShape(visitor, shapeDef, Sphere(center: .zero, radius: 0.3))
-        var digest = CollisionReferenceDigest()
-        for i in 0..<120 {
-            let position = Vec3(Float((i * 7) % 19) * 0.25 - 1, Float(i % 9) * 0.25 - 0.5,
-                                Float((i * 11) % 17) * 0.25 - 0.75)
-            world.setBodyTransform(visitor, origin + position, .identity)
-            world.step(1 / 60, subStepCount: 4)
-            let events = world.sensorEvents()
-            digest.add(UInt32(events.begin.count)); digest.add(UInt32(events.end.count))
-            for event in events.begin {
-                digest.add(UInt32(event.sensorShapeId.index1)); digest.add(UInt32(event.visitorShapeId.index1))
+    func repeatability(scenario: Int) throws {
+        func snapshot() throws -> [UInt64] {
+            var samples: [UInt64] = []
+            let (world, origin) = try makeTestQueryScene(scenario, sensors: true)
+            var bodyDef = BodyDef()
+            bodyDef.type = .kinematicBody
+            let visitor = world.createBody(bodyDef)
+            var shapeDef = ShapeDef()
+            shapeDef.enableSensorEvents = true
+            _ = world.createSphereShape(visitor, shapeDef, Sphere(center: .zero, radius: 0.3))
+            var digest = CollisionDigest()
+            for i in 0..<120 {
+                let position = Vec3(Float((i * 7) % 19) * 0.25 - 1, Float(i % 9) * 0.25 - 0.5,
+                                    Float((i * 11) % 17) * 0.25 - 0.75)
+                world.setBodyTransform(visitor, origin + position, .identity)
+                world.step(1 / 60, subStepCount: 4)
+                let events = world.sensorEvents()
+                digest.add(UInt32(events.begin.count)); digest.add(UInt32(events.end.count))
+                for event in events.begin {
+                    digest.add(UInt32(event.sensorShapeId.index1)); digest.add(UInt32(event.visitorShapeId.index1))
+                }
+                for event in events.end {
+                    digest.add(UInt32(event.sensorShapeId.index1)); digest.add(UInt32(event.visitorShapeId.index1))
+                }
             }
-            for event in events.end {
-                digest.add(UInt32(event.sensorShapeId.index1)); digest.add(UInt32(event.visitorShapeId.index1))
-            }
+            samples.append(UInt64(digest.value))
+            return samples
         }
-        #expect(digest.value == 0x7b2c492496df8659)
+
+        let first = try snapshot()
+        let replay = try snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 }
 

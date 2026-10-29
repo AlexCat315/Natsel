@@ -10,7 +10,7 @@ struct CompoundWorldLifecycleTests {
         bodyDef.position = Pos(2, 3, -1)
         bodyDef.rotation = makeQuatFromAxisAngle(.axisY, 0.3)
         let body = world.createBody(bodyDef)
-        let compound = try #require(referenceCompound(4))
+        let compound = try #require(makeTestCompound(4))
         let shapeID = world.createCompoundShape(body, ShapeDef(), compound)
         #expect(world.shapeIsValid(shapeID))
         #expect(world.compoundShapeCount == 1)
@@ -75,7 +75,7 @@ struct CompoundWorldLifecycleTests {
     func destruction() throws {
         let world = World()
         let ground = world.createBody(BodyDef())
-        let compound = try #require(referenceCompound(5))
+        let compound = try #require(makeTestCompound(5))
         let shape = world.createCompoundShape(ground, ShapeDef(), compound)
         var definition = BodyDef()
         definition.type = .dynamicBody

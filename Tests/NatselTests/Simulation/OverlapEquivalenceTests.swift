@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Origin-relative equivalence of the world overlap query, ported from
-// test/test_body_query.c OverlapHullProxyEquivalence.
 @Suite("Overlap equivalence")
 struct OverlapEquivalenceTests {
     private func makeWorld() -> (World, BodyID) {

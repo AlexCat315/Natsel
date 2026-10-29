@@ -1,10 +1,10 @@
 
 
-// Runtime data model and core body management (body.c, solver_set.h, island.h).
+// Runtime data model and core body management.
 
 // MARK: - Body flags
 
-/// Body flags (body.h).
+/// Body flags.
 public struct BodyFlags: OptionSet, Sendable, BitwiseCopyable {
     public var rawValue: UInt32
 
@@ -292,7 +292,7 @@ struct Contact: BitwiseCopyable {
 
     var friction: Float = 0
 
-    /// Convex contact cache. The C union is represented as two fields because a contact's shape
+    /// Convex contact cache. Two fields represent the cache because a contact's shape
     /// pair fixes which one is written.
     var satCache = SATCache()
     var simplexCache = SimplexCache()
@@ -612,7 +612,7 @@ public final class World {
     let continuousContext = ContinuousContext()
 
     /// Number of worker threads for the parallel phases (broad-phase pair generation and the
-    /// collide pass). The solver itself runs serially by color, as C does. Results are independent
+    /// collide pass). The solver itself runs serially by color. Results are independent
     /// of this value: each worker owns a disjoint slice and a private contact-state bit set, and the
     /// slices are merged in contact id order.
     public var workerCount: Int32 = 1
@@ -625,7 +625,7 @@ public final class World {
     /// same prepared state.
     var prepareScalarForWideColors = false
 
-    /// Per-step overflow contact constraints, solved with the C scalar solver.
+    /// Per-step overflow contact constraints, solved with the scalar solver.
     var overflowContacts: [OverflowContactConstraint] = []
     var overflowManifolds: [ManifoldConstraint] = []
 
@@ -689,7 +689,7 @@ public final class World {
     public var enableWarmStarting = true
     public var enableContinuous = true
     /// Also sweep convex dynamic bodies against dynamic and kinematic bodies, including bullets
-    /// against bullets. Opt in when moving pairs need CCD; the default retains Box3D trajectories.
+    /// against bullets. Opt in when moving pairs need CCD.
     public var enableDynamicContinuous = false
     var dynamicContinuousImpulses: [DynamicContinuousImpulse] = []
     var dynamicContinuousActiveBodies: [Int32] = []

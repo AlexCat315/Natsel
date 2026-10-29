@@ -1,6 +1,6 @@
 
 
-// Weld joint (weld_joint.c).
+// Weld joint.
 
 struct WeldJointSim: BitwiseCopyable {
     var linearHertz: Float = 0

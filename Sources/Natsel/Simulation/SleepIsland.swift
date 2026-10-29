@@ -1,6 +1,6 @@
 
 
-// Island splitting and sleeping (island.c, solver_set.c).
+// Island splitting and sleeping.
 
 extension World {
     /// Refresh the encoded body sim index stored in this body's contacts.

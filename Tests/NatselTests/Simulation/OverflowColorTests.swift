@@ -2,8 +2,6 @@ import Testing
 internal import Foundation
 @testable import Natsel
 
-// A body touching more constraints than the graph has colors must fall back to the overflow color.
-// Scene ported from shared/overflow_color.c.
 @Suite("Overflow color")
 struct OverflowColorTests {
     private static let ringCount = 5
@@ -83,7 +81,6 @@ struct OverflowColorTests {
         #expect(counters.colorCounts[overflowIndex] > 0)
         #expect(counters.colorCounts[overflowIndex] == 5)
 
-        // Body and contact totals match the C scene.
         #expect(counters.bodyCount == 27)
         #expect(counters.contactCount == 65)
     }

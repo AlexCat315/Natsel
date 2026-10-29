@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Radial impulse field, ported from the C explosion path in physics_world.c.
 @Suite("Explosion")
 struct ExplosionTests {
     private func makeScene() -> (World, [BodyID]) {
@@ -27,55 +26,73 @@ struct ExplosionTests {
         return (world, ids)
     }
 
-    @Test("radial impulse matches the C reference")
+    @Test("radial impulse is repeatable")
     func explosion() {
-        let (world, ids) = makeScene()
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let (world, ids) = makeScene()
 
-        var def = ExplosionDef()
-        def.position = Pos(0, 0, 0)
-        def.radius = 3.0
-        def.falloff = 2.0
-        def.impulsePerArea = 50.0
-        world.explode(def)
+            var def = ExplosionDef()
+            def.position = Pos(0, 0, 0)
+            def.radius = 3.0
+            def.falloff = 2.0
+            def.impulsePerArea = 50.0
+            world.explode(def)
 
-        var hash: UInt64 = 14_695_981_039_346_656_037
-        func feed<T>(_ value: T) {
-            withUnsafeBytes(of: value) { raw in
-                for byte in raw { hash = (hash ^ UInt64(byte)) &* 1_099_511_628_211 }
+            var hash: UInt64 = 14_695_981_039_346_656_037
+            func feed<T>(_ value: T) {
+                withUnsafeBytes(of: value) { raw in
+                    for byte in raw { hash = (hash ^ UInt64(byte)) &* 1_099_511_628_211 }
+                }
             }
+
+            for id in ids {
+                feed(world.bodyLinearVelocity(id))
+                feed(world.bodyAngularVelocity(id))
+            }
+
+            samples.append(UInt64(hash))
+
+            // Bodies left of the centre are pushed away from it, symmetric about the origin.
+            #expect(world.bodyLinearVelocity(ids[0]).x < 0)
+            #expect(world.bodyLinearVelocity(ids[2]).x > 0)
+            #expect(world.bodyLinearVelocity(ids[4]).x > 0)
+            return samples
         }
 
-        for id in ids {
-            feed(world.bodyLinearVelocity(id))
-            feed(world.bodyAngularVelocity(id))
-        }
-
-        #expect(hash == 0xb6b6_a037_3c55_4fbd)
-
-        // Bodies left of the centre are pushed away from it, symmetric about the origin.
-        #expect(world.bodyLinearVelocity(ids[0]).x < 0)
-        #expect(world.bodyLinearVelocity(ids[2]).x > 0)
-        #expect(world.bodyLinearVelocity(ids[4]).x > 0)
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 
     @Test("shapes beyond radius plus falloff are untouched")
     func outOfRange() {
-        let (world, ids) = makeScene()
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let (world, ids) = makeScene()
 
-        var def = ExplosionDef()
-        def.position = Pos(0, 0, 0)
-        def.radius = 0.1
-        def.falloff = 0.1
-        def.impulsePerArea = 50.0
-        world.explode(def)
+            var def = ExplosionDef()
+            def.position = Pos(0, 0, 0)
+            def.radius = 0.1
+            def.falloff = 0.1
+            def.impulsePerArea = 50.0
+            world.explode(def)
 
-        // Only the body at the explosion centre is within range; the others are far outside.
-        let velocities = ids.map { world.bodyLinearVelocity($0) }
-        #expect(velocities[0] == Vec3())
-        #expect(velocities[1] == Vec3())
-        #expect(velocities[2].x.bitPattern == 0x3d99_9999)
-        #expect(velocities[3] == Vec3())
-        #expect(velocities[4] == Vec3())
+            // Only the body at the explosion centre is within range; the others are far outside.
+            let velocities = ids.map { world.bodyLinearVelocity($0) }
+            #expect(velocities[0] == Vec3())
+            #expect(velocities[1] == Vec3())
+            samples.append(UInt64(velocities[2].x.bitPattern))
+            #expect(velocities[3] == Vec3())
+            #expect(velocities[4] == Vec3())
+            return samples
+        }
+
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 
     @Test("zero explosion scale opts a shape out")

@@ -3,7 +3,7 @@ import Synchronization
 internal import Darwin
 #endif
 
-// A pool of persistent worker threads for fine grained parallel stages (b3SolverStage in C).
+// A pool of persistent worker threads for fine grained parallel stages .
 //
 // Between `begin` and `end` the workers spin on a stage counter so a new stage starts within
 // microseconds; outside they sleep on a semaphore. A stage is a number of blocks. The main thread

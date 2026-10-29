@@ -1,4 +1,4 @@
-// Convex contact update (the narrow phase of contact.c).
+// Convex contact update.
 
 extension World {
     /// Compute a new manifold for a convex shape pair, recycling impulses by feature id.

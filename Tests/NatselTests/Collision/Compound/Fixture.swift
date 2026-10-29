@@ -1,6 +1,6 @@
 @testable import Natsel
 
-func referenceCompound(_ scenario: Int) -> Compound? {
+func makeTestCompound(_ scenario: Int) -> Compound? {
     let capsuleCounts = [0,2,0,0,2,6], hullCounts = [0,0,2,0,2,6]
     let meshCounts = [0,0,0,2,2,4], sphereCounts = [1,0,0,0,3,8]
     var a = SurfaceMaterial.defaultMaterial

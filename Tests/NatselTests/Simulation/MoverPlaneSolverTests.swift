@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Plane solver behaviour ported from test/test_mover.c.
 @Suite("Mover plane solver")
 struct MoverPlaneSolverTests {
     @Test("parallel planes resolve in one pass per plane")

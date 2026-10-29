@@ -1,6 +1,6 @@
 @testable import Natsel
 
-struct PhysicsReferenceDigest {
+struct PhysicsDigest {
     var value: UInt64 = 14695981039346656037
     mutating func add(_ value: Pos) {
         for scalar in [value.x, value.y, value.z] {

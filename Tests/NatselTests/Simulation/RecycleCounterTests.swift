@@ -11,7 +11,6 @@ private final class RejectFlag: @unchecked Sendable {
     }
 }
 
-// Counting recycled contacts under the speculative flag, ported from test/test_world.c.
 @Suite("Recycle counters")
 struct RecycleCounterTests {
     private func countRecycledResting(enableSpeculative: Bool) -> Int32 {

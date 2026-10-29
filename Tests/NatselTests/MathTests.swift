@@ -16,7 +16,7 @@ struct MathTests {
         #expect(abs(cs.cosine * cs.cosine + cs.sine * cs.sine - 1) < 1e-6)
     }
 
-    @Test("pi uses the C literal rounding")
+    @Test("pi rounds to the nearest float")
     func piRounding() {
         #expect(B3.pi.bitPattern == 0x4049_0FDB)
     }

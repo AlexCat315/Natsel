@@ -1,4 +1,4 @@
-/// shape.c's triangle-query TOI, including its centroid fallback and static-surface assumption.
+/// Triangle-query TOI, including its centroid fallback and static-surface assumption.
 func triangleSurfaceTimeOfImpact(_ surface: TriangleSurface, shapeB: Shape, sweepA: Sweep, sweepB: Sweep,
                       maxFraction: Float, isSensor: Bool) -> TOIOutput {
     let centroid = getShapeCentroid(shapeB)

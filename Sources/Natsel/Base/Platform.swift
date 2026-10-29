@@ -224,7 +224,7 @@ final class B3Thread: @unchecked Sendable {
 // MARK: - Atomics on plain memory
 
 /// Plain storage for an atomic integer. Operations go through `UnsafeMutablePointer`
-/// so the containing structs stay bitwise copyable like their C counterparts.
+/// so the containing structs stay bitwise copyable.
 struct AtomicInt: BitwiseCopyable {
     var value: Int32 = 0
 }
@@ -309,7 +309,7 @@ func spinPause() {
 @_silgen_name("llvm.prefetch.p0")
 private func llvmPrefetch(_ address: UnsafeRawPointer, _ rw: Int32, _ locality: Int32, _ cacheType: Int32)
 
-/// Read prefetch with high temporal locality (b3Prefetch / __builtin_prefetch(p, 0, 3)).
+/// Read prefetch with high temporal locality using __builtin_prefetch(p, 0, 3).
 @inline(__always)
 func b3Prefetch(_ address: UnsafeRawPointer) {
     llvmPrefetch(address, 0, 3, 1)

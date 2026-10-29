@@ -2,8 +2,6 @@ import Testing
 internal import Foundation
 @testable import Natsel
 
-// Randomized SAT verification ported from test/test_sat.c. A brute-force projection oracle over
-// every face and edge pair gives the true maximum separation; the SIMD query has to match it.
 @Suite("Separating axis oracle")
 struct SeparatingAxisOracleTests {
     private struct Random {

@@ -1,6 +1,6 @@
 
 
-// Constraint graph coloring (constraint_graph.c). Constraints involving two dynamic bodies get
+// Constraint graph coloring. Constraints involving two dynamic bodies get
 // low color indices; constraints involving a static body build from the end so they have higher
 // solver priority. Constraints that cannot be colored go to the overflow color.
 

@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// World configuration surface matching the C world API.
 @Suite("World tuning")
 struct WorldTuningTests {
     @Test("gravity drives a falling body")

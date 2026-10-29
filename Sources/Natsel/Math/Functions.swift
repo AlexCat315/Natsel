@@ -1,4 +1,4 @@
-// Scalar helpers keep the C operand order. Swift's `min`/`max` return the other
+// Scalar helpers preserve operand order. Swift's `min`/`max` return the other
 // operand on ties, which changes signed zeros and NaN propagation.
 
 /// The minimum of two integers.
@@ -107,7 +107,7 @@ public func computeCosSin(_ radians: Float) -> CosSin {
 
 /// Convert any angle into the range [-pi, pi].
 @inlinable public func unwindAngle(_ radians: Float) -> Float {
-    // IEEE remainder, the same operation as C remainderf
+    // IEEE remainder
     radians.remainder(dividingBy: 2 * B3.pi)
 }
 
@@ -625,7 +625,7 @@ public func computeCosSin(_ radians: Float) -> CosSin {
     clampVec3(point, a.lowerBound, a.upperBound)
 }
 
-// MARK: - Validation and geometry (math_functions.c)
+// MARK: - Validation and geometry
 
 /// Is this a valid number? Not NaN or infinity.
 @inlinable public func isValidFloat(_ a: Float) -> Bool { a.isFinite }

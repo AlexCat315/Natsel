@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Identical hull data is shared through a reference counted world database, ported from
-// test/test_world.c TestHullDatabase.
 @Suite("Hull database")
 struct HullDatabaseTests {
     @Test("identical hulls share one interned copy")

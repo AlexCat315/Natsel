@@ -1,9 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Mover-collide overlap handling ported from test/test_mover.c. These routines must never emit a
-// plane with a degenerate normal, even when the mover deeply penetrates the shape. On deep overlap
-// the GJK path returns a zero normal; the fallback must replace it with an analytic result.
 @Suite("Mover geometry")
 struct MoverGeometryTests {
     // MARK: Sphere

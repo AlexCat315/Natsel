@@ -162,7 +162,7 @@ public struct LocalManifoldPoint: Sendable, Equatable, BitwiseCopyable {
 /// A local manifold with no dynamic information. Used by collide functions.
 ///
 /// The `points` buffer is owned by the caller and only borrowed for the duration of a collide
-/// call, matching the C API where the buffer is supplied by the shape's manifold storage.
+/// call, using a buffer supplied by the shape's manifold storage.
 public struct LocalManifold: @unchecked Sendable {
     /// Local normal in frame A.
     public var normal = Vec3()

@@ -1,4 +1,4 @@
-// Body-level queries (body.c). These run against a caller supplied body transform so they can be
+// Body-level queries. These run against a caller supplied body transform so they can be
 // used for speculative movement without stepping the simulation.
 
 extension World {
@@ -305,10 +305,6 @@ extension World {
 }
 
 extension World {
-    /// FNV-1a hash over every live body's transform and, when awake, its velocities. This mirrors
-    /// `b3HashWorldState` and is used to gate determinism across runs.
-    /// Per-body state digests for divergence debugging: bit patterns of position, rotation,
-    /// and awake velocities.
     /// Contact manifold digests for divergence debugging.
     public func contactDump() -> [String] {
         var out: [String] = []
@@ -328,6 +324,7 @@ extension World {
         return out
     }
 
+    /// Per-body position, rotation, and awake velocity bits for divergence debugging.
     public func bodyStateDump() -> [String] {
         var out: [String] = []
         for i in 0..<bodies.count where bodies[i].id == Int32(i) {
@@ -346,6 +343,7 @@ extension World {
         return out
     }
 
+    /// FNV-1a hash over every live body's transform and, when awake, its velocities.
     public func worldStateHash() -> UInt64 {
         let hashInit: UInt64 = 14_695_981_039_346_656_037
         let prime: UInt64 = 1_099_511_628_211
@@ -1180,7 +1178,7 @@ extension World {
         shape.density = density
         shapes[Int(shapeId.index1 - 1)] = shape
 
-        // The C setter recomputes the mass inline rather than deferring it, so the dirty flag
+        // The setter recomputes the mass inline rather than deferring it, so the dirty flag
         // never survives into a step.
         if updateBodyMass {
             updateBodyMassData(shape.bodyId)
@@ -1416,7 +1414,7 @@ extension World {
 // MARK: - Body extras
 
 extension World {
-    /// The touching contacts of a body. Only touching contacts are reported, matching C.
+    /// The touching contacts of a body. Only touching contacts are reported.
     public func bodyContactData(_ bodyId: BodyID, capacity: Int = 32) -> [ContactData] {
         var result: [ContactData] = []
         var key = body(bodyId).headContactKey

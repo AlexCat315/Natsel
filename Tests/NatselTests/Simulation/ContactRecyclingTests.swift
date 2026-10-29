@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Contact recycling edge cases from test/test_world.c.
 @Suite("Contact recycling")
 struct ContactRecyclingTests {
     @Test("recycling flag round trips and syncs to the sim")
@@ -119,7 +118,6 @@ struct ContactRecyclingTests {
     }
 }
 
-// MARK: - Enlarged proxy lifetime (C issue #149)
 
 @Suite("Enlarged proxy lifetime")
 struct EnlargedProxyLifetimeTests {

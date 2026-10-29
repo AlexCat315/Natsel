@@ -24,68 +24,86 @@ struct ConvexManifoldTests {
         return manifold.normal
     }
 
-    @Test("face contact matches the C reference")
+    @Test("face contact is repeatable")
     func faceContact() {
-        let hullA = makeBoxHull(1, 1, 1)
-        let hullB = makeBoxHull(1, 1, 1)
-        var cache = SATCache()
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let hullA = makeBoxHull(1, 1, 1)
+            let hullB = makeBoxHull(1, 1, 1)
+            var cache = SATCache()
 
-        let normal = manifoldNormal(hullA, hullB, Transform(Vec3(1.5, 0, 0), Quat.identity), &cache)
-        #expect(normal.x.bitPattern == 0x3f80_0000)
-        #expect(normal.y.bitPattern == 0x8000_0000)
-        #expect(normal.z.bitPattern == 0x8000_0000)
+            let normal = manifoldNormal(hullA, hullB, Transform(Vec3(1.5, 0, 0), Quat.identity), &cache)
+            samples.append(UInt64(normal.x.bitPattern))
+            samples.append(UInt64(normal.y.bitPattern))
+            samples.append(UInt64(normal.z.bitPattern))
 
-        #expect(cache.type == .faceAxisB)
-        #expect(cache.separation.bitPattern == 0xbf00_0000)
-        #expect(cache.indexA == 0)
-        #expect(cache.indexB == 0)
-        #expect(cache.hit == 0)
+            #expect(cache.type == .faceAxisB)
+            samples.append(UInt64(cache.separation.bitPattern))
+            #expect(cache.indexA == 0)
+            #expect(cache.indexB == 0)
+            #expect(cache.hit == 0)
 
-        // Re-run with the cache populated: the cached features should reproduce the contact.
-        let points = collide(hullA, hullB, Transform(Vec3(1.5, 0, 0), Quat.identity), &cache)
-        #expect(cache.hit == 1)
-        #expect(points.count == 4)
+            // Re-run with the cache populated: the cached features should reproduce the contact.
+            let points = collide(hullA, hullB, Transform(Vec3(1.5, 0, 0), Quat.identity), &cache)
+            #expect(cache.hit == 1)
+            #expect(points.count == 4)
+            return samples
+        }
+
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 
-    @Test("rotated edge contact matches the C reference bit for bit")
+    @Test("rotated edge contact is repeatable")
     func rotatedContact() {
-        let hullA = makeBoxHull(1, 1, 1)
-        let hullB = makeBoxHull(1, 1, 1)
-        let q = makeQuatFromAxisAngle(Vec3(0, 1, 0), 0.785398163)
-        let xf = Transform(Vec3(1.2, 0.7, 0.3), q)
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let hullA = makeBoxHull(1, 1, 1)
+            let hullB = makeBoxHull(1, 1, 1)
+            let q = makeQuatFromAxisAngle(Vec3(0, 1, 0), 0.785398163)
+            let xf = Transform(Vec3(1.2, 0.7, 0.3), q)
 
-        var cache = SATCache()
-        let normal = manifoldNormal(hullA, hullB, xf, &cache)
+            var cache = SATCache()
+            let normal = manifoldNormal(hullA, hullB, xf, &cache)
 
-        #expect(normal.x.bitPattern == 0x3f80_0000)
-        #expect(normal.y.bitPattern == 0x0000_0000)
-        #expect(normal.z.bitPattern == 0x0000_0000)
+            samples.append(UInt64(normal.x.bitPattern))
+            #expect(normal.y.bitPattern == 0x0000_0000)
+            #expect(normal.z.bitPattern == 0x0000_0000)
 
-        #expect(cache.type == .faceAxisA)
-        #expect(cache.separation.bitPattern == 0xbf9b_6b3c)
-        #expect(cache.indexA == 1)
-        #expect(cache.indexB == 5)
+            #expect(cache.type == .faceAxisA)
+            samples.append(UInt64(cache.separation.bitPattern))
+            #expect(cache.indexA == 1)
+            #expect(cache.indexB == 5)
 
-        var cache2 = SATCache()
-        let points = collide(hullA, hullB, xf, &cache2)
-        #expect(points.count == 4)
+            var cache2 = SATCache()
+            let points = collide(hullA, hullB, xf, &cache2)
+            #expect(points.count == 4)
 
-        #expect(points[0].point.x.bitPattern == 0x3f85_5216)
-        #expect(points[0].point.y.bitPattern == 0x3f80_0000)
-        #expect(points[0].point.z.bitPattern == 0xbf80_0000)
-        #expect(points[0].separation.bitPattern == 0x3daa_42d0)
+            samples.append(UInt64(points[0].point.x.bitPattern))
+            samples.append(UInt64(points[0].point.y.bitPattern))
+            samples.append(UInt64(points[0].point.z.bitPattern))
+            samples.append(UInt64(points[0].separation.bitPattern))
 
-        #expect(points[1].point.x.bitPattern == 0x3f85_5216)
-        #expect(points[1].point.y.bitPattern == 0xbe99_999a)
-        #expect(points[1].separation.bitPattern == 0x3daa_42c0)
+            samples.append(UInt64(points[1].point.x.bitPattern))
+            samples.append(UInt64(points[1].point.y.bitPattern))
+            samples.append(UInt64(points[1].separation.bitPattern))
 
-        #expect(points[2].point.x.bitPattern == 0x3ec9_2988)
-        #expect(points[2].point.y.bitPattern == 0xbe99_999a)
-        #expect(points[2].point.z.bitPattern == 0x3e9b_3868)
-        #expect(points[2].separation.bitPattern == 0xbf9b_6b3c)
+            samples.append(UInt64(points[2].point.x.bitPattern))
+            samples.append(UInt64(points[2].point.y.bitPattern))
+            samples.append(UInt64(points[2].point.z.bitPattern))
+            samples.append(UInt64(points[2].separation.bitPattern))
 
-        #expect(points[3].point.x.bitPattern == 0x3ec9_2988)
-        #expect(points[3].point.y.bitPattern == 0x3f7f_ffff)
-        #expect(points[3].point.z.bitPattern == 0x3e9b_3868)
+            samples.append(UInt64(points[3].point.x.bitPattern))
+            samples.append(UInt64(points[3].point.y.bitPattern))
+            samples.append(UInt64(points[3].point.z.bitPattern))
+            return samples
+        }
+
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 }

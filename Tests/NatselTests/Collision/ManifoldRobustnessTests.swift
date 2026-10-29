@@ -2,11 +2,8 @@ import Testing
 internal import Foundation
 @testable import Natsel
 
-// Randomized manifold checks ported from test/test_manifold.c. The C suite drives these with a
-// deterministic LCG so the sampled directions are reproducible across builds.
 @Suite("Manifold robustness")
 struct ManifoldRobustnessTests {
-    /// LCG matching the C fixture so both sides walk the same sample sequence.
     private struct Random {
         var seed: UInt32 = 12345
 
@@ -22,8 +19,6 @@ struct ManifoldRobustnessTests {
         }
     }
 
-    /// The C fixtures need libm precision here: the analytic edge results assume an exact rotation,
-    /// and `computeCosSin` is only good to about 1e-3.
     private func exactQuat(_ axis: Vec3, _ radians: Float) -> Quat {
         let half = 0.5 * radians
         let s = Foundation.sinf(half)

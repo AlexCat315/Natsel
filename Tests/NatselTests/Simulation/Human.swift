@@ -1,6 +1,5 @@
 
 
-// Port of shared/human.c used by the determinism ragdoll scene.
 
 @testable import Natsel
 

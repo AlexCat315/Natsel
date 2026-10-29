@@ -1,6 +1,6 @@
 @testable import Natsel
 
-struct CollisionReferenceDigest {
+struct CollisionDigest {
     var value: UInt64 = 14695981039346656037
     mutating func add(_ value: Pos) { add(Float(value.x)); add(Float(value.y)); add(Float(value.z)) }
     mutating func add(_ word: UInt32) {
@@ -14,7 +14,7 @@ struct CollisionReferenceDigest {
 }
 
 
-extension CollisionReferenceDigest {
+extension CollisionDigest {
     mutating func add(_ output: CastOutput) {
         add(output.normal); add(output.point); add(output.fraction)
         add(UInt32(bitPattern: output.iterations)); add(UInt32(bitPattern: output.triangleIndex))

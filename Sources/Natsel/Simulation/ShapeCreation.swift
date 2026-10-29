@@ -1,6 +1,6 @@
 
 
-// Shape creation and proxy management (shape.c).
+// Shape creation and proxy management.
 
 /// Content-keyed, reference counted hull store. Hulls with identical bytes share one instance.
 final class HullDatabase {
@@ -436,7 +436,7 @@ extension World {
         }
         body = bodies[Int(bodyIndex)]
 
-        // Sensors are destroyed with sensor.c.
+        // Destroy the sensor and its touch events.
         destroySensor(shapeId)
 
         // Destroy every shape member from the allocation.

@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Encroaching shape casts ported from test/test_distance.c. A unit box has a segment resting 2mm
-// from its +x face: inside the cast target distance, but not overlapped.
 @Suite("Shape cast encroach")
 struct ShapeCastEncroachTests {
     private let boxA = [

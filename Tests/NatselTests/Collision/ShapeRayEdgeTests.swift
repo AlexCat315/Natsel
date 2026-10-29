@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Shape ray cast edge cases ported from test/test_shape.c.
 @Suite("Shape ray edge cases")
 struct ShapeRayEdgeTests {
     /// Capsule along x with radius 1.

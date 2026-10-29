@@ -3,11 +3,7 @@ import Builtin
 private import simd
 #endif
 
-// 4-wide solver types (simd_wide.h, contact_solver_wide.inl).
-//
-// The C solver runs four contacts at a time through NEON when the target is arm64. Its results are
-// bit-identical to the scalar path (verified against `b3World_EnableSSE2Fallback`), so the wide
-// port only has to preserve the scalar arithmetic order within each lane.
+// Four-wide solver types. Each lane preserves the scalar arithmetic order.
 
 /// Four floats, one per contact lane.
 ///

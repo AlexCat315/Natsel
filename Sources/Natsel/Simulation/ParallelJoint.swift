@@ -1,6 +1,6 @@
 
 
-// Parallel joint (parallel_joint.c). Keeps the bodies aligned along their z-axes.
+// Parallel joint. Keeps the bodies aligned along their z-axes.
 
 struct ParallelJointSim: BitwiseCopyable {
     var hertz: Float = 0

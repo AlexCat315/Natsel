@@ -1,6 +1,6 @@
 
 
-// Prismatic joint (prismatic_joint.c). Body B slides along body A's x-axis.
+// Prismatic joint. Body B slides along body A's x-axis.
 
 struct PrismaticJointSim: BitwiseCopyable {
     var perpImpulse = Vec2()

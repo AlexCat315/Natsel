@@ -1,12 +1,11 @@
-// Scene builders ported from shared/benchmarks.c. Only the scenes exercised by the Swift
-// benchmark harness live here.
+// Scene builders used by the Natsel benchmark harness.
 
 import Foundation
 import Natsel
 
 // MARK: - Shared storage
 
-/// Body counts for the last benchmark, mirroring the C harness counters report.
+/// Body, shape, and contact counts for the last benchmark.
 nonisolated(unsafe) var worldCounters = (body: Int32(0), shape: Int32(0), contact: Int32(0))
 
 private func recordCounters(_ world: World) {
@@ -595,33 +594,10 @@ private func createTrees(_ world: World, scale: Int) {
 }
 
 func createTrees25(_ world: World) { createTrees(world, scale: 4) }
-func createTrees50(_ world: World) { createTrees(world, scale: 2) }
-func createTrees100(_ world: World) { createTrees(world, scale: 1) }
 
 func destroyTrees() {
     treeMesh = nil
 }
 
-/// Divergence probe: the spinner paddle and its revolute motor alone.
-func createPaddle(_ world: World) {
-    let groundId = world.createBody(BodyDef())
-    var bodyDef = BodyDef()
-    bodyDef.type = .dynamicBody
-    bodyDef.position = Pos(0, 6, 0)
-    bodyDef.enableSleep = false
-    let spinnerId = world.createBody(bodyDef)
-    var shapeDef = ShapeDef()
-    shapeDef.baseMaterial.friction = 0
-    _ = world.createHullShape(spinnerId, shapeDef, makeBoxHull(0.3, 6.1, 1.1))
-    var jointDef = RevoluteJointDef()
-    jointDef.base.bodyIdA = groundId
-    jointDef.base.bodyIdB = spinnerId
-    jointDef.base.localFrameA.p = Vec3(0, 6, 0)
-    jointDef.enableMotor = true
-    jointDef.motorSpeed = 8
-    jointDef.maxMotorTorque = .greatestFiniteMagnitude
-    _ = world.createRevoluteJoint(jointDef)
-}
-
-/// B3_PI. `Float.pi` rounds toward zero; the C literal rounds to nearest.
+/// Nearest-rounded pi for scene construction; `Float.pi` rounds toward zero.
 let scenePi: Float = 3.14159265359

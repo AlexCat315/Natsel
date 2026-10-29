@@ -34,7 +34,7 @@ extension World {
         scratch.pointee.selectedManifolds.removeAll(keepingCapacity: true)
         for (index, entry) in contact.meshContact.triangles.enumerated() {
             let triangle = surface.triangle(entry.triangleIndex)
-            // Each scalar lane uses exactly the nested adds in C's four-wide transform.
+            // Each scalar lane uses exactly the nested adds in the four-wide transform.
             let points: InlineArray<3, Vec3> = [
                 mulMV(matrix, triangle.vertices[0]) + transform.p,
                 mulMV(matrix, triangle.vertices[1]) + transform.p,

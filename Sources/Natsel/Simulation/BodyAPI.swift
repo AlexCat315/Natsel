@@ -1,4 +1,4 @@
-// Body API: transforms, velocities, forces, impulses, and mass properties (body.c).
+// Body API: transforms, velocities, forces, impulses, and mass properties.
 
 extension World {
     // MARK: Helpers
@@ -713,7 +713,7 @@ extension World {
 
 // MARK: - Contact flags
 
-/// Contact flags (contact.h).
+/// Contact flags.
 struct ContactFlags: OptionSet, BitwiseCopyable {
     var rawValue: UInt32
 

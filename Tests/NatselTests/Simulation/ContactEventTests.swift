@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Contact begin/end touch events, ported from test/test_world.c TestContactEvents.
 @Suite("Contact events")
 struct ContactEventTests {
     @Test("bouncing sphere produces begin and end events with valid ids")

@@ -1,8 +1,6 @@
 // Dirk Gregorius contributed portions of this code.
 //
-// Incremental (quickhull style) convex hull builder. This is a direct port of hull.c: the
-// intrusive lists, bump-allocated pools with free lists, and every traversal order are kept so
-// the emitted vertex/edge/face ordering matches the C library.
+// Incremental convex hull builder with stable vertex, edge, and face ordering.
 
 // MARK: - Nodes
 

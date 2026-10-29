@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Per-body query behaviour, ported from test/test_body_query.c. These pin the origin-relative
-// framing: results come back in world space and the supplied transform drives the geometry.
 @Suite("Body queries")
 struct BodyQueryTests {
     private func makeQueryWorld() -> (World, BodyID) {

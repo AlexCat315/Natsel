@@ -22,7 +22,7 @@ struct HullTests {
         #expect(isValidHull(hull))
     }
 
-    @Test("box hull points follow the C ordering")
+    @Test("box hull points use stable ordering")
     func boxHullPoints() {
         let hull = makeBoxHull(1, 2, 3)
         let points = hull.vertexPositions()

@@ -1,5 +1,5 @@
-/// mesh.c's spatial welding. Map iteration order is irrelevant: cells are probed in
-/// C's dx/dy/dz order and each cell owns an explicit newest-first linked list.
+/// Spatial welding. Map iteration order is irrelevant: cells are probed in
+/// dx/dy/dz order and each cell owns an explicit newest-first linked list.
 private struct VertexSpatialHash {
     private struct Node {
         var vertexIndex: Int

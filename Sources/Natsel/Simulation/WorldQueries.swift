@@ -1,6 +1,6 @@
 
 
-// World queries (physics_world.c): overlap AABB, overlap shape, ray cast, shape cast.
+// World queries: overlap AABB, overlap shape, ray cast, shape cast.
 
 /// Result of the closest shape cast.
 public struct ShapeCastResult: Sendable {

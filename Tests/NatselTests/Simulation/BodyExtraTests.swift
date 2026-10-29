@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Remaining body API surface matching b3Body_* in the C header.
 @Suite("Body extras")
 struct BodyExtraTests {
     @Test("contact data reports only touching contacts")

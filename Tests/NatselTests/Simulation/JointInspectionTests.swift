@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Joint inspection API matching b3Joint_* in the C header.
 @Suite("Joint inspection")
 struct JointInspectionTests {
     private func makePendulum(jointType: JointType) -> (World, JointID, BodyID, BodyID) {

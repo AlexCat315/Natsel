@@ -1,4 +1,4 @@
-/// mesh.c/simd.c triangle intersection. One is both the miss sentinel and the endpoint.
+/// Triangle intersection. One is both the miss sentinel and the endpoint.
 func intersectMeshRayTriangle(_ start: Vec3, _ delta: Vec3, _ a: Vec3, _ b: Vec3, _ c: Vec3) -> Float {
     let edge1 = c - b
     let edge2 = a - c

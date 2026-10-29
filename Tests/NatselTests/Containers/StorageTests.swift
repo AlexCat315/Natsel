@@ -59,7 +59,7 @@ struct StorageTests {
         for key: UInt64 in 1...1024 { #expect(!set.containsKey(key)) }
     }
 
-    @Test("ID recycling preserves the C last-in-first-out order")
+    @Test("ID recycling preserves last-in-first-out order")
     func idRecycling() {
         var pool = IDPool.create()
         defer { pool.destroy() }
@@ -72,7 +72,7 @@ struct StorageTests {
         do { let observed = pool.alloc() == 0; #expect(observed) }
     }
 
-    @Test("dynamic array growth and swap removal preserve C indices")
+    @Test("dynamic array growth and swap removal preserve indices")
     func dynamicArray() {
         var array = DynamicArray<Int32>()
         defer { array.destroy() }

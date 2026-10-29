@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// The move event written during finalization must match the pose the body reports, including any
-// CCD rewind. Ported from test/test_world.c TestContinuousMoveEvent.
 @Suite("Continuous move event")
 struct ContinuousMoveEventTests {
     @Test("move events agree with the body pose across a CCD impact")

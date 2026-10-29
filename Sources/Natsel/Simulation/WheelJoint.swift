@@ -1,6 +1,6 @@
 
 
-// Wheel joint (wheel_joint.c). Suspension along A's x-axis, spin about B's z-axis, optional
+// Wheel joint. Suspension along A's x-axis, spin about B's z-axis, optional
 // steering about A's x-axis.
 
 struct WheelJointSim: BitwiseCopyable {

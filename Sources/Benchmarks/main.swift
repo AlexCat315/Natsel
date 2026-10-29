@@ -1,4 +1,4 @@
-// Swift benchmark harness mirroring benchmark/main.c and shared/benchmarks.c.
+// Natsel performance measurements for version and configuration comparisons.
 
 import Foundation
 import Natsel
@@ -29,11 +29,8 @@ var benchmarks: [Benchmark] = [
     Benchmark(name: "spinner", create: createSpinner, step: nil, destroy: destroySpinner, totalStepCount: 800),
     Benchmark(name: "sleep", create: createSleep, step: stepSleep, destroy: nil, totalStepCount: 300),
     Benchmark(name: "trees25", create: createTrees25, step: nil, destroy: destroyTrees, totalStepCount: 500),
-    Benchmark(name: "trees50", create: createTrees50, step: nil, destroy: destroyTrees, totalStepCount: 500),
-    Benchmark(name: "trees100", create: createTrees100, step: nil, destroy: destroyTrees, totalStepCount: 500),
     Benchmark(name: "washer", create: createWasher, step: nil, destroy: nil, totalStepCount: 1000),
     Benchmark(name: "convex_pile", create: createConvexPile, step: nil, destroy: nil, totalStepCount: 500),
-    Benchmark(name: "paddle", create: createPaddle, step: nil, destroy: nil, totalStepCount: 50),
     Benchmark(name: "vehicles", create: createVehicles, step: stepVehicles, destroy: destroyVehicles, totalStepCount: 600),
     Benchmark(name: "cloth", create: createCloth, step: nil, destroy: nil, totalStepCount: 300),
     Benchmark(name: "cloth_self64", create: createSelfCollidingCloth64, step: nil, destroy: destroySelfCollidingCloth64, totalStepCount: 240, warmupStepCount: 60),
@@ -47,6 +44,8 @@ var benchmarks: [Benchmark] = [
 ]
 
 var singleBenchmark: Int = -1
+var runAllBenchmarks = false
+let defaultBenchmarkNames: Set<String> = ["many_pyramids", "joint_grid"]
 var runCount = 4
 var recordSteps = false
 // Parse diagnostics once; environment dictionary construction is not physics-step work.
@@ -75,6 +74,8 @@ while i < args.count {
         runCount = Int(String(arg.split(separator: "=", maxSplits: 1)[1])) ?? runCount
     } else if arg == "-s" || arg == "--record-steps" {
         recordSteps = true
+    } else if arg == "--all" {
+        runAllBenchmarks = true
     } else if arg == "-l" || arg == "--list" {
         for (index, benchmark) in benchmarks.enumerated() {
             print("\(index) \(benchmark.name)")
@@ -84,11 +85,19 @@ while i < args.count {
     i += 1
 }
 
+guard runCount > 0, singleBenchmark == -1 || benchmarks.indices.contains(singleBenchmark) else {
+    print("Choose a valid benchmark and a positive repeat count.")
+    exit(1)
+}
+
 print("Starting benchmarks")
 print("======================================")
 
 for (index, benchmark) in benchmarks.enumerated() {
     if singleBenchmark != -1 && index != singleBenchmark {
+        continue
+    }
+    if singleBenchmark == -1 && !runAllBenchmarks && !defaultBenchmarkNames.contains(benchmark.name) {
         continue
     }
 

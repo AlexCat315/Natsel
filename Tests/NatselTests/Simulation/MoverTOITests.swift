@@ -1,9 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Mover time-of-impact queries ported from test/test_body_query.c. The mover capsule is expressed
-// in the query frame, so a core segment starting at the origin stands the character on the query
-// point.
 @Suite("Mover TOI")
 struct MoverTOITests {
     private func standingMover() -> Capsule {
@@ -218,7 +215,6 @@ struct MoverTOITests {
 // MARK: - Sweep equivalence
 
 extension MoverTOITests {
-    /// xorshift32 matching the C fixture so both sides walk the same sample sequence.
     private struct XorShift {
         var state: UInt32 = 0x9E37_79B9
 

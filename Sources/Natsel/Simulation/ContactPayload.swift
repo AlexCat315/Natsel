@@ -84,8 +84,7 @@ struct ContactPayload {
     var meshContact = MeshContactState()
 }
 
-/// Reusable buffers for one worker's mesh narrow phase. The C reference bump-allocates the same
-/// data from a per-worker arena; keeping it here avoids a fresh allocation per contact.
+/// Reusable scratch buffers for one worker's mesh narrow phase.
 struct MeshContactScratch {
     var survivors: [MeshSurvivor] = []
     var manifolds: [MeshTriangleManifold] = []
@@ -214,7 +213,7 @@ extension Contact {
         }
     }
 
-    /// Public query views remain valid until the next world mutation, matching the C API.
+    /// Public query views remain valid until the next world mutation.
     var manifoldBuffer: UnsafeBufferPointer<Manifold> {
         guard payload != nil else { return UnsafeBufferPointer(start: nil, count: 0) }
         return manifolds.buffer

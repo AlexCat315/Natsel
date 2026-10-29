@@ -10,7 +10,7 @@ struct ContactBodySnapshot {
     var flags: UInt32
 }
 
-// Narrow-phase collide pass (physics_world.c b3Collide).
+// Narrow-phase collide pass.
 
 extension World {
     /// Resolve the body sim referenced by an encoded contact body sim index.
@@ -98,7 +98,7 @@ extension World {
         let workers = maxInt(1, minInt(workerCount, 8))
 
         // Each worker collides its own slice and writes only contacts inside that slice, so the
-        // passes never touch the same element. C does the same through b3ParallelFor.
+        // passes never touch the same element.
         if workers > 1, contactIndices.count >= Self.parallelCollideMinCount {
             var bits = [BitSet](repeating: BitSet(), count: Int(workers))
             for i in 0..<Int(workers) {
@@ -319,7 +319,7 @@ extension World {
         contacts.withUnsafeMutableBufferPointer { buffer in
             var store = ContactStore(buffer)
             withUnsafeMutablePointer(to: &meshContactScratch) { scratch in
-                // Prefetch the contact four iterations ahead, as b3CollideTask does.
+                // Prefetch the contact four iterations ahead.
                 let prefetchDistance = 4
                 let base = UnsafeRawPointer(buffer.baseAddress!)
                 let stride = MemoryLayout<Contact>.stride
@@ -389,7 +389,7 @@ extension World {
                 && (contact.flags & ContactFlags.relativeTransformValid.rawValue) != 0
                 && (contact.flags & ContactFlags.recycle.rawValue) != 0
             {
-                // The scalar part of b3InvMulQuat is just the quaternion dot product.
+                // The scalar part of inverse quaternion multiplication is the quaternion dot product.
                 let angleA = dotQuat(transformA.q, contact.cachedRotationA)
                 let angleB = dotQuat(transformB.q, contact.cachedRotationB)
                 let angularDistance = minFloat(angleA * angleA, angleB * angleB)

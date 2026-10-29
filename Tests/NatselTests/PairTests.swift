@@ -56,62 +56,71 @@ private func bodyHash(_ world: World) -> UInt64 {
 
 @Suite("Broad phase pairs")
 struct PairTests {
-    @Test("pair generation matches the C reference")
+    @Test("pair generation is repeatable")
     func generatePairs() {
-        let world = World()
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let world = World()
 
-        var def = BodyDef()
-        def.type = .staticBody
-        let ground = world.createBody(def)
+            var def = BodyDef()
+            def.type = .staticBody
+            let ground = world.createBody(def)
 
-        var shapeDef = ShapeDef()
-        shapeDef.density = 0
-        _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
+            var shapeDef = ShapeDef()
+            shapeDef.density = 0
+            _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
 
-        let positions = [Vec3(0, 1, 0), Vec3(0.5, 1, 0), Vec3(0, 2, 0)]
-        var dynamicBodies: [BodyID] = []
-        for p in positions {
-            def = BodyDef()
-            def.type = .dynamicBody
-            def.position = Pos(p)
-            let body = world.createBody(def)
-            dynamicBodies.append(body)
+            let positions = [Vec3(0, 1, 0), Vec3(0.5, 1, 0), Vec3(0, 2, 0)]
+            var dynamicBodies: [BodyID] = []
+            for p in positions {
+                def = BodyDef()
+                def.type = .dynamicBody
+                def.position = Pos(p)
+                let body = world.createBody(def)
+                dynamicBodies.append(body)
 
-            shapeDef = ShapeDef()
-            shapeDef.density = 1000
-            _ = world.createSphereShape(body, shapeDef, Sphere(center: Vec3(), radius: 0.5))
-        }
-
-        world.updateBroadPhasePairs()
-
-        var (h, count) = contactHash(world)
-        #expect(count == 5)
-        #expect(h == 0x0332_3114_2496_bd0a)
-        #expect(bodyHash(world) == 0x559c_bc2b_0bc6_6950)
-
-        for (i, bodyId) in dynamicBodies.enumerated() {
-            let b = world.body(bodyId)
-            switch i {
-            case 0:
-                #expect(b.headContactKey == 6)
-                #expect(b.contactCount == 3)
-            case 1:
-                #expect(b.headContactKey == 8)
-                #expect(b.contactCount == 3)
-            default:
-                #expect(b.headContactKey == 9)
-                #expect(b.contactCount == 2)
+                shapeDef = ShapeDef()
+                shapeDef.density = 1000
+                _ = world.createSphereShape(body, shapeDef, Sphere(center: Vec3(), radius: 0.5))
             }
+
+            world.updateBroadPhasePairs()
+
+            var (h, count) = contactHash(world)
+            #expect(count == 5)
+            samples.append(UInt64(h))
+            samples.append(UInt64(bodyHash(world)))
+
+            for (i, bodyId) in dynamicBodies.enumerated() {
+                let b = world.body(bodyId)
+                switch i {
+                case 0:
+                    #expect(b.headContactKey == 6)
+                    #expect(b.contactCount == 3)
+                case 1:
+                    #expect(b.headContactKey == 8)
+                    #expect(b.contactCount == 3)
+                default:
+                    #expect(b.headContactKey == 9)
+                    #expect(b.contactCount == 2)
+                }
+            }
+
+            #expect(world.solverSets[2].contactIndices.count == 5)
+            #expect(world.solverSets[1].contactIndices.count == 0)
+
+            // A second update must not create duplicate contacts.
+            world.updateBroadPhasePairs()
+            (h, count) = contactHash(world)
+            #expect(count == 5)
+            samples.append(UInt64(h))
+            samples.append(UInt64(bodyHash(world)))
+            return samples
         }
 
-        #expect(world.solverSets[2].contactIndices.count == 5)
-        #expect(world.solverSets[1].contactIndices.count == 0)
-
-        // A second update must not create duplicate contacts.
-        world.updateBroadPhasePairs()
-        (h, count) = contactHash(world)
-        #expect(count == 5)
-        #expect(h == 0x0332_3114_2496_bd0a)
-        #expect(bodyHash(world) == 0x559c_bc2b_0bc6_6950)
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 }

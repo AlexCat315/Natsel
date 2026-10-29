@@ -1,6 +1,6 @@
 
 
-// Joint model, creation, and destruction (joint.c).
+// Joint model, creation, and destruction.
 
 /// Distance joint solver data.
 struct DistanceJointSim: BitwiseCopyable {
@@ -50,7 +50,7 @@ struct JointPair {
 
 extension World {
     /// Create a filter joint. This disables collision between the attached bodies and keeps them
-    /// in the same island, matching `b3CreateFilterJoint`.
+    /// in the same island.
     @discardableResult
     public func createFilterJoint(_ def: FilterJointDef) -> JointID {
         let pair = createJoint(def.base, .filterJoint)
@@ -121,7 +121,7 @@ extension World {
         var joint = Joint()
         joint.jointId = jointId
         joint.userData = def.userData
-        // A recycled slot keeps its revision so stale ids stay invalid (b3CreateJointInternal).
+        // A recycled slot keeps its revision so stale ids stay invalid.
         joint.generation = joints[Int(jointId)].generation &+ 1
         joint.setIndex = B3.nullIndex
         joint.colorIndex = B3.nullIndex
@@ -1876,7 +1876,7 @@ extension World {
 // MARK: - Parallel spring aliases
 
 extension World {
-    /// The parallel joint's spring frequency, matching C's `b3ParallelJoint_GetSpringHertz`.
+    /// The parallel joint's spring frequency.
     public func parallelJointSpringHertz(_ jointId: JointID) -> Float? {
         parallelJointHertz(jointId)
     }
@@ -1902,7 +1902,7 @@ extension World {
 // MARK: - Joint reaction and events
 
 extension World {
-    /// The magnitude of a joint's reaction force and torque, matching C's `b3GetJointReaction`.
+    /// The magnitude of a joint's reaction force and torque.
     func jointReaction(_ sim: JointSim, _ invTimeStep: Float) -> (force: Float, torque: Float) {
         var linearImpulse: Float = 0
         var angularImpulse: Float = 0

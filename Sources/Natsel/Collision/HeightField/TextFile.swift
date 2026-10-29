@@ -5,7 +5,7 @@ public enum HeightFieldFileError: Error {
 }
 
 extension HeightFieldDef {
-    /// Write the authored samples in Box3D's height-data text format.
+    /// Write authored samples in the height-data text format.
     public func write(to path: String) throws {
         guard let text = HeightFieldText.encode(self) else { throw HeightFieldFileError.invalidData }
         try text.write(toFile: path, atomically: false, encoding: .utf8)

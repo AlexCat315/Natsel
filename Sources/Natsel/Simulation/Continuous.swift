@@ -1,6 +1,6 @@
 
 
-// Continuous collision (solver.c CCD pass).
+// Continuous collision.
 
 /// Mutable state shared by the swept queries of one fast body.
 final class ContinuousContext {
@@ -18,7 +18,7 @@ final class ContinuousContext {
     var rootIterations: Int32 = 0
 }
 
-/// Offset an AABB by a position, rounding outward as in the C code.
+/// Offset an AABB by a position, rounding outward.
 @inline(__always)
 func aabbOffset(_ localBox: AABB, _ origin: Pos) -> AABB {
     offsetAABB(localBox, origin)

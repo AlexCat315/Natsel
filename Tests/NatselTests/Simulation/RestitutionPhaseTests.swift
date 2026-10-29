@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Restitution phase and support-column behaviour ported from test/test_restitution.c.
 @Suite("Restitution phase")
 struct RestitutionPhaseTests {
     private static let timeStep: Float = 1.0 / 60.0
@@ -239,7 +238,6 @@ extension RestitutionPhaseTests {
         var bounceCount = 0
     }
 
-    /// Mechanical energy of one body, including the same-step phase term the C fixture uses.
     private func measureEnergy(_ world: World, _ body: BodyID) -> Float {
         let massData = world.bodyMassData(body)
         let v = world.bodyLinearVelocity(body)

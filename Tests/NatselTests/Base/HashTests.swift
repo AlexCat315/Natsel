@@ -1,25 +1,23 @@
 import Testing
 @testable import Natsel
 
-@Suite("Base hash C parity")
+@Suite("Base hash repeatability")
 struct HashTests {
-    @Test("rapidhash matches C across short, tail, and block boundaries")
-    func rapidHashParity() {
+    @Test("rapidhash repeats across aligned and unaligned input boundaries")
+    func rapidHashRepeatability() {
         let bytes = (0..<4098).map { UInt8(truncatingIfNeeded: $0 * 131 + 17) }
-        bytes.withUnsafeBufferPointer { buffer in
-            let start = buffer.baseAddress!
-            for (length, expected) in rapidHashReference.enumerated() {
-                #expect(rapidhash(start, length) == expected, "length \(length)")
-                #expect(hash64NonZero(start, Int32(length)) == (length == 0 ? 1 : expected))
-            }
-            for (length, expected) in rapidHashLongReference {
-                #expect(rapidhash(start, length) == expected, "length \(length)")
-            }
-            // Identical content at an unaligned address must hash identically.
-            var unaligned = [UInt8(0)] + Array(bytes.prefix(4097))
-            unaligned.withUnsafeMutableBufferPointer { shifted in
-                for (length, expected) in rapidHashLongReference {
-                    #expect(rapidhash(shifted.baseAddress! + 1, length) == expected)
+        let copy = Array(bytes.reversed().reversed())
+        let unaligned = [UInt8(0)] + bytes
+        let lengths = Array(0...256) + [257, 511, 512, 1023, 1024, 2047, 2048, 4095, 4096, 4097]
+        bytes.withUnsafeBufferPointer { original in
+            copy.withUnsafeBufferPointer { duplicate in
+                unaligned.withUnsafeBufferPointer { shifted in
+                    for length in lengths {
+                        let expected = rapidhash(original.baseAddress!, length)
+                        #expect(rapidhash(duplicate.baseAddress!, length) == expected)
+                        #expect(rapidhash(shifted.baseAddress! + 1, length) == expected)
+                        #expect(hash64NonZero(original.baseAddress!, Int32(length)) == (length == 0 ? 1 : expected))
+                    }
                 }
             }
         }

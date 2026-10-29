@@ -1,6 +1,6 @@
 
 
-// Motor joint (motor_joint.c). Controls relative velocity and optionally a spring pose.
+// Motor joint. Controls relative velocity and optionally a spring pose.
 
 struct MotorJointSim: BitwiseCopyable {
     var linearVelocity = Vec3()
@@ -130,7 +130,7 @@ extension World {
         let linearImpulse = joint.linearVelocityImpulse + joint.linearSpringImpulse
         let angularImpulse = joint.angularVelocityImpulse + joint.angularSpringImpulse
 
-        // The C warm start writes the velocities unconditionally, so kinematic bodies are modified.
+        // Warm start writes the velocities unconditionally, so kinematic bodies are modified.
         stateA.linearVelocity = stateA.linearVelocity - mA * linearImpulse
         stateA.angularVelocity = stateA.angularVelocity
             - mulMV(iA, cross(rA, linearImpulse) + angularImpulse)

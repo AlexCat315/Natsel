@@ -1,6 +1,6 @@
 
 
-// Revolute joint (revolute_joint.c).
+// Revolute joint.
 
 struct RevoluteJointSim: BitwiseCopyable {
     var linearImpulse = Vec3()

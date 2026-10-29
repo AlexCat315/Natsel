@@ -1,4 +1,4 @@
-// Scenes for the systems beyond the Box3D port: vehicles, cloth, and volumetric soft bodies.
+// Scenes for vehicles, cloth, and volumetric soft bodies.
 
 import Natsel
 

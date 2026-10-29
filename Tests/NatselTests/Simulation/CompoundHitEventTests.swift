@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Hit-event material lookup must respect the compound child that participated in the contact.
-// Ported from test/test_world.c TestCompoundHitEvents.
 @Suite("Compound hit events")
 struct CompoundHitEventTests {
     private static let hullMaterialA: UInt64 = 11

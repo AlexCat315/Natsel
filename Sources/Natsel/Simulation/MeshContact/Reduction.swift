@@ -12,7 +12,7 @@ private func betterMeshCullCandidate(_ score: Float, _ separation: Float,
     return separation < bestSeparation - separationTolerance
 }
 
-/// mesh_contact.c's four-point reduction, including tie tolerances and swap removal order.
+/// Four-point reduction, including tie tolerances and swap removal order.
 private func cullMeshPoints(
     _ points: UnsafeMutableBufferPointer<MeshPatchPoint>,
     _ selected: inout InlineArray<4, MeshPatchPoint>

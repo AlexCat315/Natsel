@@ -1,6 +1,6 @@
 
 
-// Sensors and their touch events (sensor.c).
+// Sensors and their touch events.
 
 /// A shape that overlaps a sensor.
 struct SensorVisitor: BitwiseCopyable {

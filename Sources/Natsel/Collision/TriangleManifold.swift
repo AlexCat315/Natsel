@@ -1,4 +1,4 @@
-// Triangle versus sphere, capsule, and hull collision (triangle_manifold.c).
+// Triangle versus sphere, capsule, and hull collision.
 
 /// Triangle data in the local space of the other shape.
 struct TriangleData {
@@ -217,7 +217,7 @@ func queryTriangleAndCapsuleEdges(
             continue
         }
 
-        // Similar to hull vs hull (b3QueryEdgeDirections)
+        // Similar to hull vs hull
         var axis: Vec3
         if a * b <= 0 {
             let t = b / (b - a)
@@ -337,7 +337,7 @@ func buildTriangleAndCapsuleEdgeContact(
         return
     }
 
-    // Similar to hull vs hull (b3QueryEdgeDirections)
+    // Similar to hull vs hull
     let normal = query.normal
     let result = lineDistance(v1, triangleEdge, p1, capsuleEdge)
 
@@ -633,7 +633,7 @@ func queryTriangleAndHullEdges(_ triangle: TriangleData, _ hull: Hull) -> Separa
                 continue
             }
 
-            // Similar to hull vs hull (b3QueryEdgeDirections)
+            // Similar to hull vs hull
             // dot(hullNormal1 + t * (hullNormal2 - hullNormal1), triEdge) = 0
             // Normal points out of hull by construction.
             let t = cab / (cab - dab)
@@ -1162,7 +1162,7 @@ func collideTriangleAndHull(
             // Avoid nearly parallel edges that may lead to invalid separation values at the noise
             // floor.
             if maxFloat(cab * cab, dab * dab) >= squaredTolerance * lengthSquared(triEdge) {
-                // Similar to hull vs hull (b3QueryEdgeDirections)
+                // Similar to hull vs hull
                 let t = cab / (cab - dab)
                 var axis = lerp(hullNormal1, hullNormal2, t)
                 b3Validate(lengthSquared(axis) > 1000 * Float.leastNormalMagnitude)

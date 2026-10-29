@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Shape inspection and material editing, matching the C shape API.
 @Suite("Shape accessors")
 struct ShapeAccessorTests {
     @Test("shape type and owner are reported")

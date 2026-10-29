@@ -1,9 +1,9 @@
-/// Compile-time constants of the C library (`B3_*` macros). Values that scale with the
+/// Compile-time engine constants. Values that scale with the
 /// length unit are computed so `setLengthUnitsPerMeter` takes effect.
 @usableFromInline
 enum B3 {
     /// https://en.wikipedia.org/wiki/Pi
-    /// The C literal rounds to the nearest float; `Float.pi` rounds toward zero.
+    /// This literal rounds to the nearest float; `Float.pi` rounds toward zero.
     @usableFromInline static let pi: Float = 3.14159265359
 
     /// Convert from degrees to radians.
@@ -138,7 +138,7 @@ enum B3 {
 
 nonisolated(unsafe) private var lengthUnits: Float = 1
 
-/// Box3D bases all length units on meters, but you may need different units for your game.
+/// Natsel bases all length units on meters, but you may need different units for your game.
 /// This must be set at application startup, before any other call into Natsel.
 public func setLengthUnitsPerMeter(_ lengthUnits: Float) {
     b3Assert(isValidFloat(lengthUnits) && lengthUnits > 0)

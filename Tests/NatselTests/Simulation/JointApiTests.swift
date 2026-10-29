@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Behaviour checks for the joint runtime API, mirroring test/test_joint.c.
 @Suite("Joint runtime API")
 struct JointApiTests {
     private struct Fixture {

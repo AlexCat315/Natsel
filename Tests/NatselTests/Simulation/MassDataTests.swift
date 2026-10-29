@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Explicit mass property edits, ported from test/test_body.c.
 @Suite("Mass data")
 struct MassDataTests {
     /// diag(2, 4, 8)

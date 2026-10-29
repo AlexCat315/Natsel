@@ -1,4 +1,4 @@
-// Staged constraint solver (b3SolverStep in C). Each substep runs body integration and, per graph
+// Staged constraint solver. Each substep runs body integration and, per graph
 // color, warm starting, the biased solve, and relaxation; then restitution and impulse storage. A
 // graph color holds joints and contacts that share no dynamic body, so all of a color's work can
 // run on any number of threads and give the same bits as running it in order. The overflow

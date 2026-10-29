@@ -1,4 +1,4 @@
-// Direct SoA preparation for independent colors (b3PrepareConstraintW). Lanes are filled straight
+// Direct SoA preparation for independent colors. Lanes are filled straight
 // from the contacts, so wide colors no longer build scalar constraints only to repack them.
 
 extension World {
@@ -271,7 +271,7 @@ extension World {
     return mulW(s, p)
 }
 
-// MARK: - Row gathers (b3TransposeW over b3LoadW rows)
+// MARK: - Row gathers
 
 @inline(__always) private func row(_ p: UnsafeRawPointer?, _ offset: Int) -> FloatW {
     guard let p else { return .zero }

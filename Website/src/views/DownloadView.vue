@@ -79,7 +79,7 @@ const steps = [
         <h3>相关链接</h3>
         <div class="links">
           <a href="https://github.com/AlexCat315/Natsel" target="_blank" rel="noopener">GitHub 仓库</a>
-          <a href="https://github.com/AlexCat315/Natsel/blob/main/PORTING.md" target="_blank" rel="noopener">移植与开发说明</a>
+          <a href="https://github.com/AlexCat315/Natsel/blob/main/DEVELOPMENT.md" target="_blank" rel="noopener">开发说明</a>
           <a href="https://github.com/AlexCat315/Natsel/blob/main/PERFORMANCE.md" target="_blank" rel="noopener">性能报告原文</a>
         </div>
       </div>

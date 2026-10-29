@@ -1,4 +1,4 @@
-/// A growable array with C semantics (`b3Array`). Elements live in raw storage owned by the
+/// A growable array with explicit storage ownership. Elements live in raw storage owned by the
 /// array and are moved bitwise; the array must be destroyed explicitly. Pointers returned by
 /// `pointer(_:)` stay valid until the array grows.
 struct DynamicArray<Element: BitwiseCopyable>: BitwiseCopyable {
@@ -8,7 +8,7 @@ struct DynamicArray<Element: BitwiseCopyable>: BitwiseCopyable {
 
     init() {}
 
-    /// Create with an initial capacity (b3Array_CreateN).
+    /// Create with an initial capacity.
     init(capacity n: Int32) {
         data = n > 0 ? b3GrowTyped(nil as UnsafeMutablePointer<Element>?, 0, n) : nil
         count = 0
@@ -65,7 +65,7 @@ struct DynamicArray<Element: BitwiseCopyable>: BitwiseCopyable {
         }
     }
 
-    /// Create a new uninitialized element and return a pointer to it (b3Array_Emplace).
+    /// Create a new uninitialized element and return a pointer to it.
     @inline(__always)
     mutating func emplace() -> UnsafeMutablePointer<Element> {
         growForEmplace()
@@ -74,7 +74,7 @@ struct DynamicArray<Element: BitwiseCopyable>: BitwiseCopyable {
         return p
     }
 
-    /// Add an uninitialized element and return its index (b3Array_AddIndex).
+    /// Add an uninitialized element and return its index.
     @inline(__always)
     mutating func addIndex() -> Int32 {
         growForEmplace()

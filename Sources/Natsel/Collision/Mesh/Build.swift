@@ -74,7 +74,7 @@ func prepareMesh(vertices source: [Vec3], indices sourceIndices: [Int32],
         triangles.append(triangle)
         sortedMaterials.append(materials?[primitive.triangleIndex] ?? 0)
     }
-    // The builder emits leaves in DFS order with contiguous ranges, so C's subsequent
+    // The builder emits leaves in DFS order with contiguous ranges, so a subsequent
     // DFS sorting pass copies the same triangle and material order without permuting it.
     guard meshTreeFitsTraversalStack(tree.nodes) else { return nil }
     let flags = options.identifyEdges

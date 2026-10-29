@@ -98,8 +98,8 @@ extension World {
         }
     }
 
-    // The kernels below follow contact_solver_wide.inl without lane masks: prepare zeroes padded
-    // points and absent lanes, so their updates are exact no-ops as in C.
+    // The kernels below run without lane masks: prepare zeroes padded
+    // points and absent lanes, so their updates are exact no-ops.
 
     func warmStartContactsWide(_ color: Int32, _ mesh: Bool) {
         withWideContacts(color, mesh) { list, range, states, pool in
@@ -161,7 +161,7 @@ extension World {
     }
 
     func pushContactsWideRange(
-        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext, 
+        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext,
         _ states: UnsafeMutableBufferPointer<BodyState>, _ pool: UnsafeMutablePointer<ManifoldConstraintW>
     ) {
         let invH = FloatW(repeating: context.inv_h)
@@ -222,7 +222,7 @@ extension World {
     }
 
     func solveContactsWideRange(
-        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext, 
+        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext,
         _ states: UnsafeMutableBufferPointer<BodyState>, _ pool: UnsafeMutablePointer<ManifoldConstraintW>
     ) {
         let invH = FloatW(repeating: context.inv_h)
@@ -337,7 +337,7 @@ extension World {
     }
 
     func applyRestitutionWideRange(
-        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext, 
+        _ list: UnsafePointer<ContactConstraintW>, _ range: Range<Int>, _ context: StepContext,
         _ states: UnsafeMutableBufferPointer<BodyState>, _ pool: UnsafeMutablePointer<ManifoldConstraintW>
     ) {
         let invH = FloatW(repeating: context.inv_h)
@@ -490,7 +490,7 @@ extension World {
         }
     }
 
-    /// Load four body states as rows and transpose them into lanes (b3GatherBodies). A null index
+    /// Load four body states as rows and transpose them into lanes. A null index
     /// reads the identity state: zero velocity and delta position, identity delta rotation.
     @inline(__always)
     static func gatherStatesW(
@@ -520,7 +520,7 @@ extension World {
             dq: QuatW(v: Vec3W(dq.0, dq.1, dq.2), s: dq.3))
     }
 
-    /// Write only the velocities back, as two 16-byte rows per dynamic body (b3ScatterBodies).
+    /// Write only the velocities back, as two 16-byte rows per dynamic body.
     @inline(__always)
     static func scatterStatesW(
         _ states: UnsafeMutableBufferPointer<BodyState>, _ indices: SIMD4<Int32>, _ value: BodyStateW

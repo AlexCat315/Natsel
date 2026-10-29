@@ -13,7 +13,7 @@ struct MeshQueryBounds {
     }
 }
 
-/// Visits candidate triangles in the C query's left-first depth-first order.
+/// Visits candidate triangles in left-first depth-first order.
 /// The callback performs the triangle SAT test, preserving its caller's vertex order.
 func visitMeshCandidates(_ data: TriangleMesh, _ bounds: MeshQueryBounds,
                          _ callback: (Int, MeshTriangle) -> Bool) {

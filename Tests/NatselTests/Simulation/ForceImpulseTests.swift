@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Force and impulse application, matching the C semantics in body.c.
 @Suite("Forces and impulses")
 struct ForceImpulseTests {
     private func makeBox(_ world: World, _ position: Pos = Pos()) -> BodyID {

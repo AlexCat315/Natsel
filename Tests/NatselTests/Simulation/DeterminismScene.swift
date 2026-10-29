@@ -1,11 +1,8 @@
 
 
-// Shared scene support matching Box3D's shared/utils.h, shared/determinism.c, and
-// shared/stability.c. Used by the determinism tests to reproduce C's exact random sequences.
 
 @testable import Natsel
 
-// MARK: - C-compatible random numbers (shared/utils.h)
 
 struct SceneRandom {
     var seed: UInt32 = 12_345
@@ -66,7 +63,6 @@ func hashTransform(_ hash: UInt32, _ transform: WorldTransform) -> UInt32 {
     }
 }
 
-// MARK: - Wave pile (shared/determinism.c)
 
 struct WavePileScene {
     static let bodyCount = 100
@@ -143,7 +139,6 @@ func updateWavePile(_ world: World, _ scene: inout WavePileScene, stepCount: ino
     return hash != 0
 }
 
-// MARK: - Mesh drop (shared/stability.c)
 
 struct MeshDropScene {
     static let gridCount = 20
@@ -202,7 +197,6 @@ func updateMeshDrop(_ world: World, _ scene: inout MeshDropScene, stepCount: ino
     return hash != 0
 }
 
-// MARK: - Query spawn (shared/determinism.c)
 
 struct QuerySpawnScene {
     static let count = 50

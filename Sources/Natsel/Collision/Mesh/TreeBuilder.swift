@@ -27,7 +27,7 @@ struct MeshTreeBuild {
                 if range.count > 8 {
                     split = splitMeshHalf(primitives, range: range)
                 } else {
-                    // C leaves the caller's zero height unchanged on this path.
+                    // The caller's zero height remains unchanged on this path.
                     return storeLeaf(primitives, range: range)
                 }
             }

@@ -1,7 +1,7 @@
 import Testing
 @testable import Natsel
 
-// Covers the accessors added alongside the port that do not have a dedicated test elsewhere.
+// Covers accessors without a dedicated test elsewhere.
 @Suite("API coverage")
 struct ApiCoverageTests {
     private func makeBody(_ world: World, _ type: BodyType = .dynamicBody) -> BodyID {

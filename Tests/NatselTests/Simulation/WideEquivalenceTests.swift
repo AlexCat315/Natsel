@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// The wide solver must reproduce the scalar path bit for bit, the same way C's NEON path matches
-// its scalar fallback.
 @Suite("Wide equivalence")
 struct WideEquivalenceTests {
     private func scene(_ wide: Bool) -> UInt64 {

@@ -1,6 +1,6 @@
 
 
-// Spherical joint (spherical_joint.c).
+// Spherical joint.
 
 struct SphericalJointSim: BitwiseCopyable {
     var linearImpulse = Vec3()

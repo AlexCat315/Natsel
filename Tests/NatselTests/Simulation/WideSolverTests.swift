@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// The wide (4-lane) solver must reproduce the scalar path exactly. C guarantees the same
-// equivalence between its NEON path and `b3World_EnableSSE2Fallback`.
 @Suite("Wide solver")
 struct WideSolverTests {
     private func makeStack(_ world: World) {

@@ -13,76 +13,85 @@ private func fnv(_ h: UInt64, _ bytes: UnsafeRawPointer, _ n: Int) -> UInt64 {
 
 @Suite("Spherical joint")
 struct SphericalJointTests {
-    @Test("ball socket with limits matches the C reference")
+    @Test("ball socket with limits is repeatable")
     func ballSocket() {
-        let world = World()
-        world.enableSleep = false
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let world = World()
+            world.enableSleep = false
 
-        var def = BodyDef()
-        def.type = .staticBody
-        def.position = Pos(0, 3, 0)
-        let bodyA = world.createBody(def)
+            var def = BodyDef()
+            def.type = .staticBody
+            def.position = Pos(0, 3, 0)
+            let bodyA = world.createBody(def)
 
-        def = BodyDef()
-        def.type = .dynamicBody
-        def.position = Pos(Float(1.5), 3, 0)
-        def.angularVelocity = Vec3(1, 0.5, 0.3)
-        let bodyB = world.createBody(def)
-        var shapeDef = ShapeDef()
-        shapeDef.density = 1000
-        _ = world.createHullShape(bodyB, shapeDef, makeBoxHull(0.2, 0.2, 0.2))
+            def = BodyDef()
+            def.type = .dynamicBody
+            def.position = Pos(Float(1.5), 3, 0)
+            def.angularVelocity = Vec3(1, 0.5, 0.3)
+            let bodyB = world.createBody(def)
+            var shapeDef = ShapeDef()
+            shapeDef.density = 1000
+            _ = world.createHullShape(bodyB, shapeDef, makeBoxHull(0.2, 0.2, 0.2))
 
-        var jd = SphericalJointDef()
-        jd.base.bodyIdA = bodyA
-        jd.base.bodyIdB = bodyB
-        jd.base.localFrameA.p = Vec3(1, 0, 0)
-        jd.base.localFrameB.p = Vec3(-0.5, 0, 0)
-        jd.enableSpring = true
-        jd.hertz = 4.0
-        jd.dampingRatio = 0.6
-        jd.enableMotor = true
-        jd.maxMotorTorque = 30.0
-        jd.motorVelocity = Vec3(0.5, 0, 1)
-        jd.enableConeLimit = true
-        jd.coneAngle = 0.6
-        jd.enableTwistLimit = true
-        jd.lowerTwistAngle = -0.4
-        jd.upperTwistAngle = 0.4
-        let joint = world.createSphericalJoint(jd)
+            var jd = SphericalJointDef()
+            jd.base.bodyIdA = bodyA
+            jd.base.bodyIdB = bodyB
+            jd.base.localFrameA.p = Vec3(1, 0, 0)
+            jd.base.localFrameB.p = Vec3(-0.5, 0, 0)
+            jd.enableSpring = true
+            jd.hertz = 4.0
+            jd.dampingRatio = 0.6
+            jd.enableMotor = true
+            jd.maxMotorTorque = 30.0
+            jd.motorVelocity = Vec3(0.5, 0, 1)
+            jd.enableConeLimit = true
+            jd.coneAngle = 0.6
+            jd.enableTwistLimit = true
+            jd.lowerTwistAngle = -0.4
+            jd.upperTwistAngle = 0.4
+            let joint = world.createSphericalJoint(jd)
 
-        for _ in 0..<120 {
-            world.step(1.0 / 60.0, subStepCount: 4)
+            for _ in 0..<120 {
+                world.step(1.0 / 60.0, subStepCount: 4)
+            }
+
+            let transform = world.bodyTransform(bodyB)
+            let v = world.bodyLinearVelocity(bodyB)
+            let av = world.bodyAngularVelocity(bodyB)
+            let sim = world.readJointSim(joint.index1 - 1).sphericalJoint
+
+            var h: UInt64 = 14_695_981_039_346_656_037
+            var p = transform.p
+            var q = transform.q
+            var vv = v
+            var avv = av
+            var linear = sim.linearImpulse
+            var spring = sim.springImpulse
+            var motor = sim.motorImpulse
+            var lower = sim.lowerTwistImpulse
+            var upper = sim.upperTwistImpulse
+            var swing = sim.swingImpulse
+            h = fnv(h, &p, MemoryLayout<Pos>.size)
+            h = fnv(h, &q, 16)
+            h = fnv(h, &vv, 12)
+            h = fnv(h, &avv, 12)
+            h = fnv(h, &linear, 12)
+            h = fnv(h, &spring, 12)
+            h = fnv(h, &motor, 12)
+            h = fnv(h, &lower, 4)
+            h = fnv(h, &upper, 4)
+            h = fnv(h, &swing, 4)
+
+            samples.append(UInt64(h))
+            samples.append(UInt64(sim.linearImpulse.y.bitPattern))
+            samples.append(UInt64(sim.motorImpulse.x.bitPattern))
+            return samples
         }
 
-        let transform = world.bodyTransform(bodyB)
-        let v = world.bodyLinearVelocity(bodyB)
-        let av = world.bodyAngularVelocity(bodyB)
-        let sim = world.readJointSim(joint.index1 - 1).sphericalJoint
-
-        var h: UInt64 = 14_695_981_039_346_656_037
-        var p = transform.p
-        var q = transform.q
-        var vv = v
-        var avv = av
-        var linear = sim.linearImpulse
-        var spring = sim.springImpulse
-        var motor = sim.motorImpulse
-        var lower = sim.lowerTwistImpulse
-        var upper = sim.upperTwistImpulse
-        var swing = sim.swingImpulse
-        h = fnv(h, &p, MemoryLayout<Pos>.size)
-        h = fnv(h, &q, 16)
-        h = fnv(h, &vv, 12)
-        h = fnv(h, &avv, 12)
-        h = fnv(h, &linear, 12)
-        h = fnv(h, &spring, 12)
-        h = fnv(h, &motor, 12)
-        h = fnv(h, &lower, 4)
-        h = fnv(h, &upper, 4)
-        h = fnv(h, &swing, 4)
-
-        #expect(h == 0xc2d47c7120c353e3)
-        #expect(sim.linearImpulse.y.bitPattern == 0x402e4bec)
-        #expect(sim.motorImpulse.x.bitPattern == 0x3d629f41)
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 }

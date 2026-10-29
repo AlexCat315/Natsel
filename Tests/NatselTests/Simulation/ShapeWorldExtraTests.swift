@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Additional shape and world API matching the remaining C surface.
 @Suite("Shape and world extras")
 struct ShapeWorldExtraTests {
     private func makeBody(_ world: World) -> BodyID {

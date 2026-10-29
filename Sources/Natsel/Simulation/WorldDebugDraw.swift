@@ -1,6 +1,6 @@
 
 
-// Debug draw (physics_world.c b3World_Draw).
+// Debug draw.
 
 extension World {
     /// Walk the world and emit debug draw callbacks for everything the caller asked to see.

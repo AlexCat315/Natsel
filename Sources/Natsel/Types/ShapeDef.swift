@@ -14,7 +14,7 @@ public struct Filter: Sendable, Equatable, BitwiseCopyable {
     /// wins against the mask bits.
     public var groupIndex: Int32 = 0
 
-    /// All fields zero, matching C zero initialization. Use `defaultFilter` for the engine defaults.
+    /// All fields zero. Use `defaultFilter` for the engine defaults.
     public init() {}
 
     /// Collide with everything.
@@ -53,7 +53,7 @@ public struct SurfaceMaterial: Sendable, Equatable, BitwiseCopyable {
     /// Explicit padding. Must be zero.
     var padding: UInt32 = 0
 
-    /// All fields zero, matching C zero initialization. Use `defaultMaterial` for the
+    /// All fields zero. Use `defaultMaterial` for the
     /// engine defaults.
     public init() {}
 
@@ -162,7 +162,7 @@ public struct QueryFilter: Sendable, Equatable {
     /// Optional label combined with `id` to identify this query in a recording.
     public var name: String?
 
-    /// All fields zero, matching C zero initialization. Use `defaultFilter` for the engine defaults.
+    /// All fields zero. Use `defaultFilter` for the engine defaults.
     public init() {}
 
     /// Query everything.

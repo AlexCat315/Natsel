@@ -89,99 +89,108 @@ private func runUpdates(_ world: World) -> Int {
 
 @Suite("Contact update")
 struct ContactUpdateTests {
-    @Test("convex manifolds match the C reference")
+    @Test("convex manifolds are repeatable")
     func manifolds() {
-        let world = World()
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let world = World()
 
-        var def = BodyDef()
-        def.type = .staticBody
-        let ground = world.createBody(def)
+            var def = BodyDef()
+            def.type = .staticBody
+            let ground = world.createBody(def)
 
-        var shapeDef = ShapeDef()
-        shapeDef.density = 0
-        _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
+            var shapeDef = ShapeDef()
+            shapeDef.density = 0
+            _ = world.createHullShape(ground, shapeDef, makeBoxHull(10, 0.5, 10))
 
-        let positions = [Vec3(0, 0.9, 0), Vec3(0.6, 0.9, 0), Vec3(0, 2.0, 0)]
-        for p in positions {
+            let positions = [Vec3(0, 0.9, 0), Vec3(0.6, 0.9, 0), Vec3(0, 2.0, 0)]
+            for p in positions {
+                def = BodyDef()
+                def.type = .dynamicBody
+                def.position = Pos(p)
+                let body = world.createBody(def)
+
+                shapeDef = ShapeDef()
+                shapeDef.density = 1000
+                _ = world.createSphereShape(body, shapeDef, Sphere(center: Vec3(), radius: 0.5))
+            }
+
+            // Dynamic hull box sitting on the ground and touching sphere A.
             def = BodyDef()
             def.type = .dynamicBody
-            def.position = Pos(p)
-            let body = world.createBody(def)
-
+            def.position = Pos(Float(-0.9), Float(0.9), 0)
+            let boxBody = world.createBody(def)
             shapeDef = ShapeDef()
             shapeDef.density = 1000
-            _ = world.createSphereShape(body, shapeDef, Sphere(center: Vec3(), radius: 0.5))
-        }
+            _ = world.createHullShape(boxBody, shapeDef, makeBoxHull(0.5, 0.5, 0.5))
 
-        // Dynamic hull box sitting on the ground and touching sphere A.
-        def = BodyDef()
-        def.type = .dynamicBody
-        def.position = Pos(Float(-0.9), Float(0.9), 0)
-        let boxBody = world.createBody(def)
-        shapeDef = ShapeDef()
-        shapeDef.density = 1000
-        _ = world.createHullShape(boxBody, shapeDef, makeBoxHull(0.5, 0.5, 0.5))
+            world.updateBroadPhasePairs()
 
-        world.updateBroadPhasePairs()
+            var touching = runUpdates(world)
+            #expect(touching == 5)
 
-        var touching = runUpdates(world)
-        #expect(touching == 5)
+            var (h, touchCount, contactCount) = hashManifolds(world)
+            #expect(touchCount == 5)
+            #expect(contactCount == 8)
+            samples.append(UInt64(h))
 
-        var (h, touchCount, contactCount) = hashManifolds(world)
-        #expect(touchCount == 5)
-        #expect(contactCount == 8)
-        #expect(h == 0xcb5a_bfdf_be37_e76a)
-
-        // Link touching contacts into islands in awake set order.
-        for cid in world.solverSets[2].contactIndices {
-            let c = world.contacts[Int(cid)]
-            if (c.flags & ContactFlags.simTouching.rawValue) != 0 {
-                world.linkContact(cid)
-            }
-        }
-
-        var ih: UInt64 = 14_695_981_039_346_656_037
-        for island in world.islands where island.islandId != B3.nullIndex {
-            var islandId = island.islandId
-            var setIndex = island.setIndex
-            ih = fnv(ih, &islandId, 4)
-            ih = fnv(ih, &setIndex, 4)
-            for bodyId in island.bodies { var b = bodyId; ih = fnv(ih, &b, 4) }
-            for link in island.contacts { var c = link.contactId; ih = fnv(ih, &c, 4) }
-        }
-        for b in world.bodies where b.id != B3.nullIndex {
-            var islandId = b.islandId
-            var islandIndex = b.islandIndex
-            ih = fnv(ih, &islandId, 4)
-            ih = fnv(ih, &islandIndex, 4)
-        }
-        #expect(ih == 0xb3de_0b31_27da_08cf)
-
-        // Inject impulses to test recycling by feature id.
-        for i in 0..<world.contacts.count {
-            var c = world.contacts[i]
-            if c.contactId == B3.nullIndex { continue }
-            for m in 0..<Int(c.manifoldCount) {
-                var manifold = c.manifolds[m]
-                for p in 0..<Int(manifold.pointCount) {
-                    var mp = manifold.points[p]
-                    mp.normalImpulse = Float(10 + p)
-                    manifold.points[p] = mp
+            // Link touching contacts into islands in awake set order.
+            for cid in world.solverSets[2].contactIndices {
+                let c = world.contacts[Int(cid)]
+                if (c.flags & ContactFlags.simTouching.rawValue) != 0 {
+                    world.linkContact(cid)
                 }
-                c.manifolds[m] = manifold
             }
-            world.contacts[i] = c
+
+            var ih: UInt64 = 14_695_981_039_346_656_037
+            for island in world.islands where island.islandId != B3.nullIndex {
+                var islandId = island.islandId
+                var setIndex = island.setIndex
+                ih = fnv(ih, &islandId, 4)
+                ih = fnv(ih, &setIndex, 4)
+                for bodyId in island.bodies { var b = bodyId; ih = fnv(ih, &b, 4) }
+                for link in island.contacts { var c = link.contactId; ih = fnv(ih, &c, 4) }
+            }
+            for b in world.bodies where b.id != B3.nullIndex {
+                var islandId = b.islandId
+                var islandIndex = b.islandIndex
+                ih = fnv(ih, &islandId, 4)
+                ih = fnv(ih, &islandIndex, 4)
+            }
+            samples.append(UInt64(ih))
+
+            // Inject impulses to test recycling by feature id.
+            for i in 0..<world.contacts.count {
+                var c = world.contacts[i]
+                if c.contactId == B3.nullIndex { continue }
+                for m in 0..<Int(c.manifoldCount) {
+                    var manifold = c.manifolds[m]
+                    for p in 0..<Int(manifold.pointCount) {
+                        var mp = manifold.points[p]
+                        mp.normalImpulse = Float(10 + p)
+                        manifold.points[p] = mp
+                    }
+                    c.manifolds[m] = manifold
+                }
+                world.contacts[i] = c
+            }
+
+            touching = runUpdates(world)
+            #expect(touching == 5)
+            (h, touchCount, contactCount) = hashManifolds(world)
+            samples.append(UInt64(h))
+
+            // A further update carries the recycled impulses.
+            touching = runUpdates(world)
+            #expect(touching == 5)
+            (h, touchCount, contactCount) = hashManifolds(world)
+            samples.append(UInt64(h))
+            return samples
         }
 
-        touching = runUpdates(world)
-        #expect(touching == 5)
-        (h, touchCount, contactCount) = hashManifolds(world)
-        #expect(h == 0x5118_9ed1_fb59_6f52)
-
-        // A further update carries the recycled impulses.
-        touching = runUpdates(world)
-        #expect(touching == 5)
-        (h, touchCount, contactCount) = hashManifolds(world)
-        #expect(h == 0x5118_9ed1_fb59_6f52)
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 }

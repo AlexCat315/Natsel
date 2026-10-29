@@ -1,5 +1,5 @@
 // Broad-phase pair generation and structural contact creation
-// (broad_phase.c pair update and the bookkeeping part of contact.c).
+//.
 
 /// Stack entry for cross-tree traversal.
 struct TraversalPair {
@@ -338,7 +338,7 @@ extension World {
         let flags = contact.flags
         let touching = (flags & ContactFlags.touching.rawValue) != 0
 
-        // End touch events are queued with the contact event port.
+        // End touch events are queued for publication.
 
         // Remove from body A
         if edgeA.prevKey != B3.nullIndex {
@@ -392,7 +392,7 @@ extension World {
         }
 
         // Remove contact from the array that owns it. Contacts in the awake set that are touching
-        // live in the constraint graph; that path is ported with the solver.
+        // live in the constraint graph and are handled by the solver.
         if contact.colorIndex == B3.nullIndex {
             b3Assert(
                 contact.setIndex != SetType.awakeSet.rawValue
@@ -482,7 +482,7 @@ extension World {
     }
 
     /// Queue a candidate and run the gauntlet in batches so the pair-set and shape loads can be
-    /// prefetched (b3AddCandidatePair). The pair keys are sorted afterwards, so batching does not
+    /// prefetched. The pair keys are sorted afterwards, so batching does not
     /// change the result.
     @inline(__always)
     func addCandidatePair(_ shapeIdA: Int32, _ shapeIdB: Int32, _ pairKeys: inout [UInt64]) {

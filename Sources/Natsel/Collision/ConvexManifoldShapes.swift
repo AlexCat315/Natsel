@@ -1,4 +1,4 @@
-// Sphere and capsule collision routines from convex_manifold.c.
+// Sphere and capsule collision routines.
 
 // MARK: - Sphere contacts
 

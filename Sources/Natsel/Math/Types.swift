@@ -46,7 +46,7 @@ public struct CosSin: Sendable, Equatable, BitwiseCopyable {
     }
 }
 
-/// A quaternion. The default value is all zero, matching C zero initialization; use `identity`
+/// A quaternion. The default value is all zero; use `identity`
 /// for the unit rotation.
 public struct Quat: Sendable, Equatable, BitwiseCopyable {
     public var v: Vec3 = Vec3()

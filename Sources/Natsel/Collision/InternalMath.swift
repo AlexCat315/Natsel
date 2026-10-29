@@ -1,5 +1,5 @@
-// Internal geometry helpers from `math_internal.h`. These are the scalar versions so the
-// operand order can be preserved exactly; the SIMD paths in C evaluate the same expressions.
+// Internal scalar geometry helpers, keeping expressions explicit so the
+// operand order stays consistent between scalar and SIMD paths.
 
 // MARK: - Internal types
 
@@ -48,7 +48,7 @@ struct ShapeExtent: Sendable, Equatable, BitwiseCopyable {
     init() {}
 }
 
-/// The empty bounds sentinel used by the C `B3_BOUNDS3_EMPTY` constant.
+/// The empty bounds sentinel.
 let bounds3Empty = AABB(
     Vec3(Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude, Float.greatestFiniteMagnitude),
     Vec3(-Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude, -Float.greatestFiniteMagnitude)

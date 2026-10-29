@@ -1,6 +1,4 @@
-// The overflow color runs C's scalar contact solver (contact_solver.c, b3*Contacts_Mesh). Its
-// arithmetic differs from the lane-wise wide path: full inertia matrices, rotated anchors for the
-// separation, clamped accumulated impulses, and per-point impulse application.
+// The overflow color runs the scalar contact solver in sequential order.
 
 struct OverflowContactConstraint {
     var contactId: Int32 = B3.nullIndex

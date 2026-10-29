@@ -1,7 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Name interning ported from test/test_name_cache.c.
 @Suite("Name cache")
 struct NameCacheTests {
     @Test("empty and nil names map to the null id")

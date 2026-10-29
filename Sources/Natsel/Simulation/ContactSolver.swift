@@ -1,15 +1,15 @@
 
 
-// Convex and mesh contact solver (contact_solver.c and contact_solver_wide.inl).
+// Convex and mesh contact solver.
 //
-// The C solver batches four independent constraints per SIMD group. Graph coloring guarantees the
-// bodies in a color are disjoint, so the lanes never interact. This port evaluates the same
+// The solver batches four independent constraints per SIMD group. Graph coloring guarantees the
+// bodies in a color are disjoint, so the lanes never interact. Each lane evaluates the same
 // per-lane arithmetic in the same color/contact order. WideContactSolver.swift packs disjoint
 // contacts into four SIMD lanes; this file also supplies the sequential overflow and fallback paths.
 
 // MARK: - Symmetric 3x3
 
-/// Symmetric 3x3 matrix in the same six-component form used by the C wide solver.
+/// Symmetric 3x3 matrix in six-component form for the wide solver.
 struct SymMatrix3: BitwiseCopyable {
     var cxx: Float = 0
     var cxy: Float = 0
@@ -30,7 +30,7 @@ struct SymMatrix3: BitwiseCopyable {
     }
 
     init(_ m: Matrix3) {
-        // The C wide solver gathers the upper triangle of the matrix.
+        // The wide solver gathers the upper triangle of the matrix.
         cxx = m.cx.x
         cxy = m.cx.y
         cxz = m.cx.z
@@ -39,7 +39,7 @@ struct SymMatrix3: BitwiseCopyable {
         czz = m.cz.z
     }
 
-    /// m * a. The association order matches `b3MulMVW`.
+    /// m * a, preserving the wide solver association order.
     @inline(__always)
     func mulMV(_ a: Vec3) -> Vec3 {
         Vec3(
@@ -58,7 +58,7 @@ func addSym(_ a: SymMatrix3, _ b: SymMatrix3) -> SymMatrix3 {
     )
 }
 
-/// Invert a symmetric matrix using the same formula as the C wide solver.
+/// Invert a symmetric matrix for the wide solver.
 func invertSym(_ m: SymMatrix3) -> SymMatrix3 {
     let cxx = m.cyy * m.czz - m.cyz * m.cyz
     let cxy = m.cxz * m.cyz - m.cxy * m.czz
@@ -140,7 +140,7 @@ struct ContactConstraint {
 
 // MARK: - Solver
 
-/// Inverse rotate used by the C wide solver. This is a different formulation from the scalar
+/// Inverse rotate used by the wide solver. This is a different formulation from the scalar
 /// `invRotateVector` and is not bit-equivalent to it.
 @inline(__always)
 func invRotateVectorWide(_ q: Quat, _ a: Vec3) -> Vec3 {
@@ -228,7 +228,7 @@ extension World {
         constraintGraph.colors[Int(colorIndex)].convexContacts
     }
 
-    /// Mesh contact ids for a color, in solver order. The C solver sorts these by manifold count so
+    /// Mesh contact ids for a color, in solver order. The solver sorts these by manifold count so
     /// contacts with more manifolds are grouped into the same SIMD lanes.
     func solverMeshContactIds(_ colorIndex: Int32) -> [Int32] {
         let color = constraintGraph.colors[Int(colorIndex)]
@@ -378,7 +378,7 @@ extension World {
                 manifoldConstraint.points[pointIndex] = cp
             }
 
-            // Compute effective mass for the tangential friction. The C wide solver evaluates this
+            // Compute effective mass for the tangential friction. The wide solver evaluates this
             // once per manifold, not per point.
             do {
                 let rtA1 = cross(manifoldConstraint.centerA, tangent1)
@@ -959,7 +959,7 @@ extension World {
 
     /// Warm start every active constraint in solver order.
     /// Warm start the overflow constraints, then each color in order. Within a color the joints
-    /// are solved before the contacts, matching the C stage layout.
+    /// are solved before the contacts.
     func warmStartAll(_ context: StepContext) {
         warmStartJoints(overflowIndex, context)
         warmStartContacts(overflowIndex, false)

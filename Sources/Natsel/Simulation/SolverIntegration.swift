@@ -1,6 +1,6 @@
 
 
-internal // Solver integration, finalization, and a contact-free step (solver.c).
+internal // Solver integration, finalization, and a contact-free step.
 
 /// Constraint softness.
 struct Softness: BitwiseCopyable {
@@ -544,7 +544,7 @@ extension World {
         var bulletBodies: [Int32] = []
     }
 
-    /// Advance the simulation. Contact and joint solving is ported separately; this performs
+    /// Advance the simulation. This performs
     /// broad-phase pair updates, integration, and body finalization.
     public func step(_ timeStep: Float, subStepCount: Int32 = 4) {
         b3Assert(timeStep >= 0)
@@ -662,7 +662,7 @@ extension World {
             dynamicContinuousActiveBodies.removeAll(keepingCapacity: true)
             profile.transforms = getMillisecondsAndReset(&ticks)
 
-            // Refit the kinematic and dynamic trees after body finalization, matching b3Solve.
+            // Refit the kinematic and dynamic trees after body finalization.
             broadPhase.trees[Int(BodyType.kinematicBody.rawValue)].refit()
             broadPhase.trees[Int(BodyType.dynamicBody.rawValue)].refit()
             profile.refit = getMillisecondsAndReset(&ticks)

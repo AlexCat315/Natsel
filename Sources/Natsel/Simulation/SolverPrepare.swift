@@ -1,4 +1,4 @@
-// Constraint preparation in two passes (b3PrepareContactsTask / b3PrepareJointsTask in C).
+// Constraint preparation in two passes: contacts and joints.
 //
 // Planning runs on one thread: it fixes the solver order of the contacts, gives every scalar
 // contact and every four-wide batch its constraint slot and its run in the manifold pools, and sizes

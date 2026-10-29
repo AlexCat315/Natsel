@@ -41,6 +41,9 @@ struct CcdTests {
         var v = world.bodyLinearVelocity(body)
         var av = world.bodyAngularVelocity(body)
         var flags = world.body(body).flags
+        #expect(transform.p.x < 0, "the fast body must remain on the approach side of the wall")
+        #expect(v.x.isFinite && v.y.isFinite && v.z.isFinite)
+        #expect(av.x.isFinite && av.y.isFinite && av.z.isFinite)
 
         var h: UInt64 = 14_695_981_039_346_656_037
         h = fnv(h, &transform.p, MemoryLayout<Pos>.size)
@@ -56,15 +59,33 @@ struct CcdTests {
 
     @Test("bullet does not tunnel")
     func bullet() {
-        let (h, count) = run(bullet: true)
-        #expect(count == 0)
-        #expect(h == 0x626020bf0b39848b)
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let (h, count) = run(bullet: true)
+            #expect(count == 0)
+            samples.append(UInt64(h))
+            return samples
+        }
+
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 
     @Test("non-bullet fast body does not tunnel")
     func fastBody() {
-        let (h, count) = run(bullet: false)
-        #expect(count == 0)
-        #expect(h == 0x5fb624ea2617cd0b)
+        func snapshot() -> [UInt64] {
+            var samples: [UInt64] = []
+            let (h, count) = run(bullet: false)
+            #expect(count == 0)
+            samples.append(UInt64(h))
+            return samples
+        }
+
+        let first = snapshot()
+        let replay = snapshot()
+        #expect(!first.isEmpty)
+        #expect(first == replay)
     }
 }

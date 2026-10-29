@@ -1,6 +1,6 @@
 
 
-// Solver set transfers, waking, and merging (solver_set.c).
+// Solver set transfers, waking, and merging.
 
 extension World {
     /// Wake a solver set. Does not merge islands.

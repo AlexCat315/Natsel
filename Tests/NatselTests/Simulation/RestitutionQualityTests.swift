@@ -1,8 +1,6 @@
 import Testing
 @testable import Natsel
 
-// Physics-quality checks for the restitution solver, ported from test/test_restitution.c.
-// These assert the measured coefficient of restitution rather than a bitwise hash.
 @Suite("Restitution quality")
 struct RestitutionQualityTests {
     private static let timeStep: Float = 1.0 / 60.0

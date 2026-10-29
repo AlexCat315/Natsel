@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, reactive } from 'vue'
 import { RouterLink } from 'vue-router'
-import PhysicsCanvas from '@/components/PhysicsCanvas.vue'
 import CodeBlock from '@/components/CodeBlock.vue'
 
 const quickCode = `import Natsel
@@ -49,7 +48,7 @@ const highlights = [
 
 // animated counters
 const stats = reactive([
-  { value: 10, suffix: '', label: '基准场景', current: 0 },
+  { value: 18, suffix: '', label: '基准场景', current: 0 },
   { value: 26, suffix: '', label: '引擎模块', current: 0 },
   { value: 60, suffix: 'Hz', label: '固定步长', current: 0 },
   { value: 4, suffix: 'x', label: '多线程并行', current: 0 },
@@ -100,20 +99,6 @@ onMounted(() => {
           <strong>{{ Math.round(s.current) }}{{ s.suffix }}</strong>
           <span>{{ s.label }}</span>
         </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- LIVE PHYSICS -->
-  <section class="section">
-    <div class="container">
-      <div class="reveal">
-        <span class="eyebrow">实时演示</span>
-        <h2 class="section-title">在浏览器里玩一玩</h2>
-        <p class="section-sub">下面是一个迷你 2D 物理引擎，与 Natsel 同样的冲量求解思路。切换场景、拖拽发射，观察碰撞与堆叠。</p>
-      </div>
-      <div class="reveal" style="margin-top: 36px">
-        <PhysicsCanvas />
       </div>
     </div>
   </section>
