@@ -15,3 +15,6 @@ pub mod types;
 pub mod vehicle;
 
 pub use base::core::{get_max_manifold_points, get_version, is_double_precision, Version};
+
+#[cfg(test)]
+mod tests;
