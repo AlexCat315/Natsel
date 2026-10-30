@@ -2,7 +2,7 @@
 
 use crate::base::constants as b3;
 use crate::collision::aabb::{bounds_overlap, bounds_triangle_overlap};
-use crate::collision::internal_math::signed_volume;
+use crate::collision::internal_math::{get_by_index, signed_volume};
 use crate::collision::proxy::{compute_proxy_aabb, make_local_proxy};
 use crate::math::functions::*;
 use crate::math::types::{AABB, Vec3};
@@ -37,7 +37,9 @@ pub fn overlap_mesh(mesh: &Mesh, transform: crate::math::types::Transform, proxy
             };
             input.proxy_b = local_proxy;
             let mut cache = SimplexCache::default();
-            if crate::collision::distance::shape_distance(input, &mut cache).distance < 0.1 * b3::linear_slop() {
+            if crate::collision::distance::shape_distance(&input, &mut cache, None).distance
+                < 0.1 * b3::linear_slop()
+            {
                 touching = true;
             }
         }
@@ -215,7 +217,7 @@ pub fn shape_cast_mesh(mesh: &Mesh, input: ShapeCastInput) -> CastOutput {
                         continue;
                     }
                     let triangle_points = [Vec3::ZERO, b - a, c - a];
-                    let output = crate::collision::distance::shape_cast(ShapeCastPairInput {
+                    let output = crate::collision::distance::shape_cast(&ShapeCastPairInput {
                         proxy_a: ShapeProxy::new(Some(triangle_points.as_ptr()), 3, 0.0),
                         proxy_b: input.proxy,
                         transform: crate::math::types::Transform::new(-a, crate::math::types::Quat::IDENTITY),
@@ -286,13 +288,14 @@ pub fn collide_mover_and_mesh(mesh: &Mesh, mover: crate::types::geometry::Capsul
         }
         let mut cache = SimplexCache::default();
         let output = crate::collision::distance::shape_distance(
-            DistanceInput {
+            &DistanceInput {
                 proxy_a: ShapeProxy::new(Some(scaled.as_ptr()), 3, 0.0),
                 proxy_b: ShapeProxy::new(Some(mover_points.as_ptr()), 2, 0.0),
                 transform: crate::math::types::Transform::IDENTITY,
                 use_radii: false,
             },
             &mut cache,
+            None,
         );
         if output.distance != 0.0 && output.distance <= mover.radius {
             results.push(PlaneResult {

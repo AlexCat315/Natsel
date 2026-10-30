@@ -99,7 +99,10 @@ impl core::ops::Index<usize> for MeshPointSlice {
 }
 
 /// One triangle's local manifold plus the mesh identity needed for selection and clustering.
-#[derive(Clone, Copy, Debug)]
+///
+/// `point_range` is a `Range<usize>`, which is not `Copy`, so this is `Clone` only; callers that
+/// need the range clone it (`scratch.manifolds[i].point_range.clone()`).
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct MeshTriangleManifold {
     pub normal: Vec3,
@@ -204,7 +207,10 @@ impl crate::simulation::world_runtime::World {
                 let triangle_index =
                     contact.mesh_contact().triangles[index].triangle_index;
                 let mut manifold = LocalManifold::default();
-                manifold.points = point_base.add(total_point_count);
+                // SAFETY: `point_base` addresses the `MeshContactScratch` point arena for this
+                // worker, which holds `capacity` slots; `total_point_count` is bounded by
+                // `available` below before any point is written, so the offset stays in bounds.
+                manifold.points = unsafe { point_base.add(total_point_count) };
                 manifold.triangle_flags = triangle.flags;
                 let available = (capacity - total_point_count) as i32;
                 match &shape_b.geometry {

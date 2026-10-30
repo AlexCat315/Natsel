@@ -220,12 +220,12 @@ impl World {
 
         joint.island_id = island_id;
         joint.island_index = self.islands[island_id as usize].joints.len() as i32;
-        self.joints[joint_id as usize] = joint;
 
         let mut link = JointLink::default();
         link.joint_id = joint.joint_id;
         link.body_id_a = joint.edges[0].body_id;
         link.body_id_b = joint.edges[1].body_id;
+        self.joints[joint_id as usize] = joint;
         self.islands[island_id as usize].joints.push(link);
     }
 

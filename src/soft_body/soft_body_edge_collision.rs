@@ -126,7 +126,7 @@ impl SoftBodyRecord {
                 }
             }
         }
-        edges.sort_by(|a, b| if a.x != b.x { a.x < b.x } else { a.y < b.y });
+        edges.sort_by(|a, b| if a.x != b.x { a.x.cmp(&b.x) } else { a.y.cmp(&b.y) });
         self.mesh_edges = edges;
     }
 

@@ -5,6 +5,7 @@ use core::ptr;
 use crate::base::constants as b3;
 use crate::base::core::{b3_assert, b3_validate};
 use crate::base::hash::hash64_non_zero;
+use crate::collision::geometry_queries::box_inertia;
 use crate::collision::geometry_storage::GeometryStorage;
 use crate::collision::internal_math::*;
 use crate::math::functions::*;
@@ -257,7 +258,7 @@ impl Hull {
     pub fn allocate(vertex_count: i32, edge_count: i32, face_count: i32) -> Option<Hull> {
         let layout = HullLayout::new(vertex_count, edge_count, face_count);
         let storage = GeometryStorage::new(layout.byte_count)?;
-        let hull = Hull::from_storage(storage);
+        let mut hull = Hull::from_storage(storage);
 
         {
             let h = hull.header_mut();
@@ -293,7 +294,12 @@ impl Hull {
     pub fn compute_hash(&mut self) {
         self.header_mut().hash = 0;
         let bytes = self.storage.byte_count();
-        self.header_mut().hash = hash64_non_zero(self.storage.base(), bytes as i32);
+        // The hash covers the whole storage, header included, so the zeroed `hash` field is part of
+        // the input; read it before taking the mutable header borrow that writes the result.
+        let hash = unsafe {
+            hash64_non_zero(std::slice::from_raw_parts(self.storage.base(), bytes))
+        };
+        self.header_mut().hash = hash;
     }
 }
 

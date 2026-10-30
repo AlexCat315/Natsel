@@ -203,7 +203,7 @@ pub fn shape_cast_height_field(field: &HeightField, input: &ShapeCastInput) -> C
                             pair.proxy_a = ShapeProxy::new(Some(triangle.as_ptr()), 3, 0.0);
                             pair.max_fraction = best_fraction;
                             pair.transform.p = -origin;
-                            let output = shape_cast(pair);
+                            let output = shape_cast(&pair);
                             if output.hit {
                                 best_fraction = output.fraction;
                                 result = output;

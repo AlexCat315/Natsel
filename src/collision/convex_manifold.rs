@@ -6,7 +6,7 @@
 
 use crate::base::constants as b3;
 use crate::base::core::{b3_assert, b3_validate};
-use crate::collision::hull::{hull_soa_stride, Hull};
+use crate::collision::hull::{find_hull_support_vertex, hull_soa_stride, Hull};
 use crate::collision::internal_math::{
     arbitrary_perp, make_plane_from_normal_and_point, plane_separation,
 };
@@ -129,13 +129,6 @@ impl Default for FaceScratch {
     fn default() -> Self {
         Self::new()
     }
-}
-
-/// Reusable scratch buffers for one worker's mesh narrow phase.
-#[derive(Clone, Debug, Default)]
-pub struct MeshContactScratch {
-    pub sat: SatScratch,
-    pub face: FaceScratch,
 }
 
 // MARK: - Segment clipping
@@ -1431,14 +1424,18 @@ pub fn collide_hulls(
     transform_b_to_a: Transform,
     cache: &mut SATCache,
 ) {
-    let mut scratch = MeshContactScratch::default();
+    // Swift's `collideHulls` overload allocated a scratch per call; the Rust caller reuses its
+    // worker scratch instead, so this entry point owns one for the duration of the call.
+    let mut sat = SatScratch::new();
+    let mut face = FaceScratch::new();
     collide_hulls_with_scratch(
         manifold,
         capacity,
         hull_a,
         hull_b,
         transform_b_to_a,
-        &mut scratch,
+        &mut sat,
+        &mut face,
         cache,
     );
 }
@@ -1451,7 +1448,8 @@ pub fn collide_hulls_with_scratch(
     hull_a: &Hull,
     hull_b: &Hull,
     transform_b_to_a: Transform,
-    scratch: &mut MeshContactScratch,
+    sat: &mut SatScratch,
+    face: &mut FaceScratch,
     cache: &mut SATCache,
 ) {
     manifold.point_count = 0;
@@ -1512,7 +1510,7 @@ pub fn collide_hulls_with_scratch(
                 hull_b,
                 transform_b_to_a,
                 face_query,
-                &mut scratch.face,
+                face,
                 &mut local_cache,
             );
             if touching && abs_float(cache.separation - local_cache.separation) < linear_slop {
@@ -1556,7 +1554,7 @@ pub fn collide_hulls_with_scratch(
                 hull_b,
                 transform_b_to_a,
                 face_query,
-                &mut scratch.face,
+                face,
                 &mut local_cache,
             );
             if touching && abs_float(cache.separation - local_cache.separation) < linear_slop {
@@ -1654,7 +1652,7 @@ pub fn collide_hulls_with_scratch(
                 hull_b,
                 transform_b_to_a,
                 false,
-                &mut scratch.sat,
+                sat,
             );
             let _ = build_face_a_contact(
                 manifold,
@@ -1663,7 +1661,7 @@ pub fn collide_hulls_with_scratch(
                 hull_b,
                 transform_b_to_a,
                 axis_query.face_a,
-                &mut scratch.face,
+                face,
                 cache,
             );
             return;
@@ -1675,7 +1673,7 @@ pub fn collide_hulls_with_scratch(
                 hull_b,
                 transform_b_to_a,
                 false,
-                &mut scratch.sat,
+                sat,
             );
             let _ = build_face_b_contact(
                 manifold,
@@ -1684,7 +1682,7 @@ pub fn collide_hulls_with_scratch(
                 hull_b,
                 transform_b_to_a,
                 axis_query.face_b,
-                &mut scratch.face,
+                face,
                 cache,
             );
             return;
@@ -1696,7 +1694,7 @@ pub fn collide_hulls_with_scratch(
                 hull_b,
                 transform_b_to_a,
                 false,
-                &mut scratch.sat,
+                sat,
             );
             let edge_query = axis_query.edge;
             if edge_query.index_a != b3::NULL_INDEX {
@@ -1721,7 +1719,7 @@ pub fn collide_hulls_with_scratch(
     *cache = SATCache::default();
 
     let axis_query =
-        compute_separating_axis(hull_a, hull_b, transform_b_to_a, true, &mut scratch.sat);
+        compute_separating_axis(hull_a, hull_b, transform_b_to_a, true, sat);
 
     if axis_query.separated_feature != SeparatingFeature::InvalidAxis {
         // We found a separating axis
@@ -1766,7 +1764,7 @@ pub fn collide_hulls_with_scratch(
             hull_b,
             transform_b_to_a,
             face_query,
-            &mut scratch.face,
+            face,
             cache,
         );
 
@@ -1785,7 +1783,7 @@ pub fn collide_hulls_with_scratch(
             hull_b,
             transform_b_to_a,
             face_query,
-            &mut scratch.face,
+            face,
             cache,
         );
 

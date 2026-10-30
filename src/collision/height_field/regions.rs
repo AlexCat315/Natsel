@@ -48,7 +48,7 @@ pub fn query_height_field(
 ) {
     let region = HeightFieldRegion::new(field, bounds);
     for row in region.rows {
-        for column in region.columns {
+        for column in region.columns.clone() {
             let cell = row * (field.column_count() - 1) + column;
             if field.material_indices()[cell] == 0xff {
                 continue;

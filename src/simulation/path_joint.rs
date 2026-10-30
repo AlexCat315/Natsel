@@ -13,11 +13,13 @@
 use std::sync::Arc;
 
 use crate::base::constants as b3;
+use crate::base::core::b3_assert;
 use crate::collision::internal_math::{Matrix2, solve2};
 use crate::math::functions::{
     abs_float, add_mm, clamp_float, cross, distance_squared, dot, get_length_and_normalize,
     inv_mul_quat, inv_rotate_vector, is_valid_vec3, lerp, length, length_squared, make_matrix_from_quat,
     make_quat_from_matrix, max_float, min_float, min_vec3, max_vec3, mul_add, mul_mv, mul_quat,
+    mul_sub,
     mul_world_transforms, negate_quat, normalize, normalize_quat, rotate_vector, solve3, sub_pos,
     transform_world_point, inv_transform_world_point, offset_pos,
 };
@@ -601,6 +603,15 @@ impl Default for PathJointData {
     }
 }
 
+/// World space linear and angular impulse of the last substep, the two labels of Swift's
+/// `(linear: Vec3, angular: Vec3)` tuple return of `pathJointImpulses`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[repr(C)]
+pub struct PathJointImpulses {
+    pub linear: Vec3,
+    pub angular: Vec3,
+}
+
 /// Frame of a path joint at the current substep.
 #[derive(Clone, Copy)]
 struct PathFrame {
@@ -624,6 +635,23 @@ fn path_axis(f: PathFrame, i: usize) -> Vec3 {
 
 impl World {
     // MARK: Storage
+
+    /// Write one slot of `path_joint_store` from a non-mutating method.
+    ///
+    /// Swift's `World` was a class, so `preparePathJoint`/`solvePathJoint` wrote `pathJointStore`
+    /// without mutating `self`. The Rust solver stages are reached through `*mut World` (the
+    /// worker pool) and each stage writes only its own joint's slot, so the slab base reproduces
+    /// Swift's write without asserting exclusive access to the whole `World`.
+    #[inline(always)]
+    fn write_path_data(&self, slot: usize, data: PathJointData) {
+        b3_assert(slot < self.path_joint_store.count());
+        // SAFETY: this helper validates `slot` against `path_joint_store.count()` above, so the
+        // offset stays inside the slab. The slab is never resized while a solver session is
+        // active, and a joint's slot is touched only by its own constraint lane.
+        unsafe {
+            self.path_joint_store.as_ptr().cast_mut().add(slot).write(data);
+        }
+    }
 
     fn allocate_path_data(
         &mut self,
@@ -726,7 +754,7 @@ impl World {
 
     // MARK: Prepare
 
-    pub(crate) fn prepare_path_joint(&mut self, base: &mut JointSim, context: &StepContext) {
+    pub(crate) fn prepare_path_joint(&self, base: &mut JointSim, context: &StepContext) {
         let body_a: Body = self.joint_prepare_body(base.body_id_a);
         let body_b: Body = self.joint_prepare_body(base.body_id_b);
         let sim_a: BodySim = self.joint_prepare_sim(&body_a);
@@ -774,7 +802,7 @@ impl World {
         if data.rotation == PathRotationConstraint::Free {
             data.angular_impulse = Vec3::default();
         }
-        self.path_joint_store.set(slot, data);
+        self.write_path_data(slot, data);
     }
 
     // MARK: Geometry
@@ -895,8 +923,8 @@ impl World {
     ) {
         let joint = base.path();
         let data = self.path_joint_store.get(joint.slot as usize);
-        let mut state_a = World::state_at(states, joint.index_a);
-        let mut state_b = World::state_at(states, joint.index_b);
+        let mut state_a = World::state_at(states.as_mut_ptr(), joint.index_a);
+        let mut state_b = World::state_at(states.as_mut_ptr(), joint.index_b);
         let f = self.path_frame(joint, data, state_a, state_b, false);
 
         let axial = data.lower_impulse - data.upper_impulse + data.motor_impulse + data.friction_impulse;
@@ -917,14 +945,14 @@ impl World {
         state_b.linear_velocity = mul_add(state_b.linear_velocity, base.inv_mass_b, linear);
         state_b.angular_velocity = state_b.angular_velocity
             + mul_mv(base.inv_ib, cross(f.r_b, linear) + angular);
-        World::set_state_at(states, joint.index_a, state_a);
-        World::set_state_at(states, joint.index_b, state_b);
+        World::set_state_at(states.as_mut_ptr(), joint.index_a, state_a);
+        World::set_state_at(states.as_mut_ptr(), joint.index_b, state_b);
     }
 
     // MARK: Solve
 
     pub(crate) fn solve_path_joint(
-        &mut self,
+        &self,
         base: &mut JointSim,
         context: &StepContext,
         use_bias: bool,
@@ -936,8 +964,8 @@ impl World {
         if data.geometry.count <= 0 {
             return;
         }
-        let mut state_a = World::state_at(states, joint.index_a);
-        let mut state_b = World::state_at(states, joint.index_b);
+        let mut state_a = World::state_at(states.as_mut_ptr(), joint.index_a);
+        let mut state_b = World::state_at(states.as_mut_ptr(), joint.index_b);
         let m_a = base.inv_mass_a;
         let m_b = base.inv_mass_b;
         let i_a = base.inv_ia;
@@ -1166,23 +1194,23 @@ impl World {
             state_b.linear_velocity = v_b;
             state_b.angular_velocity = w_b;
         }
-        World::set_state_at(states, joint.index_a, state_a);
-        World::set_state_at(states, joint.index_b, state_b);
-        self.path_joint_store.set(slot, data);
+        World::set_state_at(states.as_mut_ptr(), joint.index_a, state_a);
+        World::set_state_at(states.as_mut_ptr(), joint.index_b, state_b);
+        self.write_path_data(slot, data);
     }
 
     // MARK: Reactions
 
-    pub(crate) fn path_joint_impulses(&self, sim: JointSim) -> (Vec3, Vec3) {
+    pub(crate) fn path_joint_impulses(&self, sim: JointSim) -> PathJointImpulses {
         let slot = sim.path().slot;
         if !(slot >= 0 && (slot as usize) < self.path_joint_store.count()) {
-            return (Vec3::default(), Vec3::default());
+            return PathJointImpulses::default();
         }
         let slot = slot as usize;
-        (
-            self.path_joint_store.get(slot).linear_impulse_world,
-            self.path_joint_store.get(slot).angular_impulse_world,
-        )
+        PathJointImpulses {
+            linear: self.path_joint_store.get(slot).linear_impulse_world,
+            angular: self.path_joint_store.get(slot).angular_impulse_world,
+        }
     }
 
     // MARK: Accessors
@@ -1320,8 +1348,8 @@ impl World {
         xf_a: WorldTransform,
         p_b: Pos,
         scale: f32,
-        draw_segment: &mut dyn FnMut(Pos, Pos, HexColor),
-        draw_point: Option<&mut dyn FnMut(Pos, f32, HexColor)>,
+        draw_segment: &dyn Fn(Pos, Pos, HexColor),
+        draw_point: Option<&dyn Fn(Pos, f32, HexColor)>,
     ) {
         let slot = sim.path().slot;
         if !(slot >= 0 && (slot as usize) < self.path_joint_store.count()) {
@@ -1367,7 +1395,7 @@ impl World {
             debug_colors::BLUE,
         );
         draw_segment(p, p_b, debug_colors::GRAY);
-        if let Some(mut draw_point) = draw_point {
+        if let Some(draw_point) = draw_point {
             draw_point(p_b, 6.0, debug_colors::WHITE);
         }
     }

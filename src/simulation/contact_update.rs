@@ -142,7 +142,8 @@ impl World {
                         hull_a,
                         hull_b,
                         transform_b_to_a,
-                        scratch,
+                        &mut scratch.sat,
+                        &mut scratch.face,
                         &mut contact.sat_cache,
                     );
                     scratch.sat_calls += 1;

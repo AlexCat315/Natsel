@@ -21,7 +21,7 @@ fn dynamic_body(world: &mut World, position: Vec3) -> crate::types::ids::BodyID 
 fn sphere() {
     let mut world = World::default();
     let body = dynamic_body(&mut world, Vec3::new(0.0, 0.0, 0.0));
-    let _ = world.create_sphere_shape(body, &ShapeDef::default(), &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
+    let _ = world.create_sphere_shape(body, &ShapeDef::default(), Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
     let half = world.body_submerged_volume(body, Pos::new(0.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0));
     assert!((half.total_volume - (4.0 / 3.0) * PI).abs() < 1.0e-4);
@@ -159,9 +159,9 @@ fn floating_4() {
 fn sink_and_current() {
     let mut world = World::default();
     let heavy = dynamic_body(&mut world, Vec3::new(0.0, 0.0, 0.0));
-    let _ = world.create_sphere_shape(heavy, &ShapeDef::default(), &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.3));
+    let _ = world.create_sphere_shape(heavy, &ShapeDef::default(), Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.3));
     let light = dynamic_body(&mut world, Vec3::new(5.0, 0.0, 0.0));
-    let _ = world.create_sphere_shape(light, &ShapeDef::default(), &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.3));
+    let _ = world.create_sphere_shape(light, &ShapeDef::default(), Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.3));
 
     let water = WorldAABB::new(
         Pos::new(-50.0, -50.0, -50.0),

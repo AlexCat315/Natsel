@@ -302,7 +302,7 @@ fn dynamic_carrier() {
     let _ = world.create_sphere_shape(
         bead,
         &ShapeDef::default(),
-        &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.1),
+        Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.1),
     );
     let mut joint_def = PathJointDef::default();
     joint_def.base.body_id_a = carrier;

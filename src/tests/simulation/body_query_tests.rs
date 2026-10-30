@@ -33,7 +33,7 @@ fn is_normalized(v: Vec3) -> bool {
 fn cast_ray_hits_sphere() {
     let (world, body) = make_query_world();
     let mut shape_def = ShapeDef::default();
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
     let result = world.body_cast_ray(
         body,
@@ -60,7 +60,7 @@ fn cast_ray_hits_sphere() {
 fn cast_ray_miss() {
     let (world, body) = make_query_world();
     let mut shape_def = ShapeDef::default();
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
     let result = world.body_cast_ray(
         body,
@@ -77,8 +77,8 @@ fn cast_ray_miss() {
 fn cast_ray_closest_shape() {
     let (world, body) = make_query_world();
     let shape_def = ShapeDef::default();
-    let near = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(4.0, 0.0, 0.0), 1.0));
+    let near = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(4.0, 0.0, 0.0), 1.0));
 
     let result = world.body_cast_ray(
         body,
@@ -99,7 +99,7 @@ fn cast_ray_closest_shape() {
 fn cast_ray_far_from_origin() {
     let (world, body) = make_query_world();
     let mut shape_def = ShapeDef::default();
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
     let origin = Pos::new(1.0e6, -2.0e6, 5.0e5);
     let body_transform = WorldTransform::new(offset_pos(origin, Vec3::new(5.0, 0.0, 0.0)), Quat::IDENTITY);

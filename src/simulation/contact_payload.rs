@@ -4,7 +4,7 @@
 use std::marker::PhantomData;
 
 use crate::base::core::{b3_alloc_typed, b3_assert, b3_free_typed};
-use crate::collision::manifold::ClipVertex;
+use crate::collision::convex_manifold::{FaceScratch, SatScratch};
 use crate::simulation::mesh_contact::cache::MeshContactState;
 use crate::simulation::mesh_contact::reduction::MeshPatchPoint;
 use crate::simulation::mesh_contact::selection::MeshManifoldCluster;
@@ -148,7 +148,7 @@ impl PartialEq for ContactManifolds {
 }
 
 /// Everything a contact owns beyond its POD metadata.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 #[repr(C)]
 pub struct ContactPayload {
     pub manifolds: ContactManifolds,
@@ -168,11 +168,12 @@ pub struct MeshContactScratch {
     pub sat_cache_hits: i32,
     pub recycled_contacts: i32,
 
-    /// Reused SAT and face-clipping slabs. `withUnsafeTemporaryAllocation` falls back to the heap
-    /// above 1 KB, and these are 13 KB and 8 KB, so keeping them here removes a malloc/free from
-    /// every hull pair.
-    pub sat_scratch: Vec<u8>,
-    pub face_scratch: Vec<u8>,
+    /// Reused SAT and face-clipping storage. Swift kept these as raw byte slabs and reached them
+    /// through pointer arithmetic (`scratch.advanced(by: 1056).bindMemory(to: Float.self, ...)` in
+    /// `ConvexManifold.swift`); the Rust port uses the typed records instead, so keeping them here
+    /// removes the same malloc/free from every hull pair.
+    pub sat: SatScratch,
+    pub face: FaceScratch,
 
     /// Reused mesh-manifold selection and clustering storage.
     pub selected_manifolds: Vec<MeshTriangleManifold>,
@@ -181,10 +182,6 @@ pub struct MeshContactScratch {
     pub projected_points: Vec<MeshPatchPoint>,
 }
 
-pub const SAT_SCRATCH_BYTE_COUNT: usize = 25 * 132 * 4;
-/// `MemoryLayout<T>.stride` equals `size_of::<T>()` for these `#[repr(C)]` records.
-pub const FACE_SCRATCH_BYTE_COUNT: usize =
-    2 * 64 * core::mem::size_of::<ClipVertex>() + 64 * core::mem::size_of::<LocalManifoldPoint>();
 
 /// Slabs never move. Contact ids reuse the same initialized payload slot, while the pool
 /// releases every non-POD field on world destruction, including slots of destroyed contacts.

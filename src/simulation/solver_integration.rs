@@ -951,7 +951,7 @@ impl World {
                 for i in 0..context.bullet_bodies.len() {
                     let index = context.bullet_bodies[i];
                     let dt = context.dt;
-                    self.solve_continuous(index, dt);
+                    self.solve_continuous_body(index, dt);
                 }
 
                 let dynamic_index = BodyType::DynamicBody as usize;

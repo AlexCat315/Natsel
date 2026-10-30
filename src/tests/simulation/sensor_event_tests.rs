@@ -30,7 +30,7 @@ fn bullet_through_sensor() {
     shape_def = ShapeDef::default();
     shape_def.is_sensor = true;
     shape_def.enable_sensor_events = true;
-    let _ = world.create_sphere_shape(bullet, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.1));
+    let _ = world.create_sphere_shape(bullet, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.1));
 
     let mut begin_count = 0;
     let mut end_count = 0;
@@ -74,7 +74,7 @@ fn resting_inside_sensor() {
     shape_def = ShapeDef::default();
     shape_def.density = 1000.0;
     shape_def.enable_sensor_events = true;
-    let _ = world.create_sphere_shape(ball, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
+    let _ = world.create_sphere_shape(ball, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
 
     let mut begin_count = 0;
     let mut end_count = 0;

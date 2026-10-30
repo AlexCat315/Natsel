@@ -136,6 +136,9 @@ impl World {
             thread::scope(|scope| {
                 for wi in 0..worker_count {
                     scope.spawn(move || {
+                        // Bind the whole buffer struct so the closure captures it (and its
+                        // `Send`/`Sync` impls) instead of the individual raw-pointer fields.
+                        let buffers = buffers;
                         // SAFETY: the scope outlives every worker; `world`, `records`, and
                         // `indices` address live, initialized storage for the whole scope
                         // (`WheelCastBuffers`). Worker `wi` reads indices `[wi * chunk,
@@ -286,7 +289,7 @@ impl World {
         let cos_max_slope = unsafe { (*record_pointer).cos_max_slope_angle };
         // SAFETY: `VehicleWheel` is `Copy` (Swift's `BitwiseCopyable`), so this is the Swift
         // value copy of the wheel out of the record.
-        let mut wheel = unsafe { (*record_pointer).wheels[w] };
+        let mut wheel = unsafe { (&(*record_pointer)).wheels[w] };
         let s = wheel.settings;
 
         let origin = transform_world_point(chassis, s.position);
@@ -402,7 +405,7 @@ impl World {
         // index for this call, and this is the write-back of the local copy, exactly as in
         // Swift. The field reads above completed before this point.
         unsafe {
-            (*record_pointer).wheels[w] = wheel;
+            (&mut (*record_pointer).wheels)[w] = wheel;
         }
     }
 

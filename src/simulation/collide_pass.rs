@@ -261,6 +261,11 @@ impl World {
             thread::scope(|scope| {
                 for w in 0..worker_count {
                     scope.spawn(move || {
+                        // Capture the whole `CollideBuffers` rather than its individual fields:
+                        // Rust's precise closure capture would otherwise move the raw pointers
+                        // themselves into the closure, and those are not `Send` on their own even
+                        // though `CollideBuffers` is.
+                        let buffers = buffers;
                         let start = w * chunk;
                         let end = buffers.contact_ids_count.min(start + chunk);
                         if start >= end {
@@ -672,7 +677,7 @@ impl World {
                             // Contact is recycled. This also skips updating other aspects of the
                             // contact such as material parameters.
                             if let Some(recycled_count) = recycled_count.as_mut() {
-                                *recycled_count += 1;
+                                **recycled_count += 1;
                             } else {
                                 scratch.recycled_contacts += 1;
                             }

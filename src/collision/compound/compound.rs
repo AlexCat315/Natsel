@@ -63,7 +63,7 @@ impl Compound {
         let header = unsafe { std::ptr::read_unaligned(storage.base() as *const CompoundData) };
         let mut hull_views = HashMap::new();
         for i in 0..header.hull_count as usize {
-            let instance: PackedHullInstance = read_value(&storage, header.hull_offset, i);
+            let instance: PackedHullInstance = unsafe { read_value(&storage, header.hull_offset, i) };
             let offset = instance.hull_offset as usize;
             if !hull_views.contains_key(&instance.hull_offset) {
                 let data =
@@ -77,7 +77,7 @@ impl Compound {
 
         let mut mesh_views = HashMap::new();
         for i in 0..header.mesh_count as usize {
-            let instance: PackedMeshInstance = read_value(&storage, header.mesh_offset, i);
+            let instance: PackedMeshInstance = unsafe { read_value(&storage, header.mesh_offset, i) };
             let offset = instance.mesh_offset as usize;
             if !mesh_views.contains_key(&instance.mesh_offset) {
                 let data = unsafe {
@@ -140,7 +140,8 @@ impl Compound {
         let mut index = index;
 
         if index < header.capsule_count as usize {
-            let instance: PackedCapsule = read_value(&self.storage, header.capsule_offset, index);
+            let instance: PackedCapsule =
+                unsafe { read_value(&self.storage, header.capsule_offset, index) };
             return CompoundChild {
                 geometry: CompoundChildGeometry::Capsule(instance.capsule),
                 transform: Transform::IDENTITY,
@@ -150,7 +151,8 @@ impl Compound {
         index -= header.capsule_count as usize;
 
         if index < header.hull_count as usize {
-            let instance: PackedHullInstance = read_value(&self.storage, header.hull_offset, index);
+            let instance: PackedHullInstance =
+                unsafe { read_value(&self.storage, header.hull_offset, index) };
             let hull = self.hull_views[&instance.hull_offset].clone();
             return CompoundChild {
                 geometry: CompoundChildGeometry::Hull(hull),
@@ -161,7 +163,8 @@ impl Compound {
         index -= header.hull_count as usize;
 
         if index < header.mesh_count as usize {
-            let instance: PackedMeshInstance = read_value(&self.storage, header.mesh_offset, index);
+            let instance: PackedMeshInstance =
+                unsafe { read_value(&self.storage, header.mesh_offset, index) };
             let indices = unsafe {
                 self.storage
                     .slice_ref::<u16>(
@@ -179,7 +182,7 @@ impl Compound {
         }
         index -= header.mesh_count as usize;
 
-        let instance: PackedSphere = read_value(&self.storage, header.sphere_offset, index);
+        let instance: PackedSphere = unsafe { read_value(&self.storage, header.sphere_offset, index) };
         CompoundChild {
             geometry: CompoundChildGeometry::Sphere(instance.sphere),
             transform: Transform::IDENTITY,

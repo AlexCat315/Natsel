@@ -13,7 +13,10 @@ pub struct CompoundInternTable<T> {
 
 impl<T> CompoundInternTable<T> {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            indices: HashMap::new(),
+            values: Vec::new(),
+        }
     }
 
     pub fn insert(&mut self, value: T, bytes: Vec<u8>) -> usize {

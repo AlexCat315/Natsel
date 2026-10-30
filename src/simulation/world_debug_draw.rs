@@ -836,7 +836,7 @@ fn debug_geometry_for(shape: &Shape) -> DebugShapeGeometry {
             DebugShapeGeometry::Hull(hull.header() as *const HullData)
         }
         ShapeGeometry::Mesh(mesh) => {
-            let allocated = Box::into_raw(Box::new(*mesh));
+            let allocated = Box::into_raw(Box::new(mesh.clone()));
             DebugShapeGeometry::Mesh(allocated as *const Mesh)
         }
         ShapeGeometry::Sphere(sphere) => {

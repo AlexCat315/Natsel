@@ -13,6 +13,9 @@ impl Vec2 {
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
+
+    pub const ZERO: Vec2 = Vec2::new(0.0, 0.0);
+    pub const ONE: Vec2 = Vec2::new(1.0, 1.0);
 }
 
 /// A 3D vector.
@@ -130,7 +133,7 @@ impl WorldTransform {
     #[inline]
     pub fn from_transform(t: Transform, q: Quat) -> Self {
         Self {
-            p: Pos::from_vec3(t),
+            p: Pos::from_vec3(t.p),
             q,
         }
     }

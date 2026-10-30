@@ -163,9 +163,9 @@ pub fn find_incident_face(hull: &Hull, ref_normal: Vec3, vertex_index: i32) -> i
     let min_plane2 = planes[min_face_index2 as usize];
 
     if dot(min_plane1.normal, ref_normal) < dot(min_plane2.normal, ref_normal) {
-        min_face_index1
+        min_face_index1 as i32
     } else {
-        min_face_index2
+        min_face_index2 as i32
     }
 }
 

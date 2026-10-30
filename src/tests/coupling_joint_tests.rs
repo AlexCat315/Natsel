@@ -29,7 +29,7 @@ fn disk(world: &mut World, position: Vec3, radius: f32) -> BodyID {
     let _ = world.create_capsule_shape(
         body,
         &ShapeDef::default(),
-        &Capsule::new(Vec3::new(0.0, 0.0, -0.05), Vec3::new(0.0, 0.0, 0.05), radius),
+        Capsule::new(Vec3::new(0.0, 0.0, -0.05), Vec3::new(0.0, 0.0, 0.05), radius),
     );
     body
 }

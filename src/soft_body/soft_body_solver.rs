@@ -117,6 +117,24 @@ struct GroupContext {
 unsafe impl Send for GroupContext {}
 unsafe impl Sync for GroupContext {}
 
+impl GroupContext {
+    /// Reach the records through `&self` so a closure that holds a `GroupContext` captures the
+    /// wrapper rather than its raw pointer fields: Rust's precise capture would otherwise require
+    /// `*mut SoftBodyRecord: Send + Sync`, defeating the erasure this wrapper exists for.
+    // SAFETY: caller guarantees the pointer addresses live record storage for the whole body.
+    #[inline(always)]
+    fn record(&self, index: usize) -> &mut SoftBodyRecord {
+        unsafe { &mut *self.records.add(index) }
+    }
+
+    /// Accessor counterpart of `record`, for the same capture reason.
+    // SAFETY: caller guarantees the pointer addresses the world that owns the records.
+    #[inline(always)]
+    fn world(&self) -> &mut World {
+        unsafe { &mut *self.world }
+    }
+}
+
 /// Run per body work, on the workers when allowed. Bodies only touch their own records.
 ///
 /// Swift's nested `forEachBody` inside `simulateSoftBodyGroup`; the captures become parameters.
@@ -126,6 +144,7 @@ where
 {
     if parallel {
         // Swift's `DispatchQueue.concurrentPerform(iterations: list.count) { k in body(k, list[k]) }`.
+        let body = &body;
         thread::scope(|scope| {
             for k in 0..group.len() {
                 let index = group[k];
@@ -203,7 +222,7 @@ impl World {
                         // SAFETY: one single-body group per iteration, so this thread is the only
                         // writer of the record at `group[0]`; the world is only read apart from
                         // that record (see `GroupContext`).
-                        let world = unsafe { &mut *context.world };
+                        let world = context.world();
                         world.simulate_soft_body_group(
                             context.records, group, dt, gravity, false, 1,
                         );
@@ -294,8 +313,8 @@ impl World {
         for_each_body(parallel, group, |_k, index| {
             // SAFETY: every body writes only its own record; the world reference is used for the
             // read-only broad-phase and shape lookups inside the detection pass, as in Swift.
-            let world = unsafe { &mut *context.world };
-            let record = unsafe { &mut *context.records.add(index) };
+            let world = context.world();
+            let record = context.record(index);
             world.detect_soft_body_collisions(record, dt);
         });
 
@@ -324,7 +343,7 @@ impl World {
         if contacts.is_empty() && edge_contacts.is_empty() {
             for_each_body(parallel, group, |_k, index| {
                 // SAFETY: this body's record is only written by this iteration.
-                let record = unsafe { &mut *context.records.add(index) };
+                let record = context.record(index);
                 record.simulate(dt, gravity);
                 record.finish_step();
             });
@@ -362,7 +381,7 @@ impl World {
             for_each_body(parallel, group, |k, index| {
                 // SAFETY: this body's record is only written by this iteration; `substeps` is
                 // read-only here and lives for the whole loop.
-                let record = unsafe { &mut *context.records.add(index) };
+                let record = context.record(index);
                 record.solve_substep(substeps[k]);
             });
             let max_recovery = self.contact_speed * substeps[0].h;
@@ -370,13 +389,13 @@ impl World {
             solve_soft_edge_contacts(&edge_contacts, &views, max_recovery);
             for_each_body(parallel, group, |k, index| {
                 // SAFETY: as for the constraint pass above.
-                let record = unsafe { &mut *context.records.add(index) };
+                let record = context.record(index);
                 record.collide_substep(substeps[k], last);
             });
         }
         for_each_body(parallel, group, |_k, index| {
             // SAFETY: as above; `finish_step` only rewrites this record's bounds.
-            let record = unsafe { &mut *context.records.add(index) };
+            let record = context.record(index);
             record.finish_step();
         });
     }

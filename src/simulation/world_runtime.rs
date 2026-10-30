@@ -54,7 +54,7 @@ use crate::simulation::joint::DistanceJointSim;
 use crate::simulation::motor_joint::MotorJointSim;
 use crate::simulation::overflow_contact_solver::OverflowContactConstraint;
 use crate::simulation::parallel_joint::ParallelJointSim;
-use crate::simulation::path_joint::{ConstraintPath, PathJointSim};
+use crate::simulation::path_joint::{ConstraintPath, PathJointData, PathJointSim};
 use crate::simulation::prismatic_joint::PrismaticJointSim;
 use crate::simulation::revolute_joint::RevoluteJointSim;
 use crate::simulation::sensor::Sensor;
@@ -506,6 +506,7 @@ impl Default for TriangleCache {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(i32)]
 pub(crate) enum ContactCacheKind {
+    #[default]
     Convex = 0,
     Mesh = 1,
 }
@@ -1146,8 +1147,9 @@ impl Drop for World {
 }
 
 impl World {
-    /// Swift's `init(capacity:)`. Swift defaulted the argument; callers ported from `World()`
-    /// should pass `Capacity::default()`.
+    /// Swift's `init(capacity:)`. Swift defaulted the argument, so `World()` and
+    /// `World(capacity: .init())` are the same call; [`World::default`] is that zero-capacity
+    /// constructor.
     pub fn new(capacity: Capacity) -> Self {
         let broad_phase = BroadPhase::new(capacity);
         let constraint_graph = ConstraintGraph::new(max_int(
@@ -1525,7 +1527,7 @@ impl World {
             self.solver_sets[set_id as usize].set_index = set_id;
         }
 
-        b3_assert(0 <= set_id && set_id as usize < self.solver_sets.len());
+        b3_assert(0 <= set_id && (set_id as usize) < self.solver_sets.len());
 
         let body_id = self.body_id_pool.alloc();
 
@@ -1700,13 +1702,16 @@ impl World {
             destroy_shape_proxy(&mut shape, &mut self.broad_phase);
             destroy_shape_allocations(&mut self.hull_database, &mut shape);
 
+            // Read the link before the shape is moved back into the array; Swift's `Shape` is a
+            // value type, so reading the field after assigning the copy was legal there.
+            let next_shape_id = shape.next_shape_id;
             self.shapes[shape_id as usize] = shape;
 
             // Return shape to free list.
             self.shape_id_pool.free(shape_id);
             self.shapes[shape_id as usize].id = b3::NULL_INDEX;
 
-            shape_id = shape.next_shape_id;
+            shape_id = next_shape_id;
         }
 
         self.remove_body_from_island(id);
@@ -1777,6 +1782,13 @@ impl World {
         }
 
         false
+    }
+}
+
+impl Default for World {
+    /// Swift's defaulted `init(capacity: Capacity())`.
+    fn default() -> Self {
+        World::new(Capacity::default())
     }
 }
 

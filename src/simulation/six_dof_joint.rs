@@ -7,6 +7,7 @@
 //! Translated from `Sources/Natsel/Simulation/SixDOFJoint.swift`.
 
 use crate::base::constants as b3;
+use crate::base::core::b3_assert;
 use crate::math::functions::{
     add_mm, atan2_approx, clamp_float, compute_cos_sin, cross, dot, dot_quat,
     get_length_and_normalize, inv_mul_quat, inv_mul_world_transforms, is_valid_quat,
@@ -153,8 +154,10 @@ impl SixDOFAxisSettings {
 }
 
 /// How the swing rotation (axes y and z) is limited. Payload-free variants keep Swift's
-/// discriminant order; `#[repr(i32)]` is omitted because `Cone` carries data.
+/// discriminant order; `Cone` carries data, so the enum needs an explicit `#[repr(i32)]` for its
+/// explicit discriminants.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[repr(i32)]
 pub enum SixDOFSwingLimit {
     /// Rotation y and z use their own limits.
     #[default]
@@ -456,6 +459,23 @@ fn linear_cdot(v_a: Vec3, w_a: Vec3, v_b: Vec3, w_b: Vec3, axis: Vec3, s_a: Vec3
 impl World {
     // Storage
 
+    /// Write one slot of `six_dof_store` from a non-mutating method.
+    ///
+    /// Swift's `World` was a class, so `prepareSixDOFJoint`/`solveSixDOFJoint` wrote
+    /// `sixDOFStore` without mutating `self`. The Rust solver stages are reached through
+    /// `*mut World` (the worker pool) and each stage writes only its own joint's slot, so the
+    /// slab base reproduces Swift's write without asserting exclusive access to the whole `World`.
+    #[inline(always)]
+    fn write_six_dof_data(&self, slot: usize, data: SixDOFJointData) {
+        b3_assert(slot < self.six_dof_store.count());
+        // SAFETY: this helper validates `slot` against `six_dof_store.count()` above, so the
+        // offset stays inside the slab. The slab is never resized while a solver session is
+        // active, and a joint's slot is touched only by its own constraint lane.
+        unsafe {
+            self.six_dof_store.as_ptr().cast_mut().add(slot).write(data);
+        }
+    }
+
     fn allocate_six_dof_data(&mut self, data: SixDOFJointData) -> i32 {
         let slot = self.six_dof_pool.alloc();
         if slot as usize == self.six_dof_store.count() {
@@ -467,7 +487,7 @@ impl World {
     }
 
     pub(crate) fn release_six_dof_data(&mut self, slot: i32) {
-        if !(slot >= 0 && slot as usize < self.six_dof_store.count()) {
+        if !(slot >= 0 && (slot as usize) < self.six_dof_store.count()) {
             return;
         }
         self.six_dof_store.set(slot as usize, SixDOFJointData::default());
@@ -502,7 +522,7 @@ impl World {
         }
         data.target_rotation = normalize_quat(def.target_rotation);
 
-        let pair = self.create_joint(def.base, JointType::SixDOFJoint);
+        let pair = self.create_joint(&def.base, JointType::SixDOFJoint);
         let mut sim = pair.sim;
         let mut joint = SixDOFJointSim::default();
         joint.slot = self.allocate_six_dof_data(data);
@@ -518,7 +538,7 @@ impl World {
     // Prepare
 
     pub(crate) fn prepare_six_dof_joint(
-        &mut self,
+        &self,
         base: &mut JointSim,
         context: &StepContext,
     ) {
@@ -578,24 +598,24 @@ impl World {
             }
             let mut data = self.six_dof_store.get(slot);
             data.axes[i] = axis;
-            self.six_dof_store.set(slot, data);
+            self.write_six_dof_data(slot, data);
         }
         if !context.enable_warm_starting {
             let mut data = self.six_dof_store.get(slot);
             data.cone_impulse = 0.0;
             data.linear_block_impulse = Vec3::default();
             data.angular_block_impulse = Vec3::default();
-            self.six_dof_store.set(slot, data);
+            self.write_six_dof_data(slot, data);
         }
         if !self.six_dof_store.get(slot).linear_locked() {
             let mut data = self.six_dof_store.get(slot);
             data.linear_block_impulse = Vec3::default();
-            self.six_dof_store.set(slot, data);
+            self.write_six_dof_data(slot, data);
         }
         if !self.six_dof_store.get(slot).angular_locked() {
             let mut data = self.six_dof_store.get(slot);
             data.angular_block_impulse = Vec3::default();
-            self.six_dof_store.set(slot, data);
+            self.write_six_dof_data(slot, data);
         }
     }
 
@@ -625,14 +645,14 @@ impl World {
     // Warm start
 
     pub(crate) fn warm_start_six_dof_joint(
-        &mut self,
+        &self,
         base: &mut JointSim,
         states: &mut [BodyState],
     ) {
         let joint = base.six_dof();
         let data = self.six_dof_store.get(joint.slot as usize);
-        let mut state_a = World::state_at(states, joint.index_a);
-        let mut state_b = World::state_at(states, joint.index_b);
+        let mut state_a = World::state_at(states.as_mut_ptr(), joint.index_a);
+        let mut state_b = World::state_at(states.as_mut_ptr(), joint.index_b);
         let f = self.six_dof_frame(joint, state_a, state_b);
 
         let mut linear = Vec3::default();
@@ -718,14 +738,14 @@ impl World {
         state_b.linear_velocity = mul_add(state_b.linear_velocity, base.inv_mass_b, linear);
         state_b.angular_velocity =
             state_b.angular_velocity + mul_mv(base.inv_ib, angular_b + angular);
-        World::set_state_at(states, joint.index_a, state_a);
-        World::set_state_at(states, joint.index_b, state_b);
+        World::set_state_at(states.as_mut_ptr(), joint.index_a, state_a);
+        World::set_state_at(states.as_mut_ptr(), joint.index_b, state_b);
     }
 
     // Solve
 
     pub(crate) fn solve_six_dof_joint(
-        &mut self,
+        &self,
         base: &mut JointSim,
         context: &StepContext,
         use_bias: bool,
@@ -734,8 +754,8 @@ impl World {
         let joint = base.six_dof();
         let slot = joint.slot as usize;
         let mut data = self.six_dof_store.get(slot);
-        let mut state_a = World::state_at(states, joint.index_a);
-        let mut state_b = World::state_at(states, joint.index_b);
+        let mut state_a = World::state_at(states.as_mut_ptr(), joint.index_a);
+        let mut state_b = World::state_at(states.as_mut_ptr(), joint.index_b);
         let m_a = base.inv_mass_a;
         let m_b = base.inv_mass_b;
         let i_a = base.inv_ia;
@@ -1162,9 +1182,9 @@ impl World {
             state_b.linear_velocity = v_b;
             state_b.angular_velocity = w_b;
         }
-        World::set_state_at(states, joint.index_a, state_a);
-        World::set_state_at(states, joint.index_b, state_b);
-        self.six_dof_store.set(slot, data);
+        World::set_state_at(states.as_mut_ptr(), joint.index_a, state_a);
+        World::set_state_at(states.as_mut_ptr(), joint.index_b, state_b);
+        self.write_six_dof_data(slot, data);
     }
 
     // Reactions
@@ -1172,7 +1192,7 @@ impl World {
     /// World space linear and angular impulse of the last substep.
     pub(crate) fn six_dof_impulses(&self, sim: JointSim) -> SixDofImpulses {
         let slot = sim.six_dof().slot;
-        if !(slot >= 0 && slot as usize < self.six_dof_store.count()) {
+        if !(slot >= 0 && (slot as usize) < self.six_dof_store.count()) {
             return SixDofImpulses::default();
         }
         let slot = slot as usize;
@@ -1212,7 +1232,7 @@ impl World {
 
     fn six_dof_slot(&self, joint_id: JointID) -> Option<usize> {
         let index = joint_id.index1 - 1;
-        if !(joint_id.world0 == self.world_id && index >= 0 && index as usize < self.joints.len()) {
+        if !(joint_id.world0 == self.world_id && index >= 0 && (index as usize) < self.joints.len()) {
             return None;
         }
         let joint = &self.joints[index as usize];
@@ -1223,7 +1243,7 @@ impl World {
             return None;
         }
         let slot = self.read_joint_sim(index).six_dof().slot;
-        if slot >= 0 && slot as usize < self.six_dof_store.count() {
+        if slot >= 0 && (slot as usize) < self.six_dof_store.count() {
             Some(slot as usize)
         } else {
             None

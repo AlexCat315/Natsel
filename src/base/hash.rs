@@ -213,7 +213,7 @@ pub fn hash_bytes<T: Copy>(hash: u32, value: &T) -> u32 {
     let bytes = unsafe {
         std::slice::from_raw_parts(value as *const T as *const u8, std::mem::size_of::<T>())
     };
-    hash(hash, bytes)
+    self::hash(hash, bytes)
 }
 
 /// Hash an arbitrary plain-old-data value.
@@ -226,5 +226,5 @@ pub fn hash_slice<T: Copy>(hash: u32, values: &[T]) -> u32 {
     let bytes = unsafe {
         std::slice::from_raw_parts(values.as_ptr() as *const u8, std::mem::size_of_val(values))
     };
-    hash(hash, bytes)
+    self::hash(hash, bytes)
 }

@@ -244,7 +244,7 @@ impl World {
                 // SAFETY: `units` is Swift's `view.units.map { Int($0[u]) }`; it points into
                 // `solver_joints.units[ci]`, which has exactly `unit_count` entries, and `u` is a
                 // unit index clamped below `unit_count` by the caller.
-                unsafe { *view.units.add(u) } as usize
+                (unsafe { *view.units.add(u) }) as usize
             };
             let start = if view.starts.is_null() || view.batches.is_null() {
                 // Swift's `if let starts = view.starts, let batches = view.batches` fell through to
@@ -288,7 +288,7 @@ impl World {
                 u
             } else {
                 // SAFETY: as in `warm_start_joints_range`.
-                unsafe { *view.units.add(u) } as usize
+                (unsafe { *view.units.add(u) }) as usize
             };
             let start = if view.starts.is_null() || view.batches.is_null() {
                 -1

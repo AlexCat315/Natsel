@@ -338,11 +338,12 @@ fn replace_pool(pool: &mut IDPool, saved: &IDPool) {
 impl World {
     /// Save everything that influences later steps. Not allowed during a step or a callback.
     pub fn save_state(&self) -> WorldState {
-        b3_assert!(!self.locked);
-        let mut state = WorldState {
-            step_index: self.step_index,
-            ..WorldState::default()
-        };
+        b3_assert(!self.locked);
+        // `WorldState` implements `Drop`, so a functional update from `WorldState::default()`
+        // cannot be used: it would move fields out of a `Drop` type (E0509). Build the default
+        // value first, then overwrite the two fields the snapshot needs.
+        let mut state = WorldState::default();
+        state.step_index = self.step_index;
         state.world = Some(core::ptr::from_ref(self));
 
         state.bodies = self.bodies.clone();

@@ -77,7 +77,7 @@ impl JointSim {
 impl World {
     /// Swift marked this `@discardableResult`; ignore the return value where Swift did.
     pub fn create_parallel_joint(&mut self, def: &ParallelJointDef) -> JointID {
-        let pair = self.create_joint(def.base.clone(), JointType::ParallelJoint);
+        let pair = self.create_joint(&def.base, JointType::ParallelJoint);
 
         let mut sim = pair.sim;
         let mut joint = ParallelJointSim::default();

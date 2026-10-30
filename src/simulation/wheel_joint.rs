@@ -130,7 +130,7 @@ impl JointSim {
 impl World {
     /// Swift marked this `@discardableResult`; ignore the return value where Swift did.
     pub fn create_wheel_joint(&mut self, def: &WheelJointDef) -> JointID {
-        let pair = self.create_joint(def.base.clone(), JointType::WheelJoint);
+        let pair = self.create_joint(&def.base, JointType::WheelJoint);
 
         let mut sim = pair.sim;
         let mut joint = WheelJointSim::default();

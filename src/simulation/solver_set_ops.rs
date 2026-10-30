@@ -49,17 +49,18 @@ impl World {
 
             // Reset sleep timer
             body.sleep_time = 0.0;
+            let encoded_body_sim_index = body.local_index;
+            let mut contact_key = body.head_contact_key;
+            let body_flags = body.flags;
             self.bodies[body_id] = body;
 
             self.solver_sets[awake_set_index].body_sims.push(sim_src);
 
             let mut state = BodyState::IDENTITY;
-            state.flags = body.flags;
+            state.flags = body_flags;
             self.solver_sets[awake_set_index].body_states.push(state);
 
             // Move non-touching contacts from disabled set to awake set.
-            let encoded_body_sim_index = body.local_index;
-            let mut contact_key = body.head_contact_key;
             while contact_key != b3::NULL_INDEX {
                 let edge_index = (contact_key & 1) as usize;
                 let contact_id = contact_key >> 1;
@@ -88,7 +89,7 @@ impl World {
 
                 b3_assert(
                     0 <= local_index
-                        && local_index as usize
+                        && (local_index as usize)
                             < self.solver_sets[disabled_set_index].contact_indices.len(),
                 );
                 b3_assert(

@@ -17,7 +17,7 @@ fn type_and_owner() {
     let body = world.create_body(&def);
 
     let shape_def = ShapeDef::default();
-    let sphere_shape = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
+    let sphere_shape = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
     let capsule_shape = world.create_capsule_shape(
         body,
         &shape_def,
@@ -44,7 +44,7 @@ fn geometry_access() {
     let body = world.create_body(&def);
     let shape_def = ShapeDef::default();
 
-    let sphere_shape = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(1.0, 2.0, 3.0), 0.75));
+    let sphere_shape = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(1.0, 2.0, 3.0), 0.75));
     assert_eq!(world.shape_sphere(sphere_shape).unwrap().radius, 0.75);
     assert!(world.shape_capsule(sphere_shape).is_none());
     assert!(world.shape_hull(sphere_shape).is_none());

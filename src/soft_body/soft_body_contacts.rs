@@ -74,6 +74,7 @@ use crate::math::types::{AABB, Vec3};
 use crate::simulation::shape_runtime::should_shapes_collide;
 use crate::simulation::world_runtime::World;
 use crate::soft_body::soft_body_runtime::SoftBodyRecord;
+use crate::soft_body::soft_body_settings::U32x2;
 use crate::soft_body::soft_contact_tree::SoftContactTree;
 
 /// A vertex against a triangle, or against another vertex when the triangle slots repeat it.
@@ -279,7 +280,7 @@ impl SoftBodyRecord {
         if !self.neighbor_starts.is_empty() {
             return;
         }
-        let n = self.vertex_count as usize;
+        let n = self.vertex_count();
         let mut lists: Vec<Vec<u32>> = vec![Vec::new(); n];
         for edge in self.settings.edges.iter() {
             lists[edge.vertex.x as usize].push(edge.vertex.y);
@@ -316,7 +317,7 @@ impl SoftBodyRecord {
             .iter()
             .map(|f| [f.vertex.x, f.vertex.y, f.vertex.z])
             .collect();
-        let mesh_edges: Vec<[u32; 2]> = self.mesh_edges.iter().map(|e| [e.x, e.y]).collect();
+        let mesh_edges: Vec<U32x2> = self.mesh_edges.clone();
         let pad = Vec3::new(exclusion, exclusion, exclusion);
         let cell = max_float(max_float(1.5 * self.average_edge_length, exclusion), 1.0e-3);
 
@@ -337,7 +338,7 @@ impl SoftBodyRecord {
             grid.finish();
             let mut list: Vec<i32> = Vec::new();
             let mut stamp: Vec<i32> = vec![-1; faces.len()];
-            for v in 0..self.vertex_count as usize {
+            for v in 0..self.vertex_count() {
                 list.clear();
                 let r = rest[v];
                 let vertex = v as i32;
@@ -376,8 +377,8 @@ impl SoftBodyRecord {
         self.excluded_edges.clear();
         let mut grid = CellGrid::new(cell);
         for (e, edge) in mesh_edges.iter().enumerate() {
-            let a = rest[edge[0] as usize];
-            let b = rest[edge[1] as usize];
+            let a = rest[edge.x as usize];
+            let b = rest[edge.y as usize];
             grid.insert(AABB::new(min_vec3(a, b), max_vec3(a, b)), e as i32);
         }
         grid.finish();
@@ -385,8 +386,8 @@ impl SoftBodyRecord {
         let mut stamp: Vec<i32> = vec![-1; mesh_edges.len()];
         for (e, edge) in mesh_edges.iter().enumerate() {
             list.clear();
-            let i0 = edge[0] as i32;
-            let i1 = edge[1] as i32;
+            let i0 = edge.x as i32;
+            let i1 = edge.y as i32;
             let a = rest[i0 as usize];
             let b = rest[i1 as usize];
             let box_ = AABB::new(min_vec3(a, b) - pad, max_vec3(a, b) + pad);
@@ -396,8 +397,8 @@ impl SoftBodyRecord {
                 }
                 stamp[f as usize] = e as i32;
                 let other = mesh_edges[f as usize];
-                let j0 = other[0] as i32;
-                let j1 = other[1] as i32;
+                let j0 = other.x as i32;
+                let j1 = other.y as i32;
                 let c = rest[j0 as usize];
                 let d = rest[j1 as usize];
                 if !aabb_overlaps(box_, AABB::new(min_vec3(c, d), max_vec3(c, d))) {
@@ -496,10 +497,10 @@ impl SoftBodyRecord {
             return;
         }
         if self.settings.faces.is_empty() {
-            self.surface_vertices = (0..self.vertex_count).collect();
+            self.surface_vertices = (0..self.vertex_count() as i32).collect();
             return;
         }
-        let mut used = vec![false; self.vertex_count as usize];
+        let mut used = vec![false; self.vertex_count()];
         let mut directed: HashSet<u64> = HashSet::new();
         let mut duplicate = false;
         for face in self.settings.faces.iter() {
@@ -517,7 +518,9 @@ impl SoftBodyRecord {
                 }
             }
         }
-        self.surface_vertices = (0..self.vertex_count).filter(|v| used[*v as usize]).collect();
+        self.surface_vertices = (0..self.vertex_count() as i32)
+            .filter(|v| used[*v as usize])
+            .collect();
         self.closed_surface = !duplicate
             && directed.iter().all(|d| directed.contains(&((*d & 0xffff_ffff) << 32 | (*d >> 32))));
     }
@@ -585,6 +588,14 @@ unsafe impl Send for DetectBuffers<'_> {}
 unsafe impl Sync for DetectBuffers<'_> {}
 
 impl DetectBuffers<'_> {
+    /// Output list of task `k`, reached through `&self` so a spawned closure captures this whole
+    /// `Send` wrapper rather than its bare raw pointer field.
+    #[inline(always)]
+    fn list(&self, k: usize) -> &mut Vec<SoftContact> {
+        // SAFETY: the caller owns list `k` for the duration of the borrow.
+        unsafe { &mut *self.lists.add(k) }
+    }
+
     fn detect(&self, k: usize, list: &mut Vec<SoftContact>, source_range: Option<Range<usize>>) {
         let pair = self.pairs[k];
         // SAFETY: records are read-only during detection (see the `Send`/`Sync` note above) and
@@ -640,6 +651,14 @@ unsafe impl Send for EdgeDetectBuffers<'_> {}
 unsafe impl Sync for EdgeDetectBuffers<'_> {}
 
 impl EdgeDetectBuffers<'_> {
+    /// Output list of task `k`, reached through `&self` so a spawned closure captures this whole
+    /// `Send` wrapper rather than its bare raw pointer field.
+    #[inline(always)]
+    fn list(&self, k: usize) -> &mut Vec<SoftEdgeContact> {
+        // SAFETY: the caller owns list `k` for the duration of the borrow.
+        unsafe { &mut *self.lists.add(k) }
+    }
+
     fn detect(&self, k: usize, list: &mut Vec<SoftEdgeContact>, source_range: Option<Range<usize>>) {
         let pair = self.pairs[k];
         // SAFETY: records are read-only during detection (see the `Send`/`Sync` note above).
@@ -695,7 +714,7 @@ impl World {
             for (slot, index) in group.iter().enumerate() {
                 let gain =
                     length(self.gravity) * abs_float((*records.add(*index)).gravity_scale) * dt;
-                body_margins[slot] = ((*records.add(*index)).max_speed + gain) * dt;
+                body_margins[slot] = ((*records.add(*index)).max_speed() + gain) * dt;
             }
         }
         let mut target_thickness = vec![0.0f32; group.len()];
@@ -807,7 +826,8 @@ impl World {
         }
 
         // Margins of every body in a pair, and a grid per target.
-        let mut data: Vec<DetectionBody> = vec![DetectionBody::default(); group.len()];
+        let mut data: Vec<DetectionBody> =
+            (0..group.len()).map(|_| DetectionBody::default()).collect();
         let mut needed = vec![false; group.len()];
         for pair in pairs.iter().chain(edge_pairs.iter()) {
             needed[pair.slot_p] = true;
@@ -829,8 +849,8 @@ impl World {
                     .collect();
                 let mut vertex_boxes = Vec::with_capacity((*record).velocities.len());
                 for i in 0..(*record).velocities.len() {
-                    let x = (*record).positions[i];
-                    let v = (*record).velocities[i];
+                    let x = (&(*record).positions)[i];
+                    let v = (&(*record).velocities)[i];
                     let end = mul_add(x, dt, v);
                     // A quarter of the step's travel in any direction covers turns and pushes.
                     let slack = gain + 0.25 * length(v) * dt;
@@ -917,14 +937,14 @@ impl World {
                     data[slot].face_boxes = boxes;
                     data[slot].face_margins = face_margins;
                     if (*t).closed_surface {
-                        let origin = (*t).positions[0];
+                        let origin = (&(*t).positions)[0];
                         let mut six_volume: f32 = 0.0;
                         for v in face_verts.iter() {
                             six_volume += dot(
-                                (*t).positions[v[0] as usize] - origin,
+                                (&(*t)).positions[v[0] as usize] - origin,
                                 cross(
-                                    (*t).positions[v[1] as usize] - origin,
-                                    (*t).positions[v[2] as usize] - origin,
+                                    (&(*t)).positions[v[1] as usize] - origin,
+                                    (&(*t)).positions[v[2] as usize] - origin,
                                 ),
                             );
                         }
@@ -997,14 +1017,15 @@ impl World {
             lists: lists.as_mut_ptr(),
         };
         if parallel && shared_pairs.len() > 1 {
+            let buffers = &detect_buffers;
             thread::scope(|scope| {
                 for k in 0..lists.len() {
                     scope.spawn(move || {
                         // SAFETY: `lists` addresses the live `lists` storage for the whole scope
                         // (the `Send`/`Sync` contract of `DetectBuffers`) and each task owns the
                         // distinct element `k`.
-                        let list = unsafe { &mut *detect_buffers.lists.add(k) };
-                        detect_buffers.detect(k, list, None);
+                        let list = buffers.list(k);
+                        buffers.detect(k, list, None);
                     });
                 }
             });
@@ -1022,12 +1043,13 @@ impl World {
                 lists: parts.as_mut_ptr(),
             };
             thread::scope(|scope| {
+                let buffers = &part_buffers;
                 for k in 0..chunks {
                     scope.spawn(move || {
                         // SAFETY: each task owns the distinct element `k` of `parts` for the whole
                         // scope (the `Send`/`Sync` contract of `DetectBuffers`).
-                        let list = unsafe { &mut *part_buffers.lists.add(k) };
-                        part_buffers.detect(
+                        let list = buffers.list(k);
+                        buffers.detect(
                             0,
                             list,
                             Some(count * k / chunks..count * (k + 1) / chunks),
@@ -1055,12 +1077,13 @@ impl World {
         };
         if parallel && shared_edge_pairs.len() > 1 {
             thread::scope(|scope| {
+                let buffers = &edge_buffers;
                 for k in 0..edge_lists.len() {
                     scope.spawn(move || {
                         // SAFETY: each task owns the distinct element `k` of `edge_lists` for the
                         // whole scope (the `Send`/`Sync` contract of `EdgeDetectBuffers`).
-                        let list = unsafe { &mut *edge_buffers.lists.add(k) };
-                        edge_buffers.detect(k, list, None);
+                        let list = buffers.list(k);
+                        buffers.detect(k, list, None);
                     });
                 }
             });
@@ -1078,12 +1101,13 @@ impl World {
                 lists: parts.as_mut_ptr(),
             };
             thread::scope(|scope| {
+                let buffers = &part_buffers;
                 for k in 0..chunks {
                     scope.spawn(move || {
                         // SAFETY: each task owns the distinct element `k` of `parts` for the whole
                         // scope (the `Send`/`Sync` contract of `EdgeDetectBuffers`).
-                        let list = unsafe { &mut *part_buffers.lists.add(k) };
-                        part_buffers.detect(
+                        let list = buffers.list(k);
+                        buffers.detect(
                             0,
                             list,
                             Some(count * k / chunks..count * (k + 1) / chunks),

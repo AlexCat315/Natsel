@@ -2,7 +2,7 @@
 //! array. Pointers returned by [`DynamicArray::pointer`] stay valid until the array grows.
 
 use crate::base::constants;
-use crate::base::core::b3_assert;
+use crate::base::core::{b3_assert, b3_assert_msg};
 
 #[derive(Clone, Debug)]
 pub struct DynamicArray<T: Copy + Default> {

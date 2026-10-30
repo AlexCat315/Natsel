@@ -23,11 +23,11 @@ fn sensor_and_user_data() {
 
     let mut shape_def = ShapeDef::default();
     shape_def.is_sensor = true;
-    let sensor = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
+    let sensor = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
     assert!(world.shape_is_sensor(sensor));
 
     shape_def = ShapeDef::default();
-    let solid = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(5.0, 0.0, 0.0), 0.5));
+    let solid = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(5.0, 0.0, 0.0), 0.5));
     assert!(!world.shape_is_sensor(solid));
 
     let mut token: i32 = 42;
@@ -72,7 +72,7 @@ fn closest_point() {
     let body = world.create_body(&def);
 
     let shape_def = ShapeDef::default();
-    let shape = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
+    let shape = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
     let point = world.shape_closest_point(shape, crate::math::types::Pos::new(5.0, 0.0, 0.0));
     assert!((point.x - 1.0).abs() < 1e-4);

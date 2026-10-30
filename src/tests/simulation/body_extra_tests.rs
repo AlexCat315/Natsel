@@ -56,8 +56,8 @@ fn compute_aabb() {
     let body = world.create_body(&def);
 
     let mut shape_def = ShapeDef::default();
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(-2.0, 0.0, 0.0), 0.5));
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(2.0, 0.0, 0.0), 0.5));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(-2.0, 0.0, 0.0), 0.5));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(2.0, 0.0, 0.0), 0.5));
 
     world.step(1.0f32 / 60.0, 1);
 
@@ -105,8 +105,8 @@ fn closest_point() {
     let body = world.create_body(&def);
 
     let mut shape_def = ShapeDef::default();
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(-3.0, 0.0, 0.0), 1.0));
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(3.0, 0.0, 0.0), 1.0));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(-3.0, 0.0, 0.0), 1.0));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(3.0, 0.0, 0.0), 1.0));
 
     // The query runs core-on-core (useRadii is false), so a sphere contributes its center.
     // A target on the far right lands on the right sphere's center.

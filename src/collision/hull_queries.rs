@@ -1,6 +1,7 @@
 //! Hull bounds and shape queries shared by shapes and compounds.
 
 use crate::base::constants as b3;
+use crate::base::core::b3_assert;
 use crate::collision::distance::{shape_cast, shape_distance};
 use crate::collision::hull::Hull;
 use crate::collision::internal_math::ShapeExtent;
@@ -93,7 +94,7 @@ pub fn shape_cast_hull(hull: &Hull, input: &ShapeCastInput) -> CastOutput {
         max_fraction: input.max_fraction,
         can_encroach: input.can_encroach,
     };
-    shape_cast(pair_input)
+    shape_cast(&pair_input)
 }
 
 /// Compute the extent of a hull about a local origin.

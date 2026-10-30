@@ -156,7 +156,7 @@ impl VehicleTransmission {
         let forward_count = self.settings.gear_ratios.len() as i32;
         let reverse_count = self.settings.reverse_gear_ratios.len() as i32;
 
-        if self.current_gear == 0 || forward_input * self.current_gear as f32 < 0.0 {
+        if self.current_gear == 0 || forward_input * (self.current_gear as f32) < 0.0 {
             // From neutral, or reversing direction: pick first or reverse from the input.
             if forward_input > 0.0 {
                 self.current_gear = if forward_count > 0 { 1 } else { 0 };

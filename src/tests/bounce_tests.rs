@@ -55,7 +55,7 @@ fn bouncing_ball() {
         let _ = world.create_sphere_shape(
             ball,
             &shape_def,
-            &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5),
+            Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5),
         );
 
         for _ in 0..240 {

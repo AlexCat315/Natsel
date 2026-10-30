@@ -88,7 +88,7 @@ fn stacked_drop() {
         let _ = world.create_sphere_shape(
             sphere,
             &shape_def,
-            &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5),
+            Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5),
         );
 
         for _ in 0..60 {

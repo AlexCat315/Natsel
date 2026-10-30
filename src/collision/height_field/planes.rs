@@ -42,7 +42,7 @@ pub fn collide_mover_and_height_field(
     let mut cache = SimplexCache::default();
 
     for row in region.rows {
-        for column in region.columns {
+        for column in region.columns.clone() {
             let cell = row * (field.column_count() - 1) + column;
             let material = field.material_indices()[cell];
             if material == 0xff {

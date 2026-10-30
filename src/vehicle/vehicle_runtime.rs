@@ -381,7 +381,7 @@ impl VehicleRecord {
             .iter()
             .map(VehicleWheel::new)
             .collect();
-        let drivetrain = VehicleDrivetrain::new(&def.controller, &def.wheels);
+        let drivetrain = VehicleDrivetrain::new(def.controller.clone(), &def.wheels);
 
         Self {
             id: b3::NULL_INDEX,

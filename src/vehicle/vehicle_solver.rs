@@ -548,10 +548,10 @@ impl World {
 fn remainder_angle(angle: f32) -> f32 {
     let mut a = angle;
     if a > b3::PI || a < -b3::PI {
-        // Swift's `rounded()` is round-half-to-even, like Rust's `f32::rounded()`; `b3::TWO_PI` is
-        // the stored constant, not `2.0 * b3::PI`, so `math::functions::unwind_angle` is *not*
-        // interchangeable with this helper.
-        a -= b3::TWO_PI * (a / b3::TWO_PI).rounded();
+        // Swift's `rounded()` rounds half away from zero, which is Rust's `f32::round()` (not
+        // `round_ties_even`). `b3::TWO_PI` is the stored constant, not `2.0 * b3::PI`, so
+        // `math::functions::unwind_angle` is *not* interchangeable with this helper.
+        a -= b3::TWO_PI * (a / b3::TWO_PI).round();
     }
     a
 }

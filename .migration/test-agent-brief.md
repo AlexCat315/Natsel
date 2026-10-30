@@ -54,3 +54,21 @@ files assigned to you. Another agent owns every other file.
   "Shared simulation vocabulary".
 - `src/tests/world_position_assertions.rs` — the helper module.
 - `src/lib.rs` — the crate's module tree.
+
+## Corrections discovered during the final build (READ THIS)
+
+1. `World::default()` now EXISTS (`impl Default for World` -> `World::new(Capacity::default())`).
+   It is the faithful port of Swift's defaulted `World(capacity: Capacity())`. Use
+   `let mut world = World::default();`.
+2. `SoftBodySettings::make_cloth(columns, rows, spacing, attributes, bend_type, pinned)` —
+   Swift's DEFAULTS are `attributes: SoftBodyVertexAttributes()`, `bendType: .distance`,
+   `pinned: { _,_ in false }`. Pass them explicitly, and note the bend default is
+   `SoftBodyBendType::Distance` — NOT `None`.
+3. Geometry types `Sphere`, `Capsule`, `HullData` live in `crate::types::geometry`,
+   NOT `crate::math::types`.
+4. `Capsule` / `Sphere` constructors take the struct by value; if the library wants `Capsule`
+   and you have `&Capsule`, deref/copy it.
+5. IDs are distinct types: `BodyID` (`crate::types::ids::BodyID`) vs `JointID` vs `ShapeID`.
+   A joint-creation call that returns `JointID` cannot be passed where a `BodyID` is expected.
+6. Assertions are FUNCTIONS: `b3_assert(cond)`, `b3_assert_msg(cond, "m")`, `b3_validate(cond)`
+   from `crate::base::core`. There is no `b3_assert!` macro.

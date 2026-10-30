@@ -75,14 +75,15 @@ use crate::base::constants as b3;
 use crate::base::core::b3_assert;
 use crate::math::functions::{
     cross, dot, is_valid_position, is_valid_quat, is_valid_vec3, length_squared, make_world_transform,
-    max_float, max_int, min_vec3, mul_add, mul_transforms, normalize, normalize_quat, offset_aabb,
+    max_float, max_int, max_vec3, min_vec3, mul_add, mul_transforms, normalize, normalize_quat,
+    offset_aabb,
     offset_pos, rotate_vector, sub_pos, to_relative_transform, transform_point,
 };
 use crate::math::types::{AABB, Matrix3, Pos, Quat, Transform, Vec3, WorldTransform};
 use crate::simulation::world_runtime::World;
 use crate::soft_body::soft_body_batches::{BendBatch, EdgeBatch, VolumeBatch};
 use crate::soft_body::soft_body_edge_collision::SoftEdgePlane;
-use crate::soft_body::soft_body_settings::{SoftBodyFace, SoftBodySettings};
+use crate::soft_body::soft_body_settings::{SoftBodyFace, SoftBodySettings, U32x2};
 use crate::soft_body::soft_contact_tree::SoftContactTree;
 use crate::types::ids::{BodyID, ShapeID};
 use crate::types::shape_def::Filter;
@@ -441,7 +442,7 @@ pub(crate) struct SoftBodyRecord {
     pub surface_vertices: Vec<i32>,
     pub closed_surface: bool,
     /// Surface edges, and the edges touching rigid features this step.
-    pub mesh_edges: Vec<[u32; 2]>,
+    pub mesh_edges: Vec<U32x2>,
     /// Self contact exclusions in compressed rows, for `self_exclusion_distance`.
     pub excluded_face_starts: Vec<i32>,
     pub excluded_faces: Vec<i32>,
@@ -1294,7 +1295,7 @@ pub(crate) fn closed_volume(faces: &[SoftBodyFace], positions: &[Vec3]) -> f32 {
         let c = positions[face.vertex.z as usize];
         six_volume += dot(a, cross(b, c));
     }
-    six_volume / 6
+    six_volume / 6.0
 }
 
 impl SoftBodyRecord {

@@ -40,7 +40,7 @@ impl ShapeProxyBuffer {
 
     pub fn count(&self) -> i32 {
         match &self.hull {
-            Some(h) => h.vertex_count,
+            Some(h) => h.vertex_count(),
             None => self.points.len() as i32,
         }
     }
@@ -48,7 +48,7 @@ impl ShapeProxyBuffer {
     /// Build a proxy that borrows this buffer. The proxy must not outlive `self`.
     pub fn proxy(&self) -> ShapeProxy {
         match &self.hull {
-            Some(h) => ShapeProxy::new(Some(h.points().as_ptr()), h.vertex_count, 0.0),
+            Some(h) => ShapeProxy::new(Some(h.points().as_ptr()), h.vertex_count(), 0.0),
             None => ShapeProxy::new(Some(self.points.as_ptr()), self.points.len() as i32, self.radius),
         }
     }

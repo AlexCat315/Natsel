@@ -80,7 +80,7 @@ impl BroadPhase {
         shape_index: i32,
         force_pair_creation: bool,
     ) -> i32 {
-        b3_assert(proxy_body_type as i32 >= 0 && proxy_body_type as i32 < BodyType::COUNT);
+        b3_assert(proxy_body_type as i32 >= 0 && (proxy_body_type as i32) < BodyType::COUNT);
 
         let mark = proxy_body_type != BodyType::StaticBody || force_pair_creation;
 
@@ -99,7 +99,7 @@ impl BroadPhase {
         let type_ = proxy_type_of(key);
         let proxy_id = proxy_id_of_key(key);
 
-        b3_assert(type_ as i32 >= 0 && type_ as i32 < BodyType::COUNT);
+        b3_assert(type_ as i32 >= 0 && (type_ as i32) < BodyType::COUNT);
         self.trees[type_ as usize].destroy_proxy(proxy_id);
     }
 

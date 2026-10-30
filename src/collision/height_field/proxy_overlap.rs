@@ -28,7 +28,7 @@ pub fn overlap_height_field(field: &HeightField, transform: Transform, proxy: Sh
     let mut cache = SimplexCache::default();
 
     for row in region.rows {
-        for column in region.columns {
+        for column in region.columns.clone() {
             let cell = row * (field.column_count() - 1) + column;
             if field.material_indices()[cell] == 0xff {
                 continue;

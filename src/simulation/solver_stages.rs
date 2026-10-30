@@ -127,7 +127,7 @@ impl SolverColorView {
 
 /// Pointers into the solver arrays, taken once per step after preparation. The arrays are not
 /// resized until the impulses are stored.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) struct SolverViews {
     pub sims: *const BodySim,
     pub sims_count: usize,

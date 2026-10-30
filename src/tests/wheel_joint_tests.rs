@@ -37,7 +37,7 @@ fn wheel() {
         let body_b = world.create_body(&def);
         let mut shape_def = ShapeDef::default();
         shape_def.density = 1000.0;
-        let _ = world.create_sphere_shape(body_b, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.3));
+        let _ = world.create_sphere_shape(body_b, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.3));
 
         let mut jd = WheelJointDef::default();
         jd.base.body_id_a = body_a;

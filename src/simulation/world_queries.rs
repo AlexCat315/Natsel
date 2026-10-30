@@ -79,7 +79,7 @@ impl World {
     unsafe fn shape_at(&self, ptr: *const Vec<Shape>, index: i32) -> &Shape {
         // SAFETY: see `shapes_ptr`; the buffer is alive and `index` is in bounds, so the
         // derived element reference is valid for the traversal callback body.
-        unsafe { &(*ptr)[index as usize] }
+        unsafe { &(&(*ptr))[index as usize] }
     }
 
     /// Query the world for all shapes whose AABB overlaps the given box.

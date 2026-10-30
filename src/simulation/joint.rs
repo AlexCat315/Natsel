@@ -7,9 +7,9 @@ use crate::base::core::b3_assert;
 use crate::math::functions::{
     abs_float, atan2_approx, clamp_float, cross, dot, get_twist_angle, inv_mul_quat, length,
     make_matrix_from_quat, max_float, max_int, min_float, mul_add, mul_quat, normalize,
-    rotate_vector, sub_pos, transform_point, transform_world_point,
+    rotate_vector, sub_pos, transform_world_point,
 };
-use crate::math::types::{Quat, Transform, Vec2, Vec3, WorldTransform};
+use crate::math::types::{Quat, Transform, Vec3};
 use crate::simulation::solver_integration::Softness;
 use crate::simulation::world_runtime::{Joint, JointSim, SetType, World, remove_swap_array};
 use crate::types::events::JointEvent;
@@ -517,8 +517,8 @@ impl World {
 
         let transform_a = self.body_transform_quick(sim.body_id_a);
         let transform_b = self.body_transform_quick(sim.body_id_b);
-        let p_a = transform_point(transform_a, sim.local_frame_a.p);
-        let p_b = transform_point(transform_b, sim.local_frame_b.p);
+        let p_a = transform_world_point(transform_a, sim.local_frame_a.p);
+        let p_b = transform_world_point(transform_b, sim.local_frame_b.p);
         Some(length(sub_pos(p_b, p_a)))
     }
 

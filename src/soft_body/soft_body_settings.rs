@@ -53,6 +53,10 @@ impl SoftBodyU32x2 {
     }
 }
 
+/// Sibling modules (`soft_body_edge_collision`, `soft_body_collision`) name this tuple `U32x2`;
+/// keep both spellings pointing at the one type.
+pub type U32x2 = SoftBodyU32x2;
+
 /// A three lane `UInt32` tuple: Swift's `SIMD3<UInt32>`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[repr(C)]
@@ -154,7 +158,7 @@ impl Default for SoftBodyVertex {
         Self {
             position: Vec3::ZERO,
             velocity: Vec3::ZERO,
-            inv_mass: 1,
+            inv_mass: 1.0,
         }
     }
 }
@@ -206,8 +210,8 @@ impl Default for SoftBodyEdge {
     fn default() -> Self {
         Self {
             vertex: SoftBodyU32x2::new(0, 0),
-            rest_length: 1,
-            compliance: 0,
+            rest_length: 1.0,
+            compliance: 0.0,
         }
     }
 }
@@ -217,7 +221,7 @@ impl SoftBodyEdge {
     pub fn new(v0: u32, v1: u32, compliance: f32) -> Self {
         Self {
             vertex: SoftBodyU32x2::new(v0, v1),
-            rest_length: 1,
+            rest_length: 1.0,
             compliance,
         }
     }
@@ -240,7 +244,7 @@ impl SoftBodyDihedralBend {
         Self {
             vertex: SoftBodyU32x4::new(v0, v1, v2, v3),
             compliance,
-            initial_angle: 0,
+            initial_angle: 0.0,
         }
     }
 }
@@ -260,8 +264,8 @@ impl Default for SoftBodyVolume {
     fn default() -> Self {
         Self {
             vertex: SoftBodyU32x4::new(0, 0, 0, 0),
-            six_rest_volume: 1,
-            compliance: 0,
+            six_rest_volume: 1.0,
+            compliance: 0.0,
         }
     }
 }
@@ -271,7 +275,7 @@ impl SoftBodyVolume {
     pub fn new(v0: u32, v1: u32, v2: u32, v3: u32, compliance: f32) -> Self {
         Self {
             vertex: SoftBodyU32x4::new(v0, v1, v2, v3),
-            six_rest_volume: 1,
+            six_rest_volume: 1.0,
             compliance,
         }
     }
@@ -323,10 +327,10 @@ impl Default for SoftBodySkinned {
         Self {
             vertex: 0,
             joints: SoftBodyU32x4::new(0, 0, 0, 0),
-            weights: SoftBodyF32x4::new(1, 0, 0, 0),
-            max_distance: 0,
-            back_stop_distance: 0,
-            back_stop_radius: 0,
+            weights: SoftBodyF32x4::new(1.0, 0.0, 0.0, 0.0),
+            max_distance: 0.0,
+            back_stop_distance: 0.0,
+            back_stop_radius: 0.0,
             normal_faces: Vec::new(),
         }
     }
@@ -391,11 +395,11 @@ impl Default for SoftBodyVertexAttributes {
     #[inline]
     fn default() -> Self {
         Self {
-            compliance: 0,
-            shear_compliance: 0,
+            compliance: 0.0,
+            shear_compliance: 0.0,
             bend_compliance: f32::INFINITY,
             lra_type: SoftBodyLRAType::None,
-            lra_max_distance_multiplier: 1,
+            lra_max_distance_multiplier: 1.0,
         }
     }
 }
@@ -650,11 +654,11 @@ impl SoftBodySettings {
             .filter(|&v| attribute(v as u32).lra_type == SoftBodyLRAType::Geodesic)
             .collect();
         let anchors: Vec<usize> = (0..vertices.len())
-            .filter(|&v| vertices[v].inv_mass == 0)
+            .filter(|&v| vertices[v].inv_mass == 0.0)
             .collect();
         if !anchors.is_empty() {
             for &v in euclidean.iter() {
-                if !(vertices[v].inv_mass > 0) {
+                if !(vertices[v].inv_mass > 0.0) {
                     continue;
                 }
                 let mut best: i64 = -1;
@@ -678,7 +682,7 @@ impl SoftBodySettings {
             if !geodesic.is_empty() {
                 let (distances, nearest) = geodesic_distances(&edges[..], &vertices[..], &anchors);
                 for &v in geodesic.iter() {
-                    if !(vertices[v].inv_mass > 0 && nearest[v] >= 0) {
+                    if !(vertices[v].inv_mass > 0.0 && nearest[v] >= 0) {
                         continue;
                     }
                     let multiplier = attribute(v as u32).lra_max_distance_multiplier;
@@ -721,7 +725,7 @@ impl SoftBodySettings {
             );
         }
         for i in 0..self.long_range_attachments.len() {
-            if !(self.long_range_attachments[i].max_distance <= 0) {
+            if !(self.long_range_attachments[i].max_distance <= 0.0) {
                 continue;
             }
             let a = self.long_range_attachments[i];
@@ -800,7 +804,7 @@ impl SoftBodySettings {
         }
         let mut queue: Vec<usize> = Vec::new();
         for i in 0..n {
-            if self.vertices[i].inv_mass == 0 {
+            if self.vertices[i].inv_mass == 0.0 {
                 depth[i] = 0;
                 queue.push(i);
             }
@@ -888,7 +892,7 @@ impl SoftBodySettings {
             return Some("no vertices".to_string());
         }
         for v in self.vertices.iter() {
-            if !is_valid_vec3(v.position) || !is_valid_vec3(v.velocity) || !(v.inv_mass >= 0) {
+            if !is_valid_vec3(v.position) || !is_valid_vec3(v.velocity) || !(v.inv_mass >= 0.0) {
                 return Some("invalid vertex".to_string());
             }
         }
@@ -898,7 +902,7 @@ impl SoftBodySettings {
             }
         }
         for e in self.edges.iter() {
-            if e.vertex.x >= n || e.vertex.y >= n || !(e.compliance >= 0) || e.vertex.x == e.vertex.y {
+            if e.vertex.x >= n || e.vertex.y >= n || !(e.compliance >= 0.0) || e.vertex.x == e.vertex.y {
                 return Some("invalid edge".to_string());
             }
         }
@@ -907,7 +911,7 @@ impl SoftBodySettings {
                 || b.vertex.y >= n
                 || b.vertex.z >= n
                 || b.vertex.w >= n
-                || !(b.compliance >= 0)
+                || !(b.compliance >= 0.0)
             {
                 return Some("invalid dihedral bend".to_string());
             }
@@ -917,13 +921,13 @@ impl SoftBodySettings {
                 || t.vertex.y >= n
                 || t.vertex.z >= n
                 || t.vertex.w >= n
-                || !(t.compliance >= 0)
+                || !(t.compliance >= 0.0)
             {
                 return Some("invalid volume".to_string());
             }
         }
         for a in self.long_range_attachments.iter() {
-            if a.anchor >= n || a.vertex >= n || !(a.max_distance >= 0) {
+            if a.anchor >= n || a.vertex >= n || !(a.max_distance >= 0.0) {
                 return Some("invalid long range attachment".to_string());
             }
         }
@@ -933,7 +937,7 @@ impl SoftBodySettings {
                 return Some("skinned vertex out of range".to_string());
             }
             for k in 0..4 {
-                if s.weights[k] > 0 && s.joints[k] >= joint_count {
+                if s.weights[k] > 0.0 && s.joints[k] >= joint_count {
                     return Some("skinned joint out of range".to_string());
                 }
             }
@@ -961,10 +965,10 @@ impl SoftBodySettings {
             for x in 0..columns {
                 let position = Vec3::new(
                     offset_x + (x as f32) * spacing,
-                    0,
+                    0.0,
                     offset_z + (z as f32) * spacing,
                 );
-                let inv_mass = if pinned(x, z) { 0 } else { 1 };
+                let inv_mass = if pinned(x, z) { 0.0 } else { 1.0 };
                 settings
                     .vertices
                     .push(SoftBodyVertex::new(position, Vec3::ZERO, inv_mass));
@@ -1008,7 +1012,7 @@ impl SoftBodySettings {
                         offset + (y as f32) * spacing,
                         offset + (z as f32) * spacing,
                     );
-                    settings.vertices.push(SoftBodyVertex::new(p, Vec3::ZERO, 1));
+                    settings.vertices.push(SoftBodyVertex::new(p, Vec3::ZERO, 1.0));
                 }
             }
         }
@@ -1093,20 +1097,20 @@ impl SoftBodySettings {
         let mut settings = SoftBodySettings::new();
 
         // Icosahedron.
-        let t: f32 = (1 + (5.0_f32).sqrt()) / 2;
+        let t: f32 = (1.0 + (5.0_f32).sqrt()) / 2.0;
         let mut points: Vec<Vec3> = [
-            Vec3::new(-1, t, 0),
-            Vec3::new(1, t, 0),
-            Vec3::new(-1, -t, 0),
-            Vec3::new(1, -t, 0),
-            Vec3::new(0, -1, t),
-            Vec3::new(0, 1, t),
-            Vec3::new(0, -1, -t),
-            Vec3::new(0, 1, -t),
-            Vec3::new(t, 0, -1),
-            Vec3::new(t, 0, 1),
-            Vec3::new(-t, 0, -1),
-            Vec3::new(-t, 0, 1),
+            Vec3::new(-1.0, t, 0.0),
+            Vec3::new(1.0, t, 0.0),
+            Vec3::new(-1.0, -t, 0.0),
+            Vec3::new(1.0, -t, 0.0),
+            Vec3::new(0.0, -1.0, t),
+            Vec3::new(0.0, 1.0, t),
+            Vec3::new(0.0, -1.0, -t),
+            Vec3::new(0.0, 1.0, -t),
+            Vec3::new(t, 0.0, -1.0),
+            Vec3::new(t, 0.0, 1.0),
+            Vec3::new(-t, 0.0, -1.0),
+            Vec3::new(-t, 0.0, 1.0),
         ]
         .iter()
         .map(|&p| normalize(p))
@@ -1161,7 +1165,7 @@ impl SoftBodySettings {
 
         settings.vertices = points
             .iter()
-            .map(|&p| SoftBodyVertex::new(radius * p, Vec3::ZERO, 1))
+            .map(|&p| SoftBodyVertex::new(radius * p, Vec3::ZERO, 1.0))
             .collect();
         settings.faces = triangles
             .iter()
@@ -1173,7 +1177,7 @@ impl SoftBodySettings {
                 compliance,
                 bend_compliance,
                 SoftBodyLRAType::None,
-                1,
+                1.0,
             )],
             bend_type,
             DEFAULT_ANGLE_TOLERANCE,
@@ -1186,8 +1190,8 @@ impl SoftBodySettings {
     pub fn make_rope(count: i32, spacing: f32, compliance: f32, pinned: bool) -> SoftBodySettings {
         let mut settings = SoftBodySettings::new();
         for i in 0..count.max(0) {
-            let position = Vec3::new(0, -(i as f32) * spacing, 0);
-            let inv_mass = if i == 0 && pinned { 0 } else { 1 };
+            let position = Vec3::new(0.0, -(i as f32) * spacing, 0.0);
+            let inv_mass = if i == 0 && pinned { 0.0 } else { 1.0 };
             settings
                 .vertices
                 .push(SoftBodyVertex::new(position, Vec3::ZERO, inv_mass));
@@ -1201,7 +1205,7 @@ impl SoftBodySettings {
             for i in 1..count.max(1) {
                 settings
                     .long_range_attachments
-                    .push(SoftBodyLRA::new(0, i as u32, 0));
+                    .push(SoftBodyLRA::new(0, i as u32, 0.0));
             }
         }
         settings.calculate_rest_values();
@@ -1220,10 +1224,10 @@ pub(crate) fn dihedral_angle(x0: Vec3, x1: Vec3, x2: Vec3, x3: Vec3) -> f32 {
     let n1 = cross(e, x2 - x0);
     let n2 = cross(x3 - x0, e);
     let len = length(e);
-    if len > 0 {
+    if len > 0.0 {
         atan2_approx(dot(cross(n1, n2), e) / len, dot(n1, n2))
     } else {
-        0
+        0.0
     }
 }
 
@@ -1266,9 +1270,9 @@ fn geodesic_distances(
     let mut nearest = vec![-1i64; vertices.len()];
     let mut heap = BinaryHeap::default();
     for &s in sources {
-        distances[s] = 0;
+        distances[s] = 0.0;
         nearest[s] = s as i64;
-        heap.push(0, s);
+        heap.push(0.0, s);
     }
     while let Some((d, v)) = heap.pop() {
         if d > distances[v] {

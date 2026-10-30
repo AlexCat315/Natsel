@@ -17,7 +17,7 @@ pub const EMPTY_NODE_FLAG: u32 = NODE_INDEX_MASK | LEAF_NODE_FLAG;
 pub const ROOT_NODE: i32 = 0;
 
 /// A node in the dynamic tree.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 #[repr(C)]
 pub struct TreeNode {
     pub aabb: AABB,

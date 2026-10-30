@@ -276,7 +276,7 @@ impl World {
         }
 
         // A non-zero velocity wakes the body first, then the state is written in its new set.
-        if length_squared(linear_velocity) > 0 {
+        if length_squared(linear_velocity) > 0.0 {
             self.wake_body(self.body_index(id));
             record = self.body(id);
         }
@@ -299,7 +299,7 @@ impl World {
             return;
         }
 
-        if length_squared(angular_velocity) > 0 {
+        if length_squared(angular_velocity) > 0.0 {
             self.wake_body(self.body_index(id));
             record = self.body(id);
         }
@@ -531,7 +531,7 @@ impl World {
         let center = transform_world_point(sim.transform, mass_data.center);
         sim.center = center;
         sim.center0 = center;
-        sim.inv_mass = if body.mass > 0 { 1.0 / body.mass } else { 0.0 };
+        sim.inv_mass = if body.mass > 0.0 { 1.0 / body.mass } else { 0.0 };
         sim.inertia = mass_data.inertia;
         self.set_body_sim(id, sim);
 
@@ -846,7 +846,8 @@ impl World {
         b3_assert(is_valid_float(sleep_threshold) && sleep_threshold >= 0.0);
         let mut body = self.body(id);
         body.sleep_threshold = sleep_threshold;
-        self.bodies[self.body_index(id) as usize] = body;
+        let index = self.body_index(id) as usize;
+        self.bodies[index] = body;
     }
 
     pub fn body_sleep_threshold(&self, id: BodyID) -> f32 {
@@ -857,7 +858,8 @@ impl World {
         b3_assert(is_valid_float(safety_factor) && safety_factor >= 0.0);
         let mut body = self.body(id);
         body.safety_factor = safety_factor;
-        self.bodies[self.body_index(id) as usize] = body;
+        let index = self.body_index(id) as usize;
+        self.bodies[index] = body;
     }
 
     pub fn body_safety_factor(&self, id: BodyID) -> f32 {

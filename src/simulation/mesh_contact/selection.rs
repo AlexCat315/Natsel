@@ -180,7 +180,9 @@ pub fn select_mesh_manifolds<'s>(
         .reserve(accepted_count);
     for i in 0..accepted_count {
         let index = accepted[i] as usize;
-        scratch.selected_manifolds.push(manifolds[index]);
+        // Swift's `MeshTriangleManifold` is a value type, so this is a copy there. It cannot be
+        // `Copy` in Rust because `point_range` is a `Range<usize>`.
+        scratch.selected_manifolds.push(manifolds[index].clone());
     }
     &scratch.selected_manifolds
 }

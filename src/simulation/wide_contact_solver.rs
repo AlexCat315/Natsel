@@ -865,7 +865,6 @@ impl World {
                         .manifolds()
                         .buffer()
                         .as_ptr()
-                        .cast_const()
                         .cast_mut()
                 };
                 for offset in 0..lane_count {

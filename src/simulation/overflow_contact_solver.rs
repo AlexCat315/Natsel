@@ -385,8 +385,8 @@ impl World {
                 let i_a = c.inv_ia;
                 let mB = c.inv_mass_b;
                 let i_b = c.inv_ib;
-                let state_a = World::state_at(states, c.index_a);
-                let state_b = World::state_at(states, c.index_b);
+                let state_a = World::state_at(states.as_mut_ptr(), c.index_a);
+                let state_b = World::state_at(states.as_mut_ptr(), c.index_b);
                 let mut v_a = state_a.linear_velocity;
                 let mut w_a = state_a.angular_velocity;
                 let dq_a = state_a.delta_rotation;
@@ -461,8 +461,8 @@ impl World {
                 let i_a = c.inv_ia;
                 let mB = c.inv_mass_b;
                 let i_b = c.inv_ib;
-                let state_a = World::state_at(states, c.index_a);
-                let state_b = World::state_at(states, c.index_b);
+                let state_a = World::state_at(states.as_mut_ptr(), c.index_a);
+                let state_b = World::state_at(states.as_mut_ptr(), c.index_b);
                 let mut v_a = state_a.linear_velocity;
                 let mut w_a = state_a.angular_velocity;
                 let dq_a = state_a.delta_rotation;
@@ -608,8 +608,8 @@ impl World {
                 let i_a = c.inv_ia;
                 let mB = c.inv_mass_b;
                 let i_b = c.inv_ib;
-                let state_a = World::state_at(states, c.index_a);
-                let state_b = World::state_at(states, c.index_b);
+                let state_a = World::state_at(states.as_mut_ptr(), c.index_a);
+                let state_b = World::state_at(states.as_mut_ptr(), c.index_b);
                 let mut v_a = state_a.linear_velocity;
                 let mut w_a = state_a.angular_velocity;
                 let dq_a = state_a.delta_rotation;

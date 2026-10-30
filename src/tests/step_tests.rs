@@ -65,7 +65,7 @@ fn contact_free_step() {
         let _ = world.create_sphere_shape(
             b1,
             &shape_def,
-            &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5),
+            Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5),
         );
 
         def = BodyDef::default();
@@ -78,7 +78,7 @@ fn contact_free_step() {
         let _ = world.create_sphere_shape(
             b2,
             &shape_def,
-            &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.25),
+            Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.25),
         );
 
         def = BodyDef::default();
@@ -89,7 +89,7 @@ fn contact_free_step() {
         let _ = world.create_sphere_shape(
             b3s,
             &shape_def,
-            &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0),
+            Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0),
         );
 
         world.apply_body_force(b0, Vec3::new(100.0, 0.0, 0.0), Pos::new(0.2, 5.2, 0.0), true);

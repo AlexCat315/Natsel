@@ -278,7 +278,7 @@ impl World {
             shape.id,
             force_pair_creation,
         );
-        b3_assert(proxy_type_of(shape.proxy_key) as i32 < BodyType::COUNT);
+        b3_assert((proxy_type_of(shape.proxy_key) as i32) < BodyType::COUNT);
     }
 
     // MARK: Creation
@@ -704,8 +704,8 @@ impl World {
         destroy_shape_proxy(&mut shape, &mut self.broad_phase);
 
         // Commit shape-list changes before contact destruction can update the body.
-        self.bodies[body_index as usize] = body;
         let mut contact_key = body.head_contact_key;
+        self.bodies[body_index as usize] = body;
         while contact_key != b3::NULL_INDEX {
             let contact_id = contact_key >> 1;
             let edge_index = (contact_key & 1) as usize;

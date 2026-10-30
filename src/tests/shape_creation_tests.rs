@@ -39,14 +39,14 @@ fn create_shapes() {
 
         let mut shape_def = ShapeDef::default();
         shape_def.density = 2.0;
-        let sh1 = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
+        let sh1 = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
 
         shape_def = ShapeDef::default();
         shape_def.density = 2.0;
         let sh2 = world.create_capsule_shape(
             body,
             &shape_def,
-            &Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5),
+            Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5),
         );
 
         shape_def = ShapeDef::default();

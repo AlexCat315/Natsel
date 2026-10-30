@@ -27,7 +27,7 @@ fn begin_and_end_events() {
     shape_def.density = 1.0;
     shape_def.enable_contact_events = true;
     shape_def.base_material.restitution = 0.6;
-    let sphere_shape = world.create_sphere_shape(sphere_body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
+    let sphere_shape = world.create_sphere_shape(sphere_body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
 
     let mut begin_count = 0;
     let mut end_count = 0;
@@ -110,7 +110,7 @@ fn hit_event() {
     shape_def.density = 1.0;
     shape_def.enable_hit_events = true;
     shape_def.base_material.user_material_id = 7;
-    let _ = world.create_sphere_shape(sphere_body, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
+    let _ = world.create_sphere_shape(sphere_body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
 
     let mut hit_count = 0;
     let mut captured_speed: f32 = 0.0;

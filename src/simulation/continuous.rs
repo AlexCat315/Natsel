@@ -1,6 +1,13 @@
 //! Continuous collision.
 //!
 //! Translated from `Sources/Natsel/Simulation/Continuous.swift`.
+//!
+//! Swift keeps `Continuous.swift` beside a `Continuous/` directory. Rust cannot have both
+//! `continuous.rs` and `continuous/mod.rs`, so the directory's children are declared here.
+
+pub mod compound_impact;
+pub mod dynamic_impact;
+pub mod impact;
 
 use crate::base::constants as b3;
 use crate::base::core::{b3_assert, b3_validate};
@@ -169,10 +176,10 @@ impl World {
             );
         }
 
-        b3_assert!(
+        b3_assert(
             shape_b.type_ != ShapeType::CompoundShape
                 && shape_b.type_ != ShapeType::MeshShape
-                && shape_b.type_ != ShapeType::HeightShape
+                && shape_b.type_ != ShapeType::HeightShape,
         );
 
         let buffer_a = make_shape_proxy(shape_a);
@@ -335,7 +342,7 @@ impl World {
         states: &mut [BodyState],
     ) {
         let mut fast_body_sim = sims[body_sim_index as usize];
-        b3_validate!((fast_body_sim.flags & BodyFlags::IS_FAST.0) != 0);
+        b3_validate((fast_body_sim.flags & BodyFlags::IS_FAST.0) != 0);
 
         // Re-center the sweep on the fast body so the TOI and the swept query stay in float precision
         let base = fast_body_sim.center0;

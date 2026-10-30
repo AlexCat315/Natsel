@@ -29,6 +29,16 @@ pub struct SendFn<F>(pub F);
 unsafe impl<F> Send for SendFn<F> {}
 unsafe impl<F> Sync for SendFn<F> {}
 
+impl<F: Fn(WorkerStage, usize, usize)> SendFn<F> {
+    /// Invoke through `&self` so a closure that captures a `SendFn` captures the wrapper rather
+    /// than the bare `F` field: Rust's precise capture would otherwise require `F: Send + Sync`,
+    /// defeating the erasure `SendFn` exists for.
+    #[inline]
+    fn call(&self, stage: WorkerStage, block: usize, thread: usize) {
+        (self.0)(stage, block, thread);
+    }
+}
+
 struct WorkerPoolShared {
     wake: B3Semaphore,
     running: AtomicBool,
@@ -165,7 +175,7 @@ impl WorkerPool {
             // The handler is invoked directly by `run`; keep it type-erased for symmetry.
             let handler: Handler = {
                 let wrapped = SendFn(handler);
-                Arc::new(move |stage, block, thread| (wrapped.0)(stage, block, thread))
+                Arc::new(move |stage, block, thread| wrapped.call(stage, block, thread))
             };
             *self.shared.handler.lock().unwrap_or_else(|e| e.into_inner()) = Some(handler);
             self.is_running = true;
@@ -174,7 +184,7 @@ impl WorkerPool {
 
         let wrapped = SendFn(handler);
         let handler: Handler =
-            Arc::new(move |stage, block, thread| (wrapped.0)(stage, block, thread));
+            Arc::new(move |stage, block, thread| wrapped.call(stage, block, thread));
         *self.shared.handler.lock().unwrap_or_else(|e| e.into_inner()) = Some(handler);
         self.shared.running.store(true, Ordering::SeqCst);
         for _ in 0..self.threads.len() {

@@ -52,7 +52,7 @@ fn queries() {
         let sphere = world.create_body(&def);
         shape_def = ShapeDef::default();
         shape_def.density = 1000.0;
-        let _ = world.create_sphere_shape(sphere, &shape_def, &Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
+        let _ = world.create_sphere_shape(sphere, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 0.5));
 
         let mut h: u64 = 14_695_981_039_346_656_037;
         let filter = QueryFilter::default_filter();

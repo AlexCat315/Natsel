@@ -6,7 +6,8 @@ use core::ffi::c_void;
 
 use crate::collision::compound::compound::Compound;
 use crate::collision::height_field::quantization::HeightField;
-use crate::math::types::{AABB, Capsule, HullData, Pos, Sphere, Vec3, WorldTransform};
+use crate::math::types::{AABB, Pos, Vec3, WorldTransform};
+use crate::types::geometry::{Capsule, HullData, Sphere};
 use crate::types::geometry::Mesh;
 use crate::types::ids::ShapeID;
 use crate::types::shape_def::ShapeType;
