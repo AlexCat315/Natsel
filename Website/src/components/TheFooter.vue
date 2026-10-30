@@ -16,8 +16,22 @@ const columns = [
     title: '资源',
     links: [
       { label: '快速开始', to: '/docs/getting-started' },
+      { label: '安装与集成', to: '/docs/installation' },
       { label: '核心概念', to: '/docs/concepts' },
       { label: '确定性', to: '/docs/determinism' },
+      { label: 'API 速查', to: '/docs/api-reference' },
+      { label: '常见问题', to: '/docs/faq' },
+    ],
+  },
+  {
+    title: '专题',
+    links: [
+      { label: '刚体与形状', to: '/docs/bodies' },
+      { label: '关节', to: '/docs/joints' },
+      { label: '虚拟角色', to: '/docs/character' },
+      { label: '车辆', to: '/docs/vehicle' },
+      { label: '软体', to: '/docs/soft-body' },
+      { label: '快照与状态哈希', to: '/docs/snapshots' },
     ],
   },
 ]
@@ -75,7 +89,7 @@ const columns = [
   padding: 72px 0 32px;
   margin-top: 40px;
 }
-.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 48px; }
+.footer-grid { display: grid; grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr; gap: 40px; }
 .brand-row { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 800; margin-bottom: 14px; }
 .footer-brand p { color: var(--text-dim); font-size: 14px; max-width: 300px; margin-bottom: 18px; }
 .socials { display: flex; gap: 14px; }
@@ -93,8 +107,13 @@ const columns = [
   color: var(--text-faint);
   font-size: 13px;
 }
+@media (max-width: 1100px) {
+  .footer-grid { grid-template-columns: 1fr 1fr 1fr; gap: 36px; }
+  .footer-brand { grid-column: 1 / -1; }
+}
 @media (max-width: 900px) {
   .footer-grid { grid-template-columns: 1fr 1fr; gap: 36px; }
+  .footer-sitemap { grid-template-columns: 1fr 1fr; }
   .footer-brand { grid-column: 1 / -1; }
   .footer-bottom { flex-direction: column; gap: 8px; }
 }
