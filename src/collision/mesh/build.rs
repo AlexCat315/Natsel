@@ -96,7 +96,7 @@ pub fn prepare_mesh(
         return None;
     }
 
-    let mut tree = MeshTreeBuild::new(&mut primitives);
+    let mut tree = MeshTreeBuild::with_options(&mut primitives, options.use_median_split);
     if !tree.fits_traversal_stack() {
         return None;
     }

@@ -45,11 +45,7 @@ fn tree_repeatability() {
                     }
                 })
                 .collect();
-            // Swift's `MeshTreeBuild(primitives:useMedianSplit: scenario == 1)`; the Rust builder
-            // takes only the primitives, so the median-split variant has no call-site spelling yet.
-            // The node-count and height assertions below still pin scenario 1's result, so the gap
-            // surfaces as a failure rather than being silently dropped.
-            let tree = MeshTreeBuild::new(&mut primitives);
+            let tree = MeshTreeBuild::with_options(&mut primitives, scenario == 1);
             assert_eq!(tree.nodes.len(), node_counts[scenario]);
             assert_eq!(tree.height, heights[scenario]);
             let mut digest: u64 = 14695981039346656037;

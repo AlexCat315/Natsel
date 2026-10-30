@@ -34,7 +34,7 @@ fn complete_candidates() {
         let query = inflate(center, 1.25);
 
         let mut found: Vec<i32> = Vec::new();
-        tree.visit(query, i32::MAX, None, |feature| found.push(feature));
+        tree.visit(query, -1, None, |feature| found.push(feature));
         let expected: Vec<i32> = boxes
             .iter()
             .enumerate()
@@ -78,7 +78,7 @@ fn refit_and_rebuild() {
     let mut remote: Vec<i32> = Vec::new();
     tree.visit(
         AABB::new(distant, distant),
-        i32::MAX,
+        -1,
         None,
         |feature| remote.push(feature),
     );
@@ -87,7 +87,7 @@ fn refit_and_rebuild() {
     let mut old: Vec<i32> = Vec::new();
     tree.visit(
         AABB::new(Vec3::new(3.0, 0.0, 0.0), Vec3::new(3.0, 0.0, 0.0)),
-        i32::MAX,
+        -1,
         None,
         |feature| old.push(feature),
     );
@@ -97,7 +97,7 @@ fn refit_and_rebuild() {
     let mut rebuilt: Vec<i32> = Vec::new();
     tree.visit(
         AABB::new(Vec3::ZERO, Vec3::ZERO),
-        i32::MAX,
+        -1,
         None,
         |feature| rebuilt.push(feature),
     );
@@ -107,7 +107,7 @@ fn refit_and_rebuild() {
     let mut empty: Vec<i32> = Vec::new();
     tree.visit(
         AABB::new(Vec3::ZERO, Vec3::ZERO),
-        i32::MAX,
+        -1,
         None,
         |feature| empty.push(feature),
     );
@@ -124,7 +124,7 @@ fn coincident_features() {
     let mut found: Vec<i32> = Vec::new();
     tree.visit(
         AABB::new(Vec3::ZERO, Vec3::ZERO),
-        i32::MAX,
+        -1,
         None,
         |feature| found.push(feature),
     );
@@ -153,7 +153,7 @@ fn reference_exclusion() {
     let mut found: Vec<i32> = Vec::new();
     tree.visit(
         AABB::new(Vec3::ZERO, Vec3::ZERO),
-        i32::MAX,
+        -1,
         Some((Vec3::ZERO, 1.0)),
         |feature| found.push(feature),
     );
