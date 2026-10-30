@@ -13,7 +13,8 @@ use crate::soft_body::soft_body_settings::{SoftBodyBendType, SoftBodySettings, S
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::Sphere;
 use crate::types::ids::BodyID;
-use crate::types::joint_defs::{DistanceJointDef, PathJointDef, RevoluteJointDef, SphericalJointDef};
+use crate::simulation::path_joint::PathJointDef;
+use crate::types::joint_defs::{DistanceJointDef, RevoluteJointDef, SphericalJointDef};
 use crate::types::shape_def::ShapeDef;
 use crate::vehicle::vehicle_types::{
     VehicleControllerSettings, VehicleDef, VehicleDifferentialSettings,
@@ -103,8 +104,8 @@ fn build_pyramid(world: &mut World) {
             let mut def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
             def.position = Pos::new(
-                (column as f32 - 0.5 * (base - row - 1) as f32) as f64,
-                (0.5 + row as f32) as f64,
+                (column as f64 - 0.5 * (base - row - 1) as f64) as f64,
+                (0.5 + row as f64) as f64,
                 0.0,
             );
             let body = world.create_body(&def);
@@ -160,9 +161,9 @@ fn build_restitution(world: &mut World) {
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
         def.position = Pos::new(
-            ((i % 20) as f32 * 1.1 - 10.0) as f64,
-            (1.0 + (i / 20) as f32 * 1.1) as f64,
-            ((i % 7) as f32 * 0.05) as f64,
+            ((i % 20) as f64 * 1.1 - 10.0) as f64,
+            (1.0 + (i / 20) as f64 * 1.1) as f64,
+            ((i % 7) as f64 * 0.05) as f64,
         );
         let body = world.create_body(&def);
         if i % 2 == 0 {
@@ -185,8 +186,8 @@ fn build_mixed_joints(world: &mut World) {
             let mut def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
             def.position = Pos::new(
-                (chain as f32 * 2.0) as f64,
-                (12.0 - link as f32) as f64,
+                (chain as f64 * 2.0) as f64,
+                (12.0 - link as f64) as f64,
                 0.0,
             );
             let body = world.create_body(&def);
@@ -196,8 +197,8 @@ fn build_mixed_joints(world: &mut World) {
                 &make_box_hull(0.4, 0.4, 0.4),
             );
             let pivot = Pos::new(
-                (chain as f32 * 2.0) as f64,
-                (12.5 - link as f32) as f64,
+                (chain as f64 * 2.0) as f64,
+                (12.5 - link as f64) as f64,
                 0.0,
             );
             let frame_a = Transform::new(world.body_local_point(previous, pivot), Quat::IDENTITY);
@@ -258,8 +259,8 @@ fn build_ragdolls(world: &mut World) {
             &mut human,
             world,
             Pos::new(
-                ((i % 4) as f32 * 1.5) as f64,
-                (2.0 + (i / 4) as f32 * 2.0) as f64,
+                ((i % 4) as f64 * 1.5) as f64,
+                (2.0 + (i / 4) as f64 * 2.0) as f64,
                 0.0,
             ),
             0.05,
@@ -289,9 +290,9 @@ fn build_fast_and_sleepy(world: &mut World) {
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
         def.position = Pos::new(
-            ((i % 16) as f32 - 7.5) as f64,
-            (0.4 + (i / 256) as f32 * 0.8) as f64,
-            (((i / 16) % 16) as f32 - 7.5) as f64,
+            ((i % 16) as f64 - 7.5) as f64,
+            (0.4 + (i / 256) as f64 * 0.8) as f64,
+            (((i / 16) % 16) as f64 - 7.5) as f64,
         );
         let body = world.create_body(&def);
         let _ = world.create_hull_shape(body, &ShapeDef::default(), &cube);
@@ -302,8 +303,8 @@ fn build_fast_and_sleepy(world: &mut World) {
         def.is_bullet = i % 3 == 0;
         def.position = Pos::new(
             (if i % 2 == 0 { -12.0 } else { 12.0 }) as f64,
-            (1.0 + (i / 2) as f32 * 0.5) as f64,
-            ((i % 5) as f32 - 2.0) as f64,
+            (1.0 + (i / 2) as f64 * 0.5) as f64,
+            ((i % 5) as f64 - 2.0) as f64,
         );
         def.linear_velocity = Vec3::new(
             if i % 2 == 0 { 300.0 } else { -300.0 },
@@ -431,7 +432,7 @@ fn systems() {
         for k in 0..6 {
             let mut def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
-            def.position = Pos::new((k as f32 * 4.0) as f64, 1.2, 0.0);
+            def.position = Pos::new((k as f64 * 4.0) as f64, 1.2, 0.0);
             let body = world.create_body(&def);
             let mut shape_def = ShapeDef::default();
             shape_def.density = 400.0;

@@ -34,7 +34,7 @@ fn make_mesh_mix(wide: bool) -> World {
         let column = i % 8;
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
-        def.position = Pos::new(2.2 * column as f32 - 7.7, 1.2, 2.2 * row as f32 - 7.7);
+        def.position = Pos::new(2.2 * column as f64 - 7.7, 1.2, 2.2 * row as f64 - 7.7);
         let id = world.create_body(&def);
 
         seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
@@ -49,7 +49,7 @@ fn make_mesh_mix(wide: bool) -> World {
                 let _ = world.create_hull_shape(id, &shape_def, &small_box);
             }
             2 => {
-                let _ = world.create_sphere_shape(id, &shape_def, &sphere);
+                let _ = world.create_sphere_shape(id, &shape_def, sphere);
             }
             _ => {
                 let _ = world.create_capsule_shape(id, &shape_def, capsule);
@@ -157,7 +157,6 @@ fn stages() {
                 w.warm_start_joints(ci, &ctx_warm);
             });
             for mesh in [false, true] {
-                let ctx_warm = ctx.clone();
                 compare(
                     &mut w,
                     &format!("warm {substep} color {ci} mesh {mesh}"),

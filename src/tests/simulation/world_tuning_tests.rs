@@ -105,7 +105,7 @@ fn toggles() {
     let bullet = world.create_body(&def);
     let mut shape_def = ShapeDef::default();
     shape_def.density = 1.0;
-    let _ = world.create_sphere_shape(bullet, &shape_def, &Sphere::new(Vec3::ZERO, 0.1));
+    let _ = world.create_sphere_shape(bullet, &shape_def, Sphere::new(Vec3::ZERO, 0.1));
 
     for _ in 0..30 {
         world.step(1.0 / 60.0, 4);

@@ -149,7 +149,7 @@ fn color_counts_sum() {
     for i in 0..3 {
         def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
-        def.position = Pos::new(0.0, (0.6 + i as f32 * 1.05) as f64, 0.0);
+        def.position = Pos::new(0.0, (0.6 + i as f64 * 1.05) as f64, 0.0);
         let box_body = world.create_body(&def);
         shape_def = ShapeDef::default();
         shape_def.density = 1000.0;

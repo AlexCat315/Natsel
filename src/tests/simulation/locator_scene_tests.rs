@@ -378,7 +378,7 @@ fn stacking_lifecycle() {
     for i in 0..4 {
         def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
-        def.position = Pos::new(0.0, (0.55 + i as f32 * 1.05) as f64, 0.0);
+        def.position = Pos::new(0.0, (0.55 + i as f64 * 1.05) as f64, 0.0);
         let box_ = world.create_body(&def);
         shape_def = ShapeDef::default();
         shape_def.density = 1000.0;
@@ -410,7 +410,7 @@ fn disable_enable_lifecycle() {
     for i in 0..3 {
         def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
-        def.position = Pos::new((i as f32 * 0.9 - 0.9) as f64, 0.6, 0.0);
+        def.position = Pos::new((i as f64 * 0.9 - 0.9) as f64, 0.6, 0.0);
         let box_ = world.create_body(&def);
         shape_def = ShapeDef::default();
         shape_def.density = 1000.0;

@@ -29,10 +29,10 @@ fn make_world(wide: bool, mixed: bool) -> (World, Vec<JointID>) {
             } else {
                 BodyType::DynamicBody
             };
-            body.position = Pos::new(x as f32, -(y as f32), 0.0);
+            body.position = Pos::new(x as f64, -(y as f64), 0.0);
             body.angular_velocity = Vec3::new(0.03 * x as f32, 0.01 * y as f32, -0.02);
             let id = world.create_body(&body);
-            let _ = world.create_sphere_shape(id, &shape, &Sphere::new(Vec3::ZERO, 0.4));
+            let _ = world.create_sphere_shape(id, &shape, Sphere::new(Vec3::ZERO, 0.4));
 
             let mut joint = SphericalJointDef::default();
             joint.base.body_id_b = id;

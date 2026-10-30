@@ -62,7 +62,7 @@ fn split_island() {
             def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
             // Swift's `Pos(0, 0.55 + Float(i) * 1.01, 0)` computes in `Float` and widens to `Double`.
-            def.position = Pos::new(0.0, (0.55 + i as f32 * 1.01) as f64, 0.0);
+            def.position = Pos::new(0.0, (0.55 + i as f64 * 1.01) as f64, 0.0);
             let box_body = world.create_body(&def);
             shape_def = ShapeDef::default();
             shape_def.density = 1000.0;

@@ -2,7 +2,7 @@
 
 use crate::collision::hull::make_box_hull;
 use crate::math::functions::min_float;
-use crate::math::types::{Pos};
+use crate::math::types::Pos;
 use crate::simulation::World;
 use crate::simulation::constraint_graph::OVERFLOW_INDEX;
 use crate::simulation::solver_integration::make_soft;
@@ -22,9 +22,9 @@ fn lanes_match_scalar() {
             let mut def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
             def.position = Pos::new(
-                j as f32 * 1.1 - 1.5,
-                1.5 + i as f32,
-                (i % 3) as f32 * 0.3,
+                j as f64 * 1.1 - 1.5,
+                1.5 + i as f64,
+                (i % 3) as f64 * 0.3,
             );
             let body = w.create_body(&def);
             let _ = w.create_hull_shape(body, &ShapeDef::default(), &make_box_hull(0.5, 0.5, 0.5));
@@ -122,9 +122,9 @@ fn make(twins: bool) -> World {
             let mut def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
             def.position = Pos::new(
-                j as f32 * 1.1 - 1.5,
-                1.5 + i as f32,
-                (i % 3) as f32 * 0.3,
+                j as f64 * 1.1 - 1.5,
+                1.5 + i as f64,
+                (i % 3) as f64 * 0.3,
             );
             let body = w.create_body(&def);
             let _ = w.create_hull_shape(body, &ShapeDef::default(), &make_box_hull(0.5, 0.5, 0.5));

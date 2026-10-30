@@ -22,9 +22,8 @@ use crate::types::geometry::Sphere;
 use crate::types::ids::{BodyID, JointID};
 use crate::types::joint_defs::{RevoluteJointDef, WeldJointDef};
 use crate::types::shape_def::ShapeDef;
-use crate::vehicle::vehicle_runtime::VehicleDef;
 use crate::vehicle::vehicle_types::{
-    VehicleControllerSettings, VehicleDifferentialSettings, VehicleID, WheelSettings,
+    VehicleControllerSettings, VehicleDef, VehicleDifferentialSettings, VehicleID, WheelSettings,
     WheeledVehicleControllerSettings,
 };
 
@@ -72,8 +71,8 @@ impl StateScene {
                 let mut def = BodyDef::default();
                 def.type_ = BodyType::DynamicBody;
                 def.position = Pos::new(
-                    column as f32 * 0.85 - 0.425 * (7 - row) as f32,
-                    1.4 + row as f32 * 0.8,
+                    column as f64 * 0.85 - 0.425 * (7 - row) as f64,
+                    1.4 + row as f64 * 0.8,
                     0.0,
                 );
                 let body = world.create_body(&def);
@@ -87,7 +86,7 @@ impl StateScene {
             create_human(
                 &mut human,
                 &mut world,
-                Pos::new(i as f32 * 2.0 - 8.0, 2.0, 6.0),
+                Pos::new(i as f64 * 2.0 - 8.0, 2.0, 6.0),
                 0.05,
                 5.0,
                 0.5,
@@ -103,14 +102,14 @@ impl StateScene {
         for link in 0..6i32 {
             let mut def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
-            def.position = Pos::new(10.0, 6.0 - link as f32, 0.0);
+            def.position = Pos::new(10.0, 6.0 - link as f64, 0.0);
             let body = world.create_body(&def);
             let _ = world.create_hull_shape(
                 body,
                 &ShapeDef::default(),
                 &make_box_hull(0.3, 0.3, 0.3),
             );
-            let pivot = Pos::new(10.0, 6.5 - link as f32, 0.0);
+            let pivot = Pos::new(10.0, 6.5 - link as f64, 0.0);
             if link % 2 == 0 {
                 let mut joint = RevoluteJointDef::default();
                 joint.base.body_id_a = previous;
@@ -142,7 +141,7 @@ impl StateScene {
         let _ = world.create_sphere_shape(
             bead_body,
             &ShapeDef::default(),
-            &Sphere::new(Vec3::ZERO, 0.2),
+            Sphere::new(Vec3::ZERO, 0.2),
         );
         let mut path = PathJointDef::default();
         path.base.body_id_a = anchor;
@@ -168,7 +167,7 @@ impl StateScene {
         for k in 0..2 {
             let mut def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
-            def.position = Pos::new(k as f32 * 5.0 - 20.0, 1.2, -12.0);
+            def.position = Pos::new(k as f64 * 5.0 - 20.0, 1.2, -12.0);
             let body = world.create_body(&def);
             let mut chassis = ShapeDef::default();
             chassis.density = 400.0;
@@ -217,7 +216,7 @@ impl StateScene {
         let _ = world.create_sphere_shape(
             bullet_body,
             &ShapeDef::default(),
-            &Sphere::new(Vec3::ZERO, 0.1),
+            Sphere::new(Vec3::ZERO, 0.1),
         );
 
         let mut character_def = CharacterDef::new();
@@ -284,10 +283,10 @@ impl StateScene {
         let mut hash: u64 = 14_695_981_039_346_656_037;
         let prime: u64 = 1_099_511_628_211;
 
-        let mut mix_double = |hash: &mut u64, f: f64| {
+        let mix_double = |hash: &mut u64, f: f64| {
             *hash = (*hash ^ f.to_bits()).wrapping_mul(prime);
         };
-        let mut mix_float = |hash: &mut u64, f: f32| {
+        let mix_float = |hash: &mut u64, f: f32| {
             *hash = (*hash ^ f.to_bits() as u64).wrapping_mul(prime);
         };
 

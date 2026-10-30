@@ -252,8 +252,8 @@ fn threads() {
             let mut def = SoftBodyDef::with_settings(
                 make_strip(3, 0.08, 12, 0.15, |_x, _z| false),
                 Pos::new(
-                    (0.4 * (k as f32) - 0.6) as f64,
-                    (1.0 + 0.3 * (k as f32)) as f64,
+                    (0.4 * (k as f64) - 0.6) as f64,
+                    (1.0 + 0.3 * (k as f64)) as f64,
                     0.0,
                 ),
                 make_quat_from_axis_angle(Vec3::AXIS_Y, 0.7 * (k as f32)),

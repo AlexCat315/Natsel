@@ -114,9 +114,9 @@ fn create_falling_ragdolls(world: &mut World) -> FallingRagdollData {
 
             let mut group = Group::default();
             let mut position = Pos::new(
-                (-0.5 * span + GRID_SIZE * (j as f32 + 0.5)) as f64,
+                f64::from(-0.5f32 * span + GRID_SIZE * (j as f32 + 0.5)),
                 15.0,
-                (-0.5 * span + GRID_SIZE * (i as f32 + 0.5)) as f64,
+                f64::from(-0.5f32 * span + GRID_SIZE * (i as f32 + 0.5)),
             );
             for k in 0..GROUP_SIZE {
                 create_human(

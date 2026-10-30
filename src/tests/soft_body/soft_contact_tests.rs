@@ -260,8 +260,8 @@ fn threads() {
                     |_x, _z| false,
                 ),
                 Pos::new(
-                    ((k / 2) as f32 * 3.0) as f64,
-                    (0.3 + 0.4 * (k % 2) as f32) as f64,
+                    ((k / 2) as f64 * 3.0) as f64,
+                    (0.3 + 0.4 * (k % 2) as f64) as f64,
                     0.0,
                 ),
                 Quat::IDENTITY,

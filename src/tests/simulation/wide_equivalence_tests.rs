@@ -25,9 +25,9 @@ fn scene(wide: bool) -> u64 {
             def = BodyDef::default();
             def.type_ = BodyType::DynamicBody;
             def.position = Pos::new(
-                x as f32 * 1.02 - 1.0,
-                0.6 + z as f32 * 0.1,
-                z as f32 * 1.02 - 1.0,
+                x as f64 * 1.02 - 1.0,
+                0.6 + z as f64 * 0.1,
+                z as f64 * 1.02 - 1.0,
             );
             let box_body = world.create_body(&def);
             let mut shape_def = ShapeDef::default();
@@ -103,9 +103,9 @@ fn make_mixed_world(enable_wide: bool, propagation: bool) -> World {
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
         def.position = Pos::new(
-            (i % 4) as f32 * 2.0 - 3.0,
-            0.6 + (i % 3) as f32 * 0.05,
-            (i / 4) as f32 * 2.0 - 2.0,
+            (i % 4) as f64 * 2.0 - 3.0,
+            0.6 + (i % 3) as f64 * 0.05,
+            (i / 4) as f64 * 2.0 - 2.0,
         );
         def.linear_velocity = Vec3::new(0.1, -3.0, -0.2);
         def.angular_velocity = Vec3::new(0.2, 0.1, -0.1);
@@ -115,7 +115,7 @@ fn make_mixed_world(enable_wide: bool, propagation: bool) -> World {
         shape.base_material.rolling_resistance = if i % 2 == 0 { 0.2 } else { 0.0 };
         shape.base_material.tangent_velocity = Vec3::new(0.3, 0.0, -0.2);
         if i % 2 == 0 {
-            let _ = world.create_sphere_shape(body, &shape, &Sphere::new(Vec3::ZERO, 0.5));
+            let _ = world.create_sphere_shape(body, &shape, Sphere::new(Vec3::ZERO, 0.5));
         } else {
             let _ = world.create_hull_shape(body, &shape, &make_box_hull(0.5, 0.5, 0.5));
         }

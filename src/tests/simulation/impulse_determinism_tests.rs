@@ -72,9 +72,9 @@ fn rolling_mix() {
                 let mut def = BodyDef::default();
                 def.type_ = BodyType::DynamicBody;
                 def.position = Pos::new(
-                    f64::from(2.0 * column as f32 - 7.0),
+                    f64::from(2.0 * column as f64 - 7.0),
                     1.45,
-                    f64::from(2.0 * row as f32 - 7.0),
+                    f64::from(2.0 * row as f64 - 7.0),
                 );
                 let id = world.create_body(&def);
                 body_ids.push(id);
@@ -121,7 +121,7 @@ fn rolling_mix() {
     }
 }
 
-fn make_mesh_mix(wide: bool) -> (World, Vec<BodyID>) {
+pub(crate) fn make_mesh_mix(wide: bool) -> (World, Vec<BodyID>) {
     let mut world = World::default();
     world.enable_wide_solver = wide;
     let mesh = create_wave_mesh(40, 40, 0.5, 0.3, 0.2, 0.3).expect("wave mesh");
@@ -147,9 +147,9 @@ fn make_mesh_mix(wide: bool) -> (World, Vec<BodyID>) {
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
         def.position = Pos::new(
-            f64::from(2.2 * column as f32 - 7.7),
+            f64::from(2.2 * column as f64 - 7.7),
             1.2,
-            f64::from(2.2 * row as f32 - 7.7),
+            f64::from(2.2 * row as f64 - 7.7),
         );
         let id = world.create_body(&def);
         body_ids.push(id);

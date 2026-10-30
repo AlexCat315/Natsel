@@ -1022,7 +1022,7 @@ fn resting_stack() {
     for i in 0..box_count {
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
-        def.position = Pos::new(0.0, (0.5 + i as f32) as f64, 0.0);
+        def.position = Pos::new(0.0, (0.5 + i as f64) as f64, 0.0);
         let box_body = world.create_body(&def);
         let _ = world.create_hull_shape(box_body, &shape_def, &cube);
         boxes.push(box_body);

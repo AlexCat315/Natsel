@@ -164,7 +164,7 @@ fn enlarged_proxy_destroyed() {
 
     // Resting bodies keep the tree deep enough that the mover has an ancestor that outlives it
     for i in 0..8 {
-        def.position = Pos::new(f64::from(2.0 * i as f32), 0.0, 0.0);
+        def.position = Pos::new(f64::from(2.0 * i as f64), 0.0, 0.0);
         def.linear_velocity = Vec3::ZERO;
         let resting = world.create_body(&def);
         let _ = world.create_sphere_shape(resting, &shape_def, sphere);

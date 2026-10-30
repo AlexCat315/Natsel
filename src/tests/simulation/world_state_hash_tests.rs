@@ -3,7 +3,7 @@
 //! `world_state_hash` uses FNV-1a over every live body's transform and velocities.
 
 use crate::collision::hull::make_box_hull;
-use crate::math::types::{Pos, Vec3};
+use crate::math::types::Pos;
 use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::shape_def::ShapeDef;
@@ -22,9 +22,9 @@ fn make_scene() -> World {
         def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
         def.position = Pos::new(
-            0.3 * i as f32,
-            0.6 + i as f32 * 1.1,
-            0.1 * i as f32,
+            0.3 * i as f64,
+            0.6 + i as f64 * 1.1,
+            0.1 * i as f64,
         );
         let box_body = world.create_body(&def);
         shape_def = ShapeDef::default();

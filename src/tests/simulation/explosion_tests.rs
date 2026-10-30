@@ -17,7 +17,7 @@ fn make_scene() -> (World, Vec<BodyID>) {
     for i in 0..5 {
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
-        def.position = Pos::new(f64::from(i as f32 * 2.0 - 4.0), 0.0, 0.0);
+        def.position = Pos::new(f64::from(i as f64 * 2.0 - 4.0), 0.0, 0.0);
         let body = world.create_body(&def);
 
         let mut shape_def = ShapeDef::default();

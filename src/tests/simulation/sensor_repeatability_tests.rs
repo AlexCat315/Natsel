@@ -1,7 +1,7 @@
 //! Ported from Tests/NatselTests/Simulation/SensorRepeatabilityTests.swift.
 
 use crate::math::functions::offset_pos;
-use crate::math::types::{Pos, Vec3};
+use crate::math::types::Vec3;
 use crate::simulation::World;
 use crate::tests::simulation::mixed_query_scene::make_test_query_scene;
 use crate::types::body_def::{BodyDef, BodyType};
@@ -41,7 +41,7 @@ fn run_repeatability(scenario: i32) {
 
         let mut shape_def = ShapeDef::default();
         shape_def.enable_sensor_events = true;
-        let _ = world.create_sphere_shape(visitor, &shape_def, &Sphere::new(Vec3::ZERO, 0.3));
+        let _ = world.create_sphere_shape(visitor, &shape_def, Sphere::new(Vec3::ZERO, 0.3));
 
         let mut digest = CollisionDigest::new();
         for i in 0..120 {
@@ -100,7 +100,7 @@ fn swap_removal() {
         ids.push(world.create_sphere_shape(
             body,
             &definition,
-            &Sphere::new(Vec3::ZERO, 1.0),
+            Sphere::new(Vec3::ZERO, 1.0),
         ));
     }
     world.destroy_shape(ids[0], true);
@@ -124,13 +124,13 @@ fn destruction() {
     let mut shape_def = ShapeDef::default();
     shape_def.is_sensor = true;
     shape_def.enable_sensor_events = true;
-    let sensor = world.create_sphere_shape(ground, &shape_def, &Sphere::new(Vec3::ZERO, 1.0));
+    let sensor = world.create_sphere_shape(ground, &shape_def, Sphere::new(Vec3::ZERO, 1.0));
 
     let mut definition = BodyDef::default();
     definition.type_ = BodyType::KinematicBody;
     let visitor_body = world.create_body(&definition);
     shape_def.is_sensor = false;
-    let visitor = world.create_sphere_shape(visitor_body, &shape_def, &Sphere::new(Vec3::ZERO, 0.5));
+    let visitor = world.create_sphere_shape(visitor_body, &shape_def, Sphere::new(Vec3::ZERO, 0.5));
 
     world.step(1.0f32 / 60.0, 4);
     assert_eq!(world.sensor_events().begin.len(), 1);
@@ -147,9 +147,4 @@ fn destruction() {
 
     world.step(1.0f32 / 60.0, 4);
     assert!(world.sensor_events().end.is_empty());
-}
-
-#[allow(dead_code)]
-fn _unused_pos() -> Pos {
-    Pos::ZERO
 }

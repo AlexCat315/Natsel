@@ -30,9 +30,9 @@ fn oracle() {
 
     for i in 0..160 {
         let origin = Pos::new(
-            1.0e12 + f64::from((i % 20) as f32) * 0.125 - 1.0,
+            1.0e12 + f64::from((i % 20) as f64) * 0.125 - 1.0,
             2.0,
-            -1.0e12 + f64::from((i / 20) as f32) * 0.125 - 0.5,
+            -1.0e12 + f64::from((i / 20) as f64) * 0.125 - 0.5,
         );
         world.enable_soft_body_query_acceleration = false;
         let expected = world.cast_ray_soft_body(id, origin, Vec3::new(0.0, -4.0, 0.0));
