@@ -21,6 +21,7 @@ use crate::skeleton::skeleton_mapper::SkeletonMapper;
 use crate::simulation::six_dof_joint::{SixDOFAxis, SixDOFMotorMode};
 use crate::simulation::World;
 use crate::tests::world_position_assertions::{abs_float, distance};
+use crate::tests::SWIFT_FLOAT_PI;
 use crate::types::body_def::BodyDef;
 use crate::types::geometry::{Capsule, Sphere};
 use crate::types::shape_def::ShapeDef;
@@ -44,8 +45,8 @@ fn human_skeleton() -> Skeleton {
 fn human_bind_pose(skeleton: &Skeleton, origin: Vec3) -> SkeletonPose {
     let mut pose = SkeletonPose::new(skeleton.clone());
     pose.root_offset = Pos::from_vec3(origin);
-    let down = make_quat_from_axis_angle(Vec3::AXIS_Z, -0.5 * b3::PI);
-    let up = make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * b3::PI);
+    let down = make_quat_from_axis_angle(Vec3::AXIS_Z, -0.5 * SWIFT_FLOAT_PI);
+    let up = make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * SWIFT_FLOAT_PI);
     let set = |pose: &mut SkeletonPose, name: &str, p: Vec3, q: Quat| {
         pose.joint_matrices[skeleton.joint_index(name).unwrap() as usize] = Transform::new(p, q);
     };
@@ -116,7 +117,7 @@ fn human_settings(skeleton: &Skeleton) -> RagdollSettings {
             };
             part.joint_frame = Transform::new(
                 Vec3::ZERO,
-                make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * b3::PI),
+                make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * SWIFT_FLOAT_PI),
             );
         } else if name.starts_with("thigh") {
             part.shapes = vec![capsule(0.45, 0.07)];
@@ -134,7 +135,7 @@ fn human_settings(skeleton: &Skeleton) -> RagdollSettings {
             };
             part.joint_frame = Transform::new(
                 Vec3::ZERO,
-                make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * b3::PI),
+                make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * SWIFT_FLOAT_PI),
             );
         }
         parts.push(part);

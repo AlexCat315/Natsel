@@ -50,7 +50,7 @@ impl TriangleMesh {
             prepared.nodes.len(),
             prepared.vertices.len(),
             prepared.triangles.len(),
-            prepared.material_count,
+            prepared.materials.len(),
         );
 
         let mut data = super::layout::MeshData::default();
@@ -125,7 +125,7 @@ impl TriangleMesh {
         if !region(data.node_offset, data.node_count, std::mem::size_of::<MeshNode>())
             || !region(data.vertex_offset, data.vertex_count, std::mem::size_of::<Vec3>())
             || !region(data.triangle_offset, data.triangle_count, std::mem::size_of::<MeshTriangle>())
-            || !region(data.material_offset, data.material_count, 1)
+            || !region(data.material_offset, data.triangle_count, 1)
             || !region(data.flags_offset, data.triangle_count, 1)
         {
             return None;
@@ -148,7 +148,7 @@ impl TriangleMesh {
         };
         let materials = unsafe {
             storage
-                .slice_ref::<u8>(data.material_offset as usize, data.material_count as usize)
+                .slice_ref::<u8>(data.material_offset as usize, data.triangle_count as usize)
                 .to_vec()
         };
         let flags = unsafe {
@@ -166,7 +166,7 @@ impl TriangleMesh {
             self.nodes.len(),
             self.vertices.len(),
             self.triangles.len(),
-            self.inner.data.material_count as usize,
+            self.materials.len(),
         );
         let mut bytes = vec![0u8; layout.byte_count];
         unsafe {

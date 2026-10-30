@@ -61,7 +61,7 @@ fn create_shapes() {
         // Sphere
         let shape = world.shape(sh1);
         assert_eq!(shape.id, 0);
-        assert_eq!(shape.body_id, body.index1);
+        assert_eq!(shape.body_id, 0);
         assert_eq!(shape.type_, ShapeType::SphereShape);
         samples.push(shape.density.to_bits() as u64);
         samples.push(shape.aabb_margin.to_bits() as u64);

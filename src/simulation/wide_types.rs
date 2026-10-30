@@ -678,6 +678,29 @@ impl SymMatrix3W {
     }
 }
 
+/// A full 3x3 matrix, four lanes, stored as columns like Swift's `Matrix3W`.
+///
+/// Wide joint batches use this rather than [`SymMatrix3W`]: `invInertiaWorld` is only
+/// approximately symmetric after the `R * I * Rᵀ` product, and reading the upper triangle for
+/// both halves changes the last bits of the solve.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Matrix3W {
+    pub cx: Vec3W,
+    pub cy: Vec3W,
+    pub cz: Vec3W,
+}
+
+impl Matrix3W {
+    /// Store one matrix in lane `i`, keeping every column exactly.
+    #[inline(always)]
+    pub fn set_lane(&mut self, i: usize, m: crate::math::types::Matrix3) {
+        self.cx.set_lane(i, m.cx);
+        self.cy.set_lane(i, m.cy);
+        self.cz.set_lane(i, m.cz);
+    }
+}
+
 /// A symmetric 2x2 matrix, four lanes.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]

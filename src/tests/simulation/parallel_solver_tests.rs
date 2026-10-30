@@ -25,6 +25,7 @@ use crate::types::joint_defs::WeldJointDef;
 
 use crate::tests::simulation::human::{create_human, Human};
 use crate::tests::simulation::impulse_determinism_tests::make_mesh_mix;
+use crate::tests::SWIFT_FLOAT_PI;
 
 /// Scenes that exercise every solver stage. Each must give the same bits for any worker count.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -339,7 +340,7 @@ fn build_paths(world: &mut World) {
         );
         let positions: Vec<Vec3> = (0..10)
             .map(|i| {
-                let cs = compute_cos_sin(2.0 * std::f32::consts::PI * i as f32 / 10.0);
+                let cs = compute_cos_sin(2.0 * SWIFT_FLOAT_PI * i as f32 / 10.0);
                 Vec3::new(2.5 * cs.cosine, 0.8 * cs.sine, 2.5 * cs.sine)
             })
             .collect();

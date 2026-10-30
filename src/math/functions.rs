@@ -132,8 +132,21 @@ pub fn compute_cos_sin(radians: f32) -> CosSin {
 /// Convert any angle into the range `[-pi, pi]` using the IEEE remainder.
 #[inline]
 pub fn unwind_angle(radians: f32) -> f32 {
-    let period = 2.0 * b3::PI;
-    radians - (radians / period).round_ties_even() * period
+    // Swift uses `Float.remainder(dividingBy:)`, which is the IEEE 754 remainder. Computing the
+    // exact remainder in f64 (both operands are exact there) and narrowing reproduces it bit for
+    // bit; the naive `x - round(x / period) * period` in f32 does not.
+    let x = radians as f64;
+    let period = (2.0 * b3::PI) as f64;
+    let mut n = (x / period).round_ties_even();
+    let mut r = x - n * period;
+    if r > 0.5 * period {
+        n += 1.0;
+        r = x - n * period;
+    } else if r < -0.5 * period {
+        n -= 1.0;
+        r = x - n * period;
+    }
+    r as f32
 }
 
 // MARK: - Vector operators

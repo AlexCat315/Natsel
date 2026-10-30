@@ -1,6 +1,11 @@
 //! Ported tests from Tests/NatselTests. They live inside the crate so they can
 //! reach `pub(crate)` internals, exactly as the Swift suite used `@testable import`.
 
+/// Swift's `Float.pi`: `0x4049_0FDA`, one ULP below the correctly rounded π. The Swift stdlib
+/// constant differs from `B3.pi` (`0x4049_0FDB`), and the reference tests pass `Float.pi` to
+/// `makeQuatFromAxisAngle`; ports of those tests must use this value to stay bit-identical.
+pub(crate) const SWIFT_FLOAT_PI: f32 = f32::from_bits(0x4049_0FDA);
+
 mod body_tests;
 mod bounce_tests;
 mod broad_phase_tests;

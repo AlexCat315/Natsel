@@ -2,7 +2,6 @@
 //!
 //! Ported from `Tests/NatselTests/SoftBody/SoftContactTests.swift`.
 
-use crate::base::constants as b3;
 use crate::collision::hull::make_box_hull;
 use crate::math::functions::{make_quat_from_axis_angle, min_float};
 use crate::math::types::{Pos, Quat, Vec3};
@@ -13,6 +12,7 @@ use crate::soft_body::soft_body_settings::{
     SoftBodyBendType, SoftBodySettings, SoftBodyVertexAttributes,
 };
 use crate::tests::world_position_assertions::distance;
+use crate::tests::SWIFT_FLOAT_PI;
 use crate::types::body_def::BodyDef;
 use crate::types::shape_def::ShapeDef;
 
@@ -82,7 +82,7 @@ fn drop_strip(world: &mut World, self_collision: bool) -> SoftBodyID {
     let mut def = SoftBodyDef::with_settings(
         settings,
         Pos::new(0.0, 1.0, 0.0),
-        make_quat_from_axis_angle(Vec3::AXIS_X, 0.5 * b3::PI),
+        make_quat_from_axis_angle(Vec3::AXIS_X, 0.5 * SWIFT_FLOAT_PI),
     );
     def.enable_self_collision = self_collision;
     def.iteration_count = 8;
@@ -203,7 +203,7 @@ fn ropes() {
     let mut lower = SoftBodyDef::with_settings(
         SoftBodySettings::make_rope(30, 0.05, 0.0, false),
         Pos::new(0.0, 0.05, 0.7),
-        make_quat_from_axis_angle(Vec3::AXIS_X, 0.5 * b3::PI),
+        make_quat_from_axis_angle(Vec3::AXIS_X, 0.5 * SWIFT_FLOAT_PI),
     );
     lower.collision_thickness = 0.04;
     let a = world.create_soft_body(&lower);
@@ -211,7 +211,7 @@ fn ropes() {
     let mut upper = SoftBodyDef::with_settings(
         SoftBodySettings::make_rope(30, 0.05, 0.0, false),
         Pos::new(-0.7, 0.4, 0.0),
-        make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * b3::PI),
+        make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * SWIFT_FLOAT_PI),
     );
     upper.collision_thickness = 0.04;
     let b = world.create_soft_body(&upper);

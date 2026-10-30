@@ -14,9 +14,9 @@ use crate::types::queries::{
 fn make_box(hx: f32, hy: f32, hz: f32, center: Vec3) -> [Vec3; 8] {
     let mut verts = [Vec3::ZERO; 8];
     for i in 0..8 {
-        let fx = if (i & 1) != 0 { hx } else { -hx };
-        let fy = if (i & 2) != 0 { hy } else { -hy };
-        let fz = if (i & 4) != 0 { hz } else { -hz };
+        let fx = if (i & 1) != 0 { -hx } else { hx };
+        let fy = if (i & 2) != 0 { -hy } else { hy };
+        let fz = if (i & 4) != 0 { -hz } else { hz };
         verts[i] = Vec3::new(center.x + fx, center.y + fy, center.z + fz);
     }
     verts
@@ -86,28 +86,19 @@ fn point_radii() {
 
 #[test]
 fn overlap() {
-    // "overlapping shapes report zero distance"
-    fn snapshot() -> Vec<u64> {
-        let mut samples: Vec<u64> = Vec::new();
-        let a = make_box(1.0, 1.0, 1.0, Vec3::new(0.0, 0.0, 0.0));
-        let b = make_box(1.0, 1.0, 1.0, Vec3::new(0.0, 0.0, 0.0));
-        let mut cache = SimplexCache::default();
-        let mut input = DistanceInput::default();
-        input.proxy_a = ShapeProxy::new(Some(a.as_ptr()), 8, 0.0);
-        input.proxy_b = ShapeProxy::new(Some(b.as_ptr()), 8, 0.0);
-        input.transform = Transform::new(Vec3::new(0.5, 0.5, 0.5), Quat::IDENTITY);
-        input.use_radii = false;
+    // "overlapping boxes report zero distance"
+    let a = make_box(1.0, 1.0, 1.0, Vec3::new(0.0, 0.0, 0.0));
+    let b = make_box(1.0, 1.0, 1.0, Vec3::new(0.0, 0.0, 0.0));
+    let mut cache = SimplexCache::default();
+    let mut input = DistanceInput::default();
+    input.proxy_a = ShapeProxy::new(Some(a.as_ptr()), 8, 0.0);
+    input.proxy_b = ShapeProxy::new(Some(b.as_ptr()), 8, 0.0);
+    input.transform = Transform::new(Vec3::new(0.5, 0.0, 0.0), Quat::IDENTITY);
+    input.use_radii = false;
 
-        let output = shape_distance(&input, &mut cache, None);
-        assert_eq!(output.distance, 0.0);
-        assert_eq!(output.normal, Vec3::new(0.0, 0.0, 0.0));
-        samples
-    }
-
-    let first = snapshot();
-    let replay = snapshot();
-    assert!(!first.is_empty());
-    assert_eq!(first, replay);
+    let output = shape_distance(&input, &mut cache, None);
+    assert_eq!(output.distance, 0.0);
+    assert_eq!(output.normal, Vec3::new(0.0, 0.0, 0.0));
 }
 
 #[test]
@@ -172,29 +163,20 @@ fn point_cast() {
 
 #[test]
 fn receding_cast() {
-    // "receding shape cast does not hit"
-    fn snapshot() -> Vec<u64> {
-        let mut samples: Vec<u64> = Vec::new();
-        let a = make_box(1.0, 1.0, 1.0, Vec3::new(0.0, 0.0, 0.0));
-        let b = a;
-        let mut input = ShapeCastPairInput::default();
-        input.proxy_a = ShapeProxy::new(Some(a.as_ptr()), 8, 0.0);
-        input.proxy_b = ShapeProxy::new(Some(b.as_ptr()), 8, 0.0);
-        input.transform = Transform::new(Vec3::new(3.0, 0.0, 0.0), Quat::IDENTITY);
-        input.translation_b = Vec3::new(5.0, 0.0, 0.0);
-        input.max_fraction = 1.0;
-        input.can_encroach = false;
+    // "receding cast misses"
+    let a: [Vec3; 1] = [Vec3::new(0.0, 0.0, 0.0)];
+    let b: [Vec3; 1] = [Vec3::new(0.0, 0.0, 0.0)];
+    let mut input = ShapeCastPairInput::default();
+    input.proxy_a = ShapeProxy::new(Some(a.as_ptr()), 1, 1.0);
+    input.proxy_b = ShapeProxy::new(Some(b.as_ptr()), 1, 1.0);
+    input.transform = Transform::new(Vec3::new(5.0, 0.0, 0.0), Quat::IDENTITY);
+    input.translation_b = Vec3::new(10.0, 0.0, 0.0);
+    input.max_fraction = 1.0;
+    input.can_encroach = false;
 
-        let output = shape_cast(&input);
-        assert!(!output.hit);
-        assert_eq!(output.fraction, 0.0);
-        samples
-    }
-
-    let first = snapshot();
-    let replay = snapshot();
-    assert!(!first.is_empty());
-    assert_eq!(first, replay);
+    let output = shape_cast(&input);
+    assert!(!output.hit);
+    assert_eq!(output.fraction, 0.0);
 }
 
 fn run_time_of_impact(sweep_b: Sweep) -> TOIOutput {

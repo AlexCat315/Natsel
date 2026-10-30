@@ -38,7 +38,10 @@ pub struct MeshStorageLayout {
 }
 
 impl MeshStorageLayout {
-    pub fn new(node_count: usize, vertex_count: usize, triangle_count: usize, material_count: usize) -> Self {
+    /// `material_entry_count` is the length of the per-triangle material array, which sizes the
+    /// material region. The header's `material_count` is the number of distinct materials and is
+    /// unrelated to this allocation.
+    pub fn new(node_count: usize, vertex_count: usize, triangle_count: usize, material_entry_count: usize) -> Self {
         fn aligned(count: usize) -> usize {
             (count + 7) & !7
         }
@@ -46,7 +49,7 @@ impl MeshStorageLayout {
         let vertices = nodes + aligned(node_count * std::mem::size_of::<MeshNode>());
         let triangles = vertices + aligned(vertex_count * std::mem::size_of::<crate::math::types::Vec3>());
         let materials = triangles + aligned(triangle_count * std::mem::size_of::<crate::types::geometry::MeshTriangle>());
-        let flags = materials + aligned(material_count * 1);
+        let flags = materials + aligned(material_entry_count);
         Self {
             nodes,
             vertices,

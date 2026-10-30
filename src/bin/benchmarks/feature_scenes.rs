@@ -28,6 +28,10 @@ use natsel::soft_body::soft_body_settings::{
 use natsel::types::body_def::{BodyDef, BodyType};
 use natsel::types::geometry::{Capsule, Sphere};
 use natsel::types::shape_def::ShapeDef;
+
+/// Swift's `Float.pi` (`0x4049_0FDA`, one ULP below `B3.pi`). The reference scenes pass this to
+/// `makeQuatFromAxisAngle` and `computeCosSin`, so the port must use the same value.
+const FLOAT_PI: f32 = f32::from_bits(0x4049_0FDA);
 use natsel::vehicle::vehicle_types::{
     VehicleAntiRollBar, VehicleCollisionTester, VehicleControllerSettings, VehicleDef,
     VehicleDifferentialSettings, VehicleID, WheelSettings, WheeledVehicleControllerSettings,
@@ -391,7 +395,7 @@ pub fn create_path_beads(world: &mut World) {
         );
         let mut positions: Vec<Vec3> = Vec::with_capacity(12);
         for i in 0..12i32 {
-            let cs = compute_cos_sin(2.0 * std::f32::consts::PI * i as f32 / 12.0);
+            let cs = compute_cos_sin(2.0 * FLOAT_PI * i as f32 / 12.0);
             positions.push(Vec3::new(2.5 * cs.cosine, 0.8 * cs.sine, 2.5 * cs.sine));
         }
         let Some(path) = ConstraintPath::through(&positions, Vec3::AXIS_Y, true) else {
@@ -470,8 +474,8 @@ pub fn create_ragdoll_motors(world: &mut World) {
         &make_offset_box_hull(80.0, 1.0, 80.0, Vec3::new(0.0, -1.0, 0.0)),
     );
     let skeleton = ragdoll_skeleton();
-    let down = make_quat_from_axis_angle(Vec3::AXIS_Z, -0.5 * std::f32::consts::PI);
-    let up = make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * std::f32::consts::PI);
+    let down = make_quat_from_axis_angle(Vec3::AXIS_Z, -0.5 * FLOAT_PI);
+    let up = make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * FLOAT_PI);
     let mut bind = SkeletonPose::new(skeleton.clone());
     let set = |bind: &mut SkeletonPose, name: &str, p: Vec3, q: Quat| {
         let index = skeleton.joint_index(name).expect("joint present") as usize;
@@ -517,7 +521,7 @@ pub fn create_ragdoll_motors(world: &mut World) {
     };
     let hinge = Transform::new(
         Vec3::ZERO,
-        make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * std::f32::consts::PI),
+        make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * FLOAT_PI),
     );
     let mut parts: Vec<RagdollPart> = Vec::new();
     for joint in skeleton.joints() {
@@ -579,7 +583,7 @@ pub fn create_ragdoll_motors(world: &mut World) {
         mul_quat(base, make_quat_from_axis_angle(axis, angle))
     };
     let mut tracks: Vec<Track> = Vec::new();
-    for (side, phase) in [("L", 0.0f32), ("R", std::f32::consts::PI)] {
+    for (side, phase) in [("L", 0.0f32), ("R", FLOAT_PI)] {
         let thigh_index = skeleton
             .joint_index(&format!("thigh{}", side))
             .expect("thigh present") as usize;
@@ -592,7 +596,7 @@ pub fn create_ragdoll_motors(world: &mut World) {
         let mut calf_keys: Vec<Keyframe> = Vec::new();
         for k in 0..=8i32 {
             let t = k as f32 / 8.0;
-            let s = compute_cos_sin(2.0 * std::f32::consts::PI * t + phase).sine;
+            let s = compute_cos_sin(2.0 * FLOAT_PI * t + phase).sine;
             thigh_keys.push(Keyframe::new(
                 t,
                 thigh.translation,

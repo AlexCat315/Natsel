@@ -1,15 +1,23 @@
 //! A pool of persistent worker threads for fine grained parallel stages.
 //!
-//! Between `begin` and `end` the workers spin on a stage counter so a new stage starts within
-//! microseconds; outside they sleep on a semaphore. A stage is a number of blocks. The main
-//! thread publishes a stage, works on it too, and waits until every block is done.
+//! Between [`WorkerPool::begin`] and [`WorkerPool::end`] the workers spin on a stage counter so a
+//! new stage starts within microseconds; outside they sleep on a semaphore. A stage is a number of
+//! blocks. The main thread publishes a stage, works on it too, and waits until every block is done.
+//!
+//! Each block has a claim word on its own cache line holding the epoch of the stage that last ran
+//! it. A thread claims a block by raising that word to the current epoch, which only succeeds while
+//! the stored epoch is older, so a worker that is late for one stage can never run a block of a
+//! newer one. Threads start at their own share of the blocks and then steal around the ring, which
+//! keeps them off each other's cache lines.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
+use std::sync::Arc;
 
 use crate::base::platform::{spin_pause, yield_thread, B3Semaphore, B3Thread};
 
-/// The plain data describing one stage. Copied by value.
+/// The plain data describing one stage. Copied by value; a torn read by a late worker is harmless
+/// because its claims fail.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct WorkerStage {
     pub kind: i32,
@@ -39,48 +47,95 @@ impl<F: Fn(WorkerStage, usize, usize)> SendFn<F> {
     }
 }
 
+/// Stage descriptions by epoch, so publishing a stage never overwrites the one a late worker may
+/// still be reading. The index is always `epoch & 3`.
+struct StageSlots(UnsafeCell<[WorkerStage; 4]>);
+
+// SAFETY: slot `epoch & 3` is written by the caller of `run` before it publishes `epoch`, and is
+// only read by workers after they load an epoch that selects it. Distinct epochs four apart cannot
+// overlap because a stage completes before the next one is published.
+unsafe impl Sync for StageSlots {}
+
+/// The handler, written by `begin` before `running` is set and cleared by `end` after the workers
+/// stopped.
+struct HandlerSlot(UnsafeCell<Option<Handler>>);
+
+// SAFETY: every access is ordered by `running` (see `WorkerPoolShared::worker_main`/`begin`/`end`).
+unsafe impl Sync for HandlerSlot {}
+
 struct WorkerPoolShared {
     wake: B3Semaphore,
+    /// Epoch of the published stage.
+    current: AtomicU32,
+    completed: AtomicI32,
+    thread_count: usize,
+
+    /// One claim word per block, each on its own cache line.
+    claims: Box<[AtomicU32]>,
+
     running: AtomicBool,
     shutdown: AtomicBool,
+    /// Workers that consumed a wake signal and have not gone back to sleep.
     awake: AtomicI32,
-    completed: AtomicUsize,
-    next_block: AtomicUsize,
-    current: AtomicU32,
-    stage: Mutex<WorkerStage>,
-    handler: Mutex<Option<Handler>>,
-    thread_count: usize,
+
+    stages: StageSlots,
+    handler: HandlerSlot,
 }
 
 impl WorkerPoolShared {
-    const HOT_SPINS: usize = 1 << 16;
     const MAX_BLOCKS: usize = 256;
+    const CLAIM_STRIDE: usize = 16;
+
+    /// Busy wait iterations before a worker starts yielding.
+    const HOT_SPINS: usize = 1 << 16;
 
     fn new(thread_count: usize) -> Self {
         Self {
             wake: B3Semaphore::new(0),
+            current: AtomicU32::new(0),
+            completed: AtomicI32::new(0),
+            thread_count,
+            claims: (0..Self::MAX_BLOCKS * Self::CLAIM_STRIDE)
+                .map(|_| AtomicU32::new(0))
+                .collect(),
             running: AtomicBool::new(false),
             shutdown: AtomicBool::new(false),
             awake: AtomicI32::new(0),
-            completed: AtomicUsize::new(0),
-            next_block: AtomicUsize::new(0),
-            current: AtomicU32::new(0),
-            stage: Mutex::new(WorkerStage::default()),
-            handler: Mutex::new(None),
-            thread_count,
+            stages: StageSlots(UnsafeCell::new([WorkerStage::default(); 4])),
+            handler: HandlerSlot(UnsafeCell::new(None)),
         }
     }
 
-    /// Claim and run blocks of the published stage until none are left.
-    fn work(&self, handler: &Handler, stage: WorkerStage, thread: usize) {
+    #[inline]
+    fn claim_word(&self, block: usize) -> &AtomicU32 {
+        &self.claims[block * Self::CLAIM_STRIDE]
+    }
+
+    /// Claim and run blocks of stage `epoch` until none are left, starting at this thread's share.
+    fn work(&self, epoch: u32, stage: WorkerStage, thread: usize, handler: &Handler) {
         let count = stage.block_count as usize;
-        loop {
-            let block = self.next_block.fetch_add(1, Ordering::AcqRel);
+        if count == 0 {
+            return;
+        }
+        let first = thread * count / self.thread_count;
+        for k in 0..count {
+            let mut block = first + k;
             if block >= count {
-                break;
+                block -= count;
             }
-            handler(stage, block, thread);
-            self.completed.fetch_add(1, Ordering::AcqRel);
+            let word = self.claim_word(block);
+            let seen = word.load(Ordering::Relaxed);
+            // Wrapping comparison: claimable only while the stored epoch is older.
+            if (epoch.wrapping_sub(seen) as i32) <= 0 {
+                continue;
+            }
+            if word
+                .compare_exchange(seen, epoch, Ordering::AcqRel, Ordering::Relaxed)
+                .is_ok()
+            {
+                handler(stage, block, thread);
+                self.completed.fetch_add(1, Ordering::Release);
+            }
         }
     }
 
@@ -92,29 +147,37 @@ impl WorkerPoolShared {
             }
             self.awake.fetch_add(1, Ordering::SeqCst);
 
-            let mut seen = self.current.load(Ordering::Acquire);
-            let mut spins = 0usize;
-            while self.running.load(Ordering::Acquire) {
-                let current = self.current.load(Ordering::Acquire);
-                if current != seen {
-                    seen = current;
-                    let stage = *self.stage.lock().unwrap_or_else(|e| e.into_inner());
-                    let handler = self
-                        .handler
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .clone();
-                    if let Some(handler) = handler {
-                        self.work(&handler, stage, thread);
+            // SAFETY: `begin` stores the handler before `running` becomes true and `end` clears it
+            // only after `awake` reaches zero, so the clone is ordered after the store and before
+            // the clear.
+            let handler = unsafe { (*self.handler.0.get()).clone() };
+
+            if let Some(handler) = handler {
+                let mut seen = self.current.load(Ordering::Acquire);
+                let mut spins = 0;
+                while self.running.load(Ordering::Acquire) {
+                    let current = self.current.load(Ordering::Acquire);
+                    if current != seen {
+                        seen = current;
+                        // SAFETY: the slot is only rewritten by a later epoch, four stages apart,
+                        // after this stage has completed.
+                        let stage = unsafe { (*self.stages.0.get())[(current & 3) as usize] };
+                        self.work(current, stage, thread, &handler);
+                        spins = 0;
+                        continue;
                     }
-                    spins = 0;
-                    continue;
+                    // Stay on the core through the short serial gaps of a step; only a long gap
+                    // (about a millisecond) falls back to yielding.
+                    spins += 1;
+                    if spins < Self::HOT_SPINS {
+                        spin_pause();
+                    } else {
+                        yield_thread();
+                    }
                 }
-                spins += 1;
-                if spins < Self::HOT_SPINS {
+            } else {
+                while self.running.load(Ordering::Acquire) {
                     spin_pause();
-                } else {
-                    yield_thread();
                 }
             }
 
@@ -166,31 +229,26 @@ impl WorkerPool {
         self.is_running
     }
 
-    /// Wake the workers and wait until all of them are spinning. They spin until `end`.
+    /// Wake the workers and wait until all of them are spinning. They spin until `end`. The handler
+    /// gets the stage, the block, and the index of the thread running it (zero for the caller of
+    /// `run`).
     pub fn begin<F>(&mut self, handler: F)
     where
         F: Fn(WorkerStage, usize, usize) + 'static,
     {
-        if self.thread_count == 1 {
-            // The handler is invoked directly by `run`; keep it type-erased for symmetry.
-            let handler: Handler = {
-                let wrapped = SendFn(handler);
-                Arc::new(move |stage, block, thread| wrapped.call(stage, block, thread))
-            };
-            *self.shared.handler.lock().unwrap_or_else(|e| e.into_inner()) = Some(handler);
-            self.is_running = true;
-            return;
-        }
-
+        assert!(!self.is_running);
         let wrapped = SendFn(handler);
         let handler: Handler =
             Arc::new(move |stage, block, thread| wrapped.call(stage, block, thread));
-        *self.shared.handler.lock().unwrap_or_else(|e| e.into_inner()) = Some(handler);
+        // SAFETY: no worker reads the handler while `running` is false.
+        unsafe { *self.shared.handler.0.get() = Some(handler) };
         self.shared.running.store(true, Ordering::SeqCst);
         for _ in 0..self.threads.len() {
             self.shared.wake.signal();
         }
         self.is_running = true;
+        // Waking from the semaphore takes tens of microseconds. Wait for every worker so the first
+        // stage is shared instead of mostly run by this thread.
         while self.shared.awake.load(Ordering::Acquire) < self.threads.len() as i32 {
             spin_pause();
         }
@@ -198,6 +256,7 @@ impl WorkerPool {
 
     /// Let the workers sleep again. Returns once none of them is spinning.
     pub fn end(&mut self) {
+        assert!(self.is_running);
         self.shared.running.store(false, Ordering::SeqCst);
         let mut spins = 0;
         while self.shared.awake.load(Ordering::Acquire) != 0 {
@@ -206,7 +265,8 @@ impl WorkerPool {
                 yield_thread();
             }
         }
-        *self.shared.handler.lock().unwrap_or_else(|e| e.into_inner()) = None;
+        // SAFETY: every worker has left the spin loop, so nobody holds a clone from this cycle.
+        unsafe { *self.shared.handler.0.get() = None };
         self.is_running = false;
     }
 
@@ -217,30 +277,26 @@ impl WorkerPool {
         }
         assert!(stage.block_count as usize <= WorkerPoolShared::MAX_BLOCKS);
         self.epoch = self.epoch.wrapping_add(1);
-        *self.shared.stage.lock().unwrap_or_else(|e| e.into_inner()) = stage;
+        // SAFETY: this epoch's slot is never the one the previous three stages used, and those
+        // stages have completed.
+        unsafe {
+            (*self.shared.stages.0.get())[(self.epoch & 3) as usize] = stage;
+        }
         self.shared.completed.store(0, Ordering::Relaxed);
-        self.shared.next_block.store(0, Ordering::Relaxed);
         self.shared.current.store(self.epoch, Ordering::Release);
 
-        let handler = self
-            .shared
-            .handler
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        // SAFETY: `begin` installed the handler and no worker clears it.
+        let handler = unsafe { (*self.shared.handler.0.get()).clone() }
             .expect("WorkerPool::run called without begin");
+        self.shared.work(self.epoch, stage, 0, &handler);
 
-        self.shared.work(&handler, stage, 0);
-
-        if self.thread_count > 1 {
-            let mut spins = 0;
-            while self.shared.completed.load(Ordering::Acquire) < stage.block_count as usize {
-                spins += 1;
-                if spins < WorkerPoolShared::HOT_SPINS {
-                    spin_pause();
-                } else {
-                    yield_thread();
-                }
+        let mut spins = 0;
+        while self.shared.completed.load(Ordering::Acquire) < stage.block_count {
+            spins += 1;
+            if spins < WorkerPoolShared::HOT_SPINS {
+                spin_pause();
+            } else {
+                yield_thread();
             }
         }
     }

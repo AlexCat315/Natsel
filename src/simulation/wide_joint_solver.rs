@@ -7,13 +7,9 @@
 //! lane order, and the kernels below keep the scalar `solvePointConstraint` multiplication and
 //! addition order exactly.
 //!
-//! Deviation from Swift: `SphericalConstraintW.invIA`/`invIB` are four-lane *symmetric* matrices
-//! (`wide_types::SymMatrix3W`, written with the helper already provided for this consumer,
-//! `wide_contact_solver::SymMatrix3W::set_lane`) instead of Swift's local full `Matrix3W`. The
-//! values are bit-identical: both are filled from `JointSim.invIA`, the world inverse inertia,
-//! which is symmetric on both stored triangles (the same reduction the landed wide contact
-//! solver makes through `gather_inv_inertia_w`), and every kernel below reads the same operand
-//! per multiply as Swift's `Matrix3W` columns.
+//! Deviation from Swift: none in the kernels. `SphericalConstraintW.invIA`/`invIB` keep the full
+//! three columns (`wide_types::Matrix3W`) because `invInertiaWorld` is only approximately
+//! symmetric after `R * I * Rᵀ`; folding it into six lanes changes the last bits of the solve.
 //!
 //! Foreign vocabulary assumed from sibling modules (translated concurrently; see MIGRATION.md
 //! "Shared simulation vocabulary"):
@@ -35,25 +31,22 @@ use std::ops::Range;
 use crate::base::constants as b3;
 use crate::math::functions::mul_add;
 use crate::simulation::constraint_graph::OVERFLOW_INDEX;
-use crate::simulation::contact_solver::SymMatrix3;
 use crate::simulation::solver_prepare::WideJointPrepareItem;
 use crate::simulation::solver_stages::SolverStageKind;
 use crate::simulation::wide_types::{
-    FloatW, QuatW, SymMatrix3W, Vec3W, add_w, cross_w, mul_add_w, mul_w, neg_w, select_vec3_w,
+    FloatW, Matrix3W, QuatW, Vec3W, add_w, cross_w, mul_add_w, mul_w, neg_w, select_vec3_w,
     select_w, sub_w, wide_gt, wide_lt,
 };
 use crate::simulation::world_runtime::{BodyState, JointSim, World};
 use crate::types::joint_defs::JointType;
 
-/// Swift's `mulMatrixW`: column-major product, each component summed left to right. Read through
-/// the symmetric six-component lanes (`cx = (xx, xy, xz)`, `cy = (xy, yy, yz)`, `cz = (xz, yz, zz)`),
-/// preserving the operand order of `m.cx.x * a.x + m.cy.x * a.y + m.cz.x * a.z` and its rows.
+/// Swift's `mulMatrixW`: column-major product, each component summed left to right.
 #[inline(always)]
-pub(crate) fn mul_matrix_w(m: SymMatrix3W, a: Vec3W) -> Vec3W {
+pub(crate) fn mul_matrix_w(m: Matrix3W, a: Vec3W) -> Vec3W {
     Vec3W::new(
-        m.xx * a.x + m.xy * a.y + m.xz * a.z,
-        m.xy * a.x + m.yy * a.y + m.yz * a.z,
-        m.xz * a.x + m.yz * a.y + m.zz * a.z,
+        m.cx.x * a.x + m.cy.x * a.y + m.cz.x * a.z,
+        m.cx.y * a.x + m.cy.y * a.y + m.cz.y * a.z,
+        m.cx.z * a.x + m.cy.z * a.y + m.cz.z * a.z,
     )
 }
 
@@ -66,33 +59,24 @@ pub(crate) fn rotate_w(q: QuatW, v: Vec3W) -> Vec3W {
 }
 
 /// Keep every multiplication and addition in the scalar solvePointConstraint order.
-/// The inverse-inertia columns of the symmetric lanes are `cx = (xx, xy, xz)`,
-/// `cy = (xy, yy, yz)`, `cz = (xz, yz, zz)`; the column vectors below are Swift's `iA.cx` and
-/// friends read lane by lane, so each multiply and subtract is the same pair of operands.
 #[inline(always)]
 pub(crate) fn solve_point_w(
     m_a: FloatW,
     m_b: FloatW,
-    i_a: SymMatrix3W,
-    i_b: SymMatrix3W,
+    i_a: Matrix3W,
+    i_b: Matrix3W,
     r_a: Vec3W,
     r_b: Vec3W,
     rhs: Vec3W,
 ) -> Vec3W {
-    let axy = r_a.z * i_a.yy - r_a.y * i_a.yz;
-    let axz = r_a.z * i_a.yz - r_a.y * i_a.zz;
-    let a_cx = Vec3W::new(i_a.xx, i_a.xy, i_a.xz);
-    let a_cy = Vec3W::new(i_a.xy, i_a.yy, i_a.yz);
-    let a_cz = Vec3W::new(i_a.xz, i_a.yz, i_a.zz);
-    let ay = sub_w(mul_w(r_a.x, a_cz), mul_w(r_a.z, a_cx));
-    let az = sub_w(mul_w(r_a.y, a_cx), mul_w(r_a.x, a_cy));
-    let bxy = r_b.z * i_b.yy - r_b.y * i_b.yz;
-    let bxz = r_b.z * i_b.yz - r_b.y * i_b.zz;
-    let b_cx = Vec3W::new(i_b.xx, i_b.xy, i_b.xz);
-    let b_cy = Vec3W::new(i_b.xy, i_b.yy, i_b.yz);
-    let b_cz = Vec3W::new(i_b.xz, i_b.yz, i_b.zz);
-    let by = sub_w(mul_w(r_b.x, b_cz), mul_w(r_b.z, b_cx));
-    let bz = sub_w(mul_w(r_b.y, b_cx), mul_w(r_b.x, b_cy));
+    let axy = r_a.z * i_a.cy.y - r_a.y * i_a.cz.y;
+    let axz = r_a.z * i_a.cy.z - r_a.y * i_a.cz.z;
+    let ay = sub_w(mul_w(r_a.x, i_a.cz), mul_w(r_a.z, i_a.cx));
+    let az = sub_w(mul_w(r_a.y, i_a.cx), mul_w(r_a.x, i_a.cy));
+    let bxy = r_b.z * i_b.cy.y - r_b.y * i_b.cz.y;
+    let bxz = r_b.z * i_b.cy.z - r_b.y * i_b.cz.z;
+    let by = sub_w(mul_w(r_b.x, i_b.cz), mul_w(r_b.z, i_b.cx));
+    let bz = sub_w(mul_w(r_b.y, i_b.cx), mul_w(r_b.x, i_b.cy));
     let mass = m_a + m_b;
     let kxx = (axy * r_a.z - axz * r_a.y) + (bxy * r_b.z - bxz * r_b.y) + mass;
     let kyy = (ay.z * r_a.x - ay.x * r_a.z) + (by.z * r_b.x - by.x * r_b.z) + mass;
@@ -136,8 +120,8 @@ pub(crate) struct SphericalConstraintW {
     pub(crate) lane_count: usize,
     pub(crate) inv_mass_a: FloatW,
     pub(crate) inv_mass_b: FloatW,
-    pub(crate) inv_ia: SymMatrix3W,
-    pub(crate) inv_ib: SymMatrix3W,
+    pub(crate) inv_ia: Matrix3W,
+    pub(crate) inv_ib: Matrix3W,
     pub(crate) anchor_a: Vec3W,
     pub(crate) anchor_b: Vec3W,
     pub(crate) delta_center: Vec3W,
@@ -158,8 +142,8 @@ impl Default for SphericalConstraintW {
             lane_count: 0,
             inv_mass_a: FloatW::ZERO,
             inv_mass_b: FloatW::ZERO,
-            inv_ia: SymMatrix3W::default(),
-            inv_ib: SymMatrix3W::default(),
+            inv_ia: Matrix3W::default(),
+            inv_ib: Matrix3W::default(),
             anchor_a: Vec3W::default(),
             anchor_b: Vec3W::default(),
             delta_center: Vec3W::default(),
@@ -332,8 +316,8 @@ impl World {
                 c.index_b[lane] = joint.index_b;
                 c.inv_mass_a[lane] = sim.inv_mass_a;
                 c.inv_mass_b[lane] = sim.inv_mass_b;
-                c.inv_ia.set_lane(lane, SymMatrix3::from_matrix(sim.inv_ia));
-                c.inv_ib.set_lane(lane, SymMatrix3::from_matrix(sim.inv_ib));
+                c.inv_ia.set_lane(lane, sim.inv_ia);
+                c.inv_ib.set_lane(lane, sim.inv_ib);
                 c.anchor_a.set_lane(lane, joint.frame_a.p);
                 c.anchor_b.set_lane(lane, joint.frame_b.p);
                 c.delta_center.set_lane(lane, joint.delta_center);

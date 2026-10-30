@@ -13,6 +13,7 @@ use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::Sphere;
 use crate::types::ids::BodyID;
 use crate::types::shape_def::ShapeDef;
+use crate::tests::SWIFT_FLOAT_PI;
 
 /// Swift defaulted `type`, `customFilter`, `density` and `restitution`; Rust has no default
 /// arguments, so every ported call site passes all of them explicitly.
@@ -176,7 +177,7 @@ fn rotation_arc() {
     );
     let mut def = BodyDef::default();
     def.type_ = BodyType::DynamicBody;
-    def.rotation = make_quat_from_axis_angle(Vec3::AXIS_Z, std::f32::consts::PI / 4.0);
+    def.rotation = make_quat_from_axis_angle(Vec3::AXIS_Z, SWIFT_FLOAT_PI / 4.0);
     def.angular_velocity = Vec3::new(0.0, 0.0, 120.0);
     def.allow_fast_rotation = true;
     let rotor = world.create_body(&def);

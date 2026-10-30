@@ -2,7 +2,6 @@
 //!
 //! Ported from `Tests/NatselTests/SoftBody/SoftEdgeCollisionTests.swift`.
 
-use crate::base::constants as b3;
 use crate::collision::hull::make_box_hull;
 use crate::math::functions::make_quat_from_axis_angle;
 use crate::math::types::{Pos, Quat, Vec3};
@@ -16,6 +15,7 @@ use crate::soft_body::soft_body_settings::{
 };
 use crate::types::body_def::BodyDef;
 use crate::types::shape_def::ShapeDef;
+use crate::tests::SWIFT_FLOAT_PI;
 
 /// A world with a ground far below, so anything that falls through is obvious.
 fn low_ground_world(workers: i32) -> World {
@@ -112,7 +112,7 @@ fn crossing_strips() {
         let mut upper = SoftBodyDef::with_settings(
             make_strip(2, 0.06, 8, 0.3, |_x, _z| false),
             Pos::new(0.0, 1.2, 0.0),
-            make_quat_from_axis_angle(Vec3::AXIS_Y, 0.5 * b3::PI),
+            make_quat_from_axis_angle(Vec3::AXIS_Y, 0.5 * SWIFT_FLOAT_PI),
         );
         upper.collision_thickness = 0.02;
         upper.enable_edge_collision = edges;
@@ -137,7 +137,7 @@ fn crossing_ropes() {
         let mut lower = SoftBodyDef::with_settings(
             SoftBodySettings::make_rope(10, 0.2, 0.0, false),
             Pos::new(-0.9, 0.5, 0.0),
-            make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * b3::PI),
+            make_quat_from_axis_angle(Vec3::AXIS_Z, 0.5 * SWIFT_FLOAT_PI),
         );
         lower.collision_thickness = 0.03;
         lower.enable_edge_collision = edges;
@@ -150,7 +150,7 @@ fn crossing_ropes() {
         let mut upper = SoftBodyDef::with_settings(
             SoftBodySettings::make_rope(10, 0.2, 0.0, false),
             Pos::new(0.0, 1.5, 0.9),
-            make_quat_from_axis_angle(Vec3::AXIS_X, 0.5 * b3::PI),
+            make_quat_from_axis_angle(Vec3::AXIS_X, 0.5 * SWIFT_FLOAT_PI),
         );
         upper.collision_thickness = 0.03;
         upper.enable_edge_collision = edges;

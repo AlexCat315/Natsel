@@ -10,6 +10,7 @@ use crate::simulation::path_joint::{
     ConstraintPath, PathJointDef, PathMotorMode, PathPoint, PathRotationConstraint,
 };
 use crate::tests::world_position_assertions::distance;
+use crate::tests::SWIFT_FLOAT_PI;
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::Sphere;
 use crate::types::ids::{BodyID, JointID};
@@ -63,7 +64,7 @@ const DEFAULT_CIRCLE_POINTS: i32 = 12;
 fn circle(r: f32, points: i32) -> Arc<ConstraintPath> {
     let positions: Vec<Vec3> = (0..points)
         .map(|i| {
-            let a = 2.0 * std::f32::consts::PI * (i as f32) / (points as f32);
+            let a = 2.0 * SWIFT_FLOAT_PI * (i as f32) / (points as f32);
             let cs = compute_cos_sin(a);
             Vec3::new(r * cs.cosine, 0.0, -r * cs.sine)
         })
@@ -108,7 +109,7 @@ fn geometry() {
         let p = ring.point_at(i as f32).0;
         assert!((length(p) - 3.0).abs() < 1.0e-4);
     }
-    assert!((ring.length() - 2.0 * std::f32::consts::PI * 3.0).abs() < 0.05);
+    assert!((ring.length() - 2.0 * SWIFT_FLOAT_PI * 3.0).abs() < 0.05);
     // The search agrees with brute force sampling, for queries off the curve and on the seam.
     for query in [
         Vec3::new(3.6, 0.2, -0.5),

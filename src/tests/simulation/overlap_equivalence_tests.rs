@@ -119,14 +119,17 @@ fn compound_rotated_body() {
     let body_transform = world.body_transform(body);
     let t = Transform::new(Vec3::ZERO, body_transform.q);
 
-    // Query the world at each child's world position.
+    // Query the world at each child's world position. Proxy points are relative to `origin`,
+    // so the query is a single point at the origin with a radius.
+    let point = Vec3::ZERO;
     for i in 0..2 {
         let local = Vec3::new(i as f32 * 2.0 - 1.0, 0.0, 0.0);
         let world_point = transform_point(t, local);
+        let origin = Pos::new(world_point.x.into(), world_point.y.into(), world_point.z.into());
 
-        let proxy = ShapeProxy::new(Some(&world_point as *const Vec3), 1, 0.25);
+        let proxy = ShapeProxy::new(Some(&point as *const Vec3), 1, 0.25);
         let mut hits = 0;
-        let _ = world.overlap_shape(Pos::new(world_point.x.into(), world_point.y.into(), world_point.z.into()), proxy, QueryFilter::default_filter(), |_| {
+        let _ = world.overlap_shape(origin, proxy, QueryFilter::default_filter(), |_| {
             hits += 1;
             true
         });
@@ -135,7 +138,7 @@ fn compound_rotated_body() {
         // The body-scoped query must agree.
         let body_hit = world.body_overlap_shape(
             body,
-            Pos::new(world_point.x.into(), world_point.y.into(), world_point.z.into()),
+            origin,
             proxy,
             &QueryFilter::default_filter(),
             body_transform,
@@ -145,11 +148,16 @@ fn compound_rotated_body() {
 
     // The gap between the two children stays empty.
     let in_gap = transform_point(t, Vec3::ZERO);
-    let gap_proxy = ShapeProxy::new(Some(&in_gap as *const Vec3), 1, 0.25);
+    let gap_proxy = ShapeProxy::new(Some(&point as *const Vec3), 1, 0.25);
     let mut gap_hits = 0;
-    let _ = world.overlap_shape(Pos::new(in_gap.x.into(), in_gap.y.into(), in_gap.z.into()), gap_proxy, QueryFilter::default_filter(), |_| {
-        gap_hits += 1;
-        true
-    });
+    let _ = world.overlap_shape(
+        Pos::new(in_gap.x.into(), in_gap.y.into(), in_gap.z.into()),
+        gap_proxy,
+        QueryFilter::default_filter(),
+        |_| {
+            gap_hits += 1;
+            true
+        },
+    );
     assert_eq!(gap_hits, 0);
 }
