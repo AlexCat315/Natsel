@@ -8,7 +8,8 @@ use crate::math::types::Vec3;
 use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::Sphere;
-use crate::types::shape_def::{MeshBuildOptions, ShapeDef, SurfaceMaterial};
+use crate::collision::mesh::build::MeshBuildOptions;
+use crate::types::shape_def::{ShapeDef, SurfaceMaterial};
 
 fn make_body(world: &mut World) -> crate::types::ids::BodyID {
     let mut def = BodyDef::default();

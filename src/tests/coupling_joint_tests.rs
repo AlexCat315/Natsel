@@ -149,9 +149,9 @@ fn rack_and_pinion() {
         angle.update(world.body_transform(pinion).q);
     }
     let translation = world.body_position(rack).x;
-    assert!(angle.angle > 3.0);
-    assert!((translation - 0.25 * angle.angle).abs() < 0.01);
-    assert!((world.body_position(rack).y + 0.4).abs() < 1.0e-3);
+    assert!(angle.angle > 3.0_f32);
+    assert!((translation - 0.25 * f64::from(angle.angle)).abs() < 0.01_f64);
+    assert!((world.body_position(rack).y + 0.4).abs() < 1.0e-3_f64);
 }
 
 #[test]

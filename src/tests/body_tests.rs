@@ -74,7 +74,7 @@ fn body_repeatability() {
         assert_eq!(body.set_index, 0);
         assert_eq!(body.local_index, 0);
         assert_eq!(body.generation, 1);
-        assert_eq!(body.id.index1, 0);
+        assert_eq!(body.id, 0);
         assert_eq!(body.island_id, NULL_INDEX);
         assert_eq!(body.flags, 0x0000_6000);
         let sim = world.body_sim_for(s1);
@@ -104,7 +104,7 @@ fn body_repeatability() {
         samples.push(sim.transform.q.s.to_bits() as u64);
         assert!((world.body_linear_velocity(d1).x - 0.5).abs() < 1e-6);
         samples.push(world.body_angular_velocity(d1).z.to_bits() as u64);
-        samples.push(world.body_state(d1).expect("body state").delta_rotation.s.to_bits() as u64);
+        samples.push(world.body_state(body).expect("body state").delta_rotation.s.to_bits() as u64);
 
         // Sleeping
         let body = &world.bodies[d2.index1 as usize];

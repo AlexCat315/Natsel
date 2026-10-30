@@ -54,7 +54,7 @@ fn capsules() {
     fn snapshot() -> Vec<u64> {
         let mut samples: Vec<u64> = Vec::new();
         let (normal, points) = with_manifold(2, |manifold| {
-            let a = ::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
+            let a = Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
             let b = a;
             collide_capsules(
                 manifold,
@@ -91,7 +91,7 @@ fn capsule_sphere() {
     fn snapshot() -> Vec<u64> {
         let mut samples: Vec<u64> = Vec::new();
         let (normal, points) = with_manifold(1, |manifold| {
-            let a = ::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.5);
+            let a = Capsule::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.5);
             let b = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0);
             collide_capsule_and_sphere(
                 manifold,
@@ -160,7 +160,7 @@ fn hull_capsule() {
         let hull = make_box_hull(1.0, 1.0, 1.0);
         let mut cache = SimplexCache::default();
         let (normal, points) = with_manifold(2, |manifold| {
-            let capsule = ::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.25);
+            let capsule = Capsule::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.25);
             collide_hull_and_capsule(
                 manifold,
                 2,

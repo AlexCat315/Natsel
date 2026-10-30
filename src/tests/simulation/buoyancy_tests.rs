@@ -4,7 +4,8 @@ use std::f32::consts::PI;
 
 use crate::collision::hull::make_box_hull;
 use crate::math::functions::{make_quat_from_axis_angle, normalize, rotate_vector};
-use crate::math::types::{Pos, Quat, Vec3, WorldAABB};
+use crate::math::types::{Pos, Quat, Vec3};
+use crate::math::world_aabb::WorldAABB;
 use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::Sphere;
@@ -13,7 +14,11 @@ use crate::types::shape_def::{QueryFilter, ShapeDef};
 fn dynamic_body(world: &mut World, position: Vec3) -> crate::types::ids::BodyID {
     let mut def = BodyDef::default();
     def.type_ = BodyType::DynamicBody;
-    def.position = Pos::new(position.x, position.y, position.z);
+    def.position = Pos::new(
+        f64::from(position.x),
+        f64::from(position.y),
+        f64::from(position.z),
+    );
     world.create_body(&def)
 }
 
@@ -69,7 +74,7 @@ fn hull() {
     let surface = Vec3::new(10.0, -0.9, 0.0);
     let exact = world.body_submerged_volume(
         corner,
-        Pos::new(surface.x, surface.y, surface.z),
+        Pos::new(f64::from(surface.x), f64::from(surface.y), f64::from(surface.z)),
         Vec3::new(0.0, 1.0, 0.0),
     );
     let n: i32 = 60;

@@ -11,7 +11,8 @@ use crate::simulation::World;
 use crate::types::body_def::BodyDef;
 use crate::types::geometry::{Capsule, Sphere};
 use crate::types::ids::BodyID;
-use crate::types::queries::{QueryFilter, ShapeProxy, TOIInput, TOIOutput};
+use crate::types::queries::{ShapeProxy, TOIInput, TOIOutput};
+use crate::types::shape_def::QueryFilter;
 use crate::types::shape_def::ShapeDef;
 use crate::base::constants as b3;
 
@@ -216,7 +217,7 @@ fn mover_offset() {
     );
 
     assert!(abs_float(result_b.fraction - result_a.fraction) < 1e-4);
-    assert!(abs_float(result_b.point.x - result_a.point.x - 2.0) < 1e-3);
+    assert!((result_b.point.x - result_a.point.x - 2.0).abs() < 1e-3);
 }
 
 // "a bar spinning a quarter turn reaches a mover its start pose clears"
@@ -282,7 +283,7 @@ fn far_from_origin() {
 
     assert!(abs_float(result.fraction - 0.425) < 1e-2);
     assert!(abs_float(result.normal.x + 1.0) < 1e-3);
-    assert!(abs_float((result.point.x - origin.x) - 4.4) < 0.5);
+    assert!(((result.point.x - origin.x) - 4.4).abs() < 0.5);
 }
 
 // "a zero mask rejects every category"

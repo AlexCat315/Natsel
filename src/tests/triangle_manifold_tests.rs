@@ -100,7 +100,7 @@ fn triangle_capsule2() {
         ];
         let result = with_manifold(2, |manifold| {
             let mut cache = SimplexCache::default();
-            let capsule = ::new(Vec3::new(0.1, 0.1, 0.1), Vec3::new(0.6, 0.1, 0.1), 0.2);
+            let capsule = Capsule::new(Vec3::new(0.1, 0.1, 0.1), Vec3::new(0.6, 0.1, 0.1), 0.2);
             collide_triangle_and_capsule(manifold, 2, &tri, capsule, &mut cache);
         });
         assert_eq!(result.2.len(), 2);

@@ -2,7 +2,7 @@
 
 use crate::collision::capsule::collide_mover_and_capsule;
 use crate::collision::height_field::planes::collide_mover_and_height_field;
-use crate::collision::hull::{make_box_hull, make_offset_box_hull, make_transformed_box_hull};
+use crate::collision::hull::{make_box_hull, make_transformed_box_hull};
 use crate::collision::hull_mover::collide_mover_and_hull;
 use crate::collision::mesh::overlap::collide_mover_and_mesh;
 use crate::collision::sphere::collide_mover_and_sphere;
@@ -10,12 +10,13 @@ use crate::math::functions::{abs_float, is_normalized};
 use crate::math::types::{Pos, Quat, Transform, Vec3};
 use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType};
+use crate::collision::height_field::HeightField;
+use crate::collision::mesh::storage::TriangleMesh;
 use crate::types::geometry::{
-    Capsule, CompoundDef, CompoundHullDef, CompoundMeshDef, HeightField, HeightFieldDef, Mesh,
-    Sphere, TriangleMesh,
+    Capsule, CompoundDef, CompoundHullDef, CompoundMeshDef, HeightFieldDef, Mesh, Sphere,
 };
-use crate::types::ids::BodyID;
-use crate::types::queries::{PlaneResult, QueryFilter, ShapeProxy};
+use crate::types::queries::PlaneResult;
+use crate::types::shape_def::QueryFilter;
 use crate::types::shape_def::{ShapeDef, SurfaceMaterial};
 use crate::collision::mesh::build::MeshBuildOptions;
 

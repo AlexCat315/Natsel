@@ -86,10 +86,10 @@ fn rolling_mix() {
 
                 match i % 3 {
                     0 => {
-                        let _ = world.create_sphere_shape(id, &shape_def, &sphere);
+                        let _ = world.create_sphere_shape(id, &shape_def, sphere);
                     }
                     1 => {
-                        let _ = world.create_capsule_shape(id, &shape_def, &capsule);
+                        let _ = world.create_capsule_shape(id, &shape_def, capsule);
                     }
                     _ => {
                         let _ = world.create_hull_shape(id, &shape_def, &box_hull);
@@ -166,10 +166,10 @@ fn make_mesh_mix(wide: bool) -> (World, Vec<BodyID>) {
                 let _ = world.create_hull_shape(id, &shape_def, &small_box);
             }
             2 => {
-                let _ = world.create_sphere_shape(id, &shape_def, &sphere);
+                let _ = world.create_sphere_shape(id, &shape_def, sphere);
             }
             _ => {
-                let _ = world.create_capsule_shape(id, &shape_def, &capsule);
+                let _ = world.create_capsule_shape(id, &shape_def, capsule);
             }
         }
 
@@ -235,6 +235,11 @@ fn mesh_mix_paths_agree() {
                 a.manifold_count == b.manifold_count,
                 "manifold count step {step} id {id}"
             );
+            // A freed slot has a null payload, so `manifolds()` traps; Swift's loop body never
+            // ran for those slots either, because their manifold count is zero.
+            if a.manifold_count <= 0 {
+                continue;
+            }
             let a_view = a.manifolds();
             let b_view = b.manifolds();
             for mi in 0..a.manifold_count as usize {

@@ -61,7 +61,7 @@ fn queries() {
         let mut overlap_count = 0i32;
         let ts: TreeStats = world.overlap_aabb(
             AABB::new(Vec3::new(-0.2, -0.2, -0.2), Vec3::new(0.2, 0.2, 0.2)),
-            filter,
+            filter.clone(),
             |_id| {
                 overlap_count += 1;
                 true
@@ -78,7 +78,7 @@ fn queries() {
         let center = Vec3::new(0.0, 0.0, 0.0);
         let proxy = ShapeProxy::new(Some(&center as *const Vec3), 1, 0.1);
         let mut shape_count = 0i32;
-        let overlap_stats: TreeStats = world.overlap_shape(Pos::ZERO, proxy, filter, |_id| {
+        let overlap_stats: TreeStats = world.overlap_shape(Pos::ZERO, proxy, filter.clone(), |_id| {
             shape_count += 1;
             true
         });
@@ -93,7 +93,7 @@ fn queries() {
         let ray: RayResult = world.cast_ray_closest(
             Pos::new(5.0, 0.0, 0.0),
             Vec3::new(-10.0, 0.0, 0.0),
-            filter,
+            filter.clone(),
         );
         assert!(ray.hit);
         samples.push(ray.fraction.to_bits() as u64);

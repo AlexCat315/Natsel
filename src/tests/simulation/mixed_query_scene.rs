@@ -73,10 +73,12 @@ pub(crate) fn make_test_query_scene(scenario: i32, sensors: bool) -> (World, Pos
             }
             3 => {
                 // Swift defaulted `scale` to `Vec3.one`; pass it explicitly.
-                let _ = world.create_mesh_shape(body, &shape_def, mesh, Vec3::ONE);
+                // Swift's `TriangleMesh` is a class shared by reference; the Rust value is `Clone`.
+                let _ = world.create_mesh_shape(body, &shape_def, mesh.clone(), Vec3::ONE);
             }
             4 => {
-                let _ = world.create_height_field_shape(body, &shape_def, height);
+                // Swift's `HeightField` is a class shared by reference; the Rust value is `Clone`.
+                let _ = world.create_height_field_shape(body, &shape_def, height.clone());
             }
             _ => {
                 let _ = world.create_compound_shape(body, &shape_def, &compound);

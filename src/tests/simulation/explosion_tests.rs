@@ -23,7 +23,7 @@ fn make_scene() -> (World, Vec<BodyID>) {
         let mut shape_def = ShapeDef::default();
         shape_def.density = 1000.0;
         if i % 2 == 0 {
-            let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::ZERO, 0.5));
+            let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::ZERO, 0.5));
         } else {
             let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(0.5, 0.5, 0.5));
         }
@@ -125,7 +125,7 @@ fn zero_scale() {
     let mut shape_def = ShapeDef::default();
     shape_def.density = 1000.0;
     shape_def.explosion_scale = 0.0;
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::ZERO, 0.5));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::ZERO, 0.5));
 
     let mut explosion = ExplosionDef::default();
     explosion.position = Pos::ZERO;

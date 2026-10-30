@@ -4,6 +4,7 @@ use crate::base::constants as b3;
 use crate::collision::dynamic_tree::{is_empty_node, is_node_moved, DynamicTree};
 use crate::collision::hull::make_box_hull;
 use crate::math::functions::{abs_float, min_float};
+use crate::tests::world_position_assertions::abs_float as abs_float_wide;
 use crate::math::types::{Pos, Vec3};
 use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType, MotionLocks};
@@ -131,7 +132,8 @@ fn resting_contact_persists() {
     }
 
     // The ball rests on the ground: the contact survived recycling every step.
-    assert!(abs_float((world.body_transform(ball).p.y - 1.0) as f32) < 0.01);
+    // Swift's test-file `absFloat` binds the `Double` here; keep the wide-precision comparison.
+    assert!(abs_float_wide(world.body_transform(ball).p.y - 1.0) < 0.01);
     assert!(world.contact_count() > 0);
 }
 

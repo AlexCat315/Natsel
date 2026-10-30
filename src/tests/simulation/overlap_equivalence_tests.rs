@@ -24,7 +24,7 @@ fn make_world() -> (World, BodyID) {
 
 fn count_hits(world: &World, origin: Pos, points: &[Vec3]) -> i32 {
     let mut hits = 0;
-    let proxy = ShapeProxy::new(points.as_ptr(), points.len() as i32, 0.0);
+    let proxy = ShapeProxy::new(Some(points.as_ptr()), points.len() as i32, 0.0);
     let _ = world.overlap_shape(origin, proxy, QueryFilter::default_filter(), |_| {
         hits += 1;
         true
@@ -124,9 +124,9 @@ fn compound_rotated_body() {
         let local = Vec3::new(i as f32 * 2.0 - 1.0, 0.0, 0.0);
         let world_point = transform_point(t, local);
 
-        let proxy = ShapeProxy::new(&world_point as *const Vec3, 1, 0.25);
+        let proxy = ShapeProxy::new(Some(&world_point as *const Vec3), 1, 0.25);
         let mut hits = 0;
-        let _ = world.overlap_shape(world_point, proxy, QueryFilter::default_filter(), |_| {
+        let _ = world.overlap_shape(Pos::new(world_point.x.into(), world_point.y.into(), world_point.z.into()), proxy, QueryFilter::default_filter(), |_| {
             hits += 1;
             true
         });
@@ -135,7 +135,7 @@ fn compound_rotated_body() {
         // The body-scoped query must agree.
         let body_hit = world.body_overlap_shape(
             body,
-            world_point,
+            Pos::new(world_point.x.into(), world_point.y.into(), world_point.z.into()),
             proxy,
             &QueryFilter::default_filter(),
             body_transform,
@@ -145,9 +145,9 @@ fn compound_rotated_body() {
 
     // The gap between the two children stays empty.
     let in_gap = transform_point(t, Vec3::ZERO);
-    let gap_proxy = ShapeProxy::new(&in_gap as *const Vec3, 1, 0.25);
+    let gap_proxy = ShapeProxy::new(Some(&in_gap as *const Vec3), 1, 0.25);
     let mut gap_hits = 0;
-    let _ = world.overlap_shape(in_gap, gap_proxy, QueryFilter::default_filter(), |_| {
+    let _ = world.overlap_shape(Pos::new(in_gap.x.into(), in_gap.y.into(), in_gap.z.into()), gap_proxy, QueryFilter::default_filter(), |_| {
         gap_hits += 1;
         true
     });

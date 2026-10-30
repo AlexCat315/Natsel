@@ -107,7 +107,7 @@ fn create_shapes() {
         assert_eq!(hull_hash(&world.shape(sh3)), hull_hash(&world.shape(sh4)));
 
         // Body mass properties
-        let b = world.bodies[body.index1 as usize];
+        let b = &world.bodies[body.index1 as usize];
         samples.push(b.mass.to_bits() as u64);
         assert_eq!(b.head_shape_id, 3);
         assert_eq!(b.shape_count, 4);
@@ -127,7 +127,7 @@ fn create_shapes() {
         world.destroy_shape(sh3, true);
         assert_eq!(world.shapes.len(), 4);
         assert_eq!(world.shapes[2].id, crate::base::constants::NULL_INDEX);
-        let updated_body = world.bodies[body.index1 as usize];
+        let updated_body = &world.bodies[body.index1 as usize];
         assert_eq!(updated_body.head_shape_id, 3);
         assert_eq!(updated_body.shape_count, 3);
         samples.push(updated_body.mass.to_bits() as u64);
@@ -141,7 +141,7 @@ fn create_shapes() {
         assert_eq!(world.shape(sh4).proxy_key, 14);
 
         world.destroy_shape(sh4, true);
-        let updated_body = world.bodies[body.index1 as usize];
+        let updated_body = &world.bodies[body.index1 as usize];
         samples.push(updated_body.mass.to_bits() as u64);
         let updated_sim = world.body_sim_for(body);
         samples.push(updated_sim.inv_mass.to_bits() as u64);

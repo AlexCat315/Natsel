@@ -57,6 +57,9 @@ impl PathRig {
 }
 
 /// A circle of radius `r` in the xz plane, counter-clockwise seen from above.
+/// Swift's `circle(_ r: Float, _ points: Int = 12)`; the default is passed explicitly.
+const DEFAULT_CIRCLE_POINTS: i32 = 12;
+
 fn circle(r: f32, points: i32) -> Arc<ConstraintPath> {
     let positions: Vec<Vec3> = (0..points)
         .map(|i| {
@@ -173,7 +176,7 @@ fn friction() {
 #[test]
 fn loop_motor() {
     // "velocity motor drives around a loop and follows the path frame"
-    let ring = circle(3.0);
+    let ring = circle(3.0, DEFAULT_CIRCLE_POINTS);
     let mut rig = PathRig::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(3.0, 0.0, 0.0));
     let joint = rig.joint(Arc::clone(&ring), |def| {
         def.motor_mode = PathMotorMode::Velocity;
@@ -187,7 +190,10 @@ fn loop_motor() {
     for _ in 0..360 {
         rig.world.step(1.0 / 60.0, 4);
         let p = rig.world.body_position(rig.body);
-        assert!((length(Vec3::new(p.x, 0.0, p.z)) - 3.0).abs() < 0.03 && p.y.abs() < 0.01);
+        assert!(
+            (f64::from(length(Vec3::new(p.x as f32, 0.0, p.z as f32))) - 3.0).abs() < 0.03
+                && p.y.abs() < 0.01
+        );
         let f = rig.world.path_joint_fraction(joint).unwrap();
         if f < last - 6.0 {
             wraps += 1;
@@ -235,7 +241,7 @@ fn position_motor() {
 #[test]
 fn rotations() {
     // "rotation constraints"
-    let ring = circle(3.0);
+    let ring = circle(3.0, DEFAULT_CIRCLE_POINTS);
     fn spin(ring: &Arc<ConstraintPath>, rotation: PathRotationConstraint) -> (PathRig, JointID) {
         let mut rig = PathRig::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(3.0, 0.0, 0.0));
         let joint = rig.joint(Arc::clone(ring), |def| {

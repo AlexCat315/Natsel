@@ -119,9 +119,13 @@ fn contact_free_step() {
             h = fnv_f32(h, w.x);
             h = fnv_f32(h, w.y);
             h = fnv_f32(h, w.z);
-            h = fnv_f32(h, center.x);
-            h = fnv_f32(h, center.y);
-            h = fnv_f32(h, center.z);
+            // `body_world_center` is a `Pos` (double precision), so hash it at full width.
+            // Swift's test passed a literal 12-byte length for a 24-byte `Pos`, truncating it;
+            // hashing the whole value is stricter and this sample is only compared against
+            // itself, so the repeatability contract is unchanged.
+            h = fnv_f64(h, center.x);
+            h = fnv_f64(h, center.y);
+            h = fnv_f64(h, center.z);
             let flags = world.bodies[id.index1 as usize].flags;
             h = fnv(h, &flags.to_ne_bytes());
         }

@@ -3,7 +3,7 @@
 use crate::base::constants as b3;
 use crate::collision::hull::{make_box_hull, Hull};
 use crate::math::functions::compute_cos_sin;
-use crate::math::types::{Pos, Vec3};
+use crate::math::types::Pos;
 use crate::simulation::constraint_graph::OVERFLOW_INDEX;
 use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType};

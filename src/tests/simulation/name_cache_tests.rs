@@ -66,8 +66,8 @@ fn world_names() {
     for i in 0..body_names.len() {
         let mut def = BodyDef::default();
         def.type_ = BodyType::DynamicBody;
-        def.position = Pos::new(0.0, 1.0 + 1.1 * i as f32, 0.0);
-        def.name = body_names[i].to_string();
+        def.position = Pos::new(0.0, 1.0 + 1.1 * i as f64, 0.0);
+        def.name = Some(body_names[i].to_string());
         let body = world.create_body(&def);
 
         let mut shape_def = ShapeDef::default();
@@ -113,7 +113,7 @@ fn names_survive_stepping() {
     def = BodyDef::default();
     def.type_ = BodyType::DynamicBody;
     def.position = Pos::new(0.0, 3.0, 0.0);
-    def.name = "falling_box".to_string();
+    def.name = Some("falling_box".to_string());
     let box_body = world.create_body(&def);
 
     shape_def = ShapeDef::default();

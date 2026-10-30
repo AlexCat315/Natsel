@@ -36,7 +36,7 @@ fn ball(
     shape.enable_custom_filtering = custom_filter;
     shape.density = density;
     shape.base_material.restitution = restitution;
-    let _ = world.create_sphere_shape(id, &shape, &Sphere::new(Vec3::ZERO, 0.1));
+    let _ = world.create_sphere_shape(id, &shape, Sphere::new(Vec3::ZERO, 0.1));
     id
 }
 
@@ -172,7 +172,7 @@ fn rotation_arc() {
     let _ = world.create_sphere_shape(
         obstacle,
         &ShapeDef::default(),
-        &Sphere::new(Vec3::new(0.0, 0.9, 0.0), 0.03),
+        Sphere::new(Vec3::new(0.0, 0.9, 0.0), 0.03),
     );
     let mut def = BodyDef::default();
     def.type_ = BodyType::DynamicBody;
