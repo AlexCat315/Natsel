@@ -7,7 +7,7 @@
 //! make them `pub(crate)` (or add them) during the final build-fix phase: `World::body_sim_for`,
 //! `World::body_state`, `World::apply_body_linear_impulse`, `World::set_body_transform`,
 //! `World::body_mass_data`, `World::set_body_mass_data`, `World::body_world_inverse_rotational_inertia`,
-//! `World::is_valid_body`. `World::body` is replaced by indexing `world.bodies[id.index1 as usize]`.
+//! `World::is_valid_body`. `World::body` is replaced by indexing `world.bodies[(id.index1 - 1) as usize]`.
 
 use crate::base::constants::NULL_INDEX;
 use crate::math::types::{Matrix3, Pos, Quat, Vec3};
@@ -70,7 +70,7 @@ fn body_repeatability() {
         assert_eq!(world.solver_sets[3].island_sims.len(), 1);
 
         // Static
-        let body = &world.bodies[s1.index1 as usize];
+        let body = &world.bodies[(s1.index1 - 1) as usize];
         assert_eq!(body.set_index, 0);
         assert_eq!(body.local_index, 0);
         assert_eq!(body.generation, 1);
@@ -87,7 +87,7 @@ fn body_repeatability() {
         assert_eq!(sim.flags, 0x0000_6000);
 
         // Kinematic
-        let body = &world.bodies[k1.index1 as usize];
+        let body = &world.bodies[(k1.index1 - 1) as usize];
         assert_eq!(body.set_index, 2);
         assert_eq!(body.local_index, 0);
         assert_eq!(body.island_id, 0);
@@ -95,7 +95,7 @@ fn body_repeatability() {
         assert_eq!(body.flags, 0x0000_6000);
 
         // Dynamic
-        let body = &world.bodies[d1.index1 as usize];
+        let body = &world.bodies[(d1.index1 - 1) as usize];
         assert_eq!(body.set_index, 2);
         assert_eq!(body.local_index, 1);
         assert_eq!(body.island_id, 1);
@@ -107,13 +107,13 @@ fn body_repeatability() {
         samples.push(world.body_state(body).expect("body state").delta_rotation.s.to_bits() as u64);
 
         // Sleeping
-        let body = &world.bodies[d2.index1 as usize];
+        let body = &world.bodies[(d2.index1 - 1) as usize];
         assert_eq!(body.set_index, 3);
         assert_eq!(body.local_index, 0);
         assert_eq!(body.island_id, 2);
 
         // Disabled
-        let body = &world.bodies[d3.index1 as usize];
+        let body = &world.bodies[(d3.index1 - 1) as usize];
         assert_eq!(body.set_index, 1);
         assert_eq!(body.island_id, NULL_INDEX);
 

@@ -529,44 +529,120 @@ pub fn hull_from_faces(points: &[Vec3], face_polygons: &[Vec<u32>]) -> Option<Hu
 
     let vertex_count = points.len() as i32;
 
-    let mut half_edges: Vec<HullHalfEdge> = Vec::new();
-    let mut face_start: Vec<u32> = Vec::with_capacity(face_polygons.len());
+    // Emit one directed edge per face side, remembering which face and position it came from.
+    // Each `poly[i] -> poly[i+1]` edge is later paired with the one running the other way.
+    struct Slot {
+        origin: u8,
+        face: u8,
+        /// Index into `polygons` of the polygon this edge belongs to.
+        polygon: usize,
+        /// Position of this edge within its polygon.
+        position: usize,
+    }
+
+    let mut slots: Vec<Slot> = Vec::new();
+    let mut polygons: Vec<&[u32]> = Vec::new();
 
     for poly in face_polygons {
         if poly.len() < 3 {
             return None;
         }
-        face_start.push(half_edges.len() as u32);
-        let base = half_edges.len();
+        let polygon = polygons.len();
+        polygons.push(poly.as_slice());
         for (k, &origin) in poly.iter().enumerate() {
-            let next = base + (k + 1) % poly.len();
-            half_edges.push(HullHalfEdge {
-                next: next as u8,
-                twin: 0,
+            slots.push(Slot {
                 origin: origin as u8,
-                face: (face_start.len() - 1) as u8,
+                face: polygon as u8,
+                polygon,
+                position: k,
             });
         }
     }
 
-    if half_edges.len() > u8::MAX as usize {
+    if slots.len() > u8::MAX as usize {
         return None;
     }
 
-    // Pair twins by reversed directed edge.
+    // Pair every directed edge with the reversed one. Hull topology requires each twin pair to
+    // occupy adjacent slots `(2k, 2k + 1)` with `twin == index ^ 1`; `is_valid_hull`, the manifold
+    // feature queries and `hull_builder` all rely on that invariant.
     use std::collections::HashMap;
-    let mut edge_map: HashMap<(u8, u8), usize> = HashMap::new();
-    for (i, e) in half_edges.iter().enumerate() {
-        let dest = half_edges[e.next as usize].origin;
-        edge_map.insert((e.origin, dest), i);
+    let mut partner: HashMap<(u8, u8), usize> = HashMap::new();
+    for (index, slot) in slots.iter().enumerate() {
+        let poly = polygons[slot.polygon];
+        let dest = poly[(slot.position + 1) % poly.len()] as u8;
+        if partner.insert((slot.origin, dest), index).is_some() {
+            // A directed edge appears twice: the face winding is not manifold.
+            return None;
+        }
     }
-    for i in 0..half_edges.len() {
-        let e = half_edges[i];
-        let dest = half_edges[e.next as usize].origin;
-        match edge_map.get(&(dest, e.origin)) {
-            Some(&twin) => half_edges[i].twin = twin as u8,
+
+    let mut twin_of: Vec<usize> = vec![usize::MAX; slots.len()];
+    for (index, slot) in slots.iter().enumerate() {
+        let poly = polygons[slot.polygon];
+        let dest = poly[(slot.position + 1) % poly.len()] as u8;
+        match partner.get(&(dest, slot.origin)) {
+            Some(&twin) => {
+                twin_of[index] = twin;
+                twin_of[twin] = index;
+            }
             None => return None,
         }
+    }
+
+    // Renumber so that twins land in adjacent pairs.
+    let mut order: Vec<usize> = Vec::with_capacity(slots.len());
+    let mut placed = vec![false; slots.len()];
+    for index in 0..slots.len() {
+        if placed[index] {
+            continue;
+        }
+        let twin = twin_of[index];
+        placed[index] = true;
+        placed[twin] = true;
+        order.push(index);
+        order.push(twin);
+    }
+    let mut new_index = vec![0usize; slots.len()];
+    for (position, &old) in order.iter().enumerate() {
+        new_index[old] = position;
+    }
+
+    let mut half_edges: Vec<HullHalfEdge> = vec![
+        HullHalfEdge {
+            next: 0,
+            twin: 0,
+            origin: 0,
+            face: 0,
+        };
+        slots.len()
+    ];
+    for (position, &old) in order.iter().enumerate() {
+        let slot = &slots[old];
+        half_edges[position] = HullHalfEdge {
+            next: 0,
+            twin: (position ^ 1) as u8,
+            origin: slot.origin,
+            face: slot.face,
+        };
+    }
+    // `next` follows the polygon winding, which the renumbering above scrambles; resolve it
+    // through a (polygon, position) -> new index table.
+    let mut slot_of: Vec<usize> = vec![0; slots.len()];
+    for (position, &old) in order.iter().enumerate() {
+        slot_of[old] = position;
+    }
+    for (position, &old) in order.iter().enumerate() {
+        let slot = &slots[old];
+        let len = polygons[slot.polygon].len();
+        let next_position = (slot.position + 1) % len;
+        // The slot holding the next side of the same polygon.
+        let next_old = (0..slots.len())
+            .find(|&candidate| {
+                slots[candidate].polygon == slot.polygon && slots[candidate].position == next_position
+            })
+            .expect("every polygon side has a slot");
+        half_edges[position].next = slot_of[next_old] as u8;
     }
 
     let face_count = face_polygons.len() as i32;
@@ -607,8 +683,14 @@ pub fn hull_from_faces(points: &[Vec3], face_polygons: &[Vec<u32>]) -> Option<Hu
         hull.edges_mut().copy_from_slice(&half_edges);
 
         let faces = hull.faces_mut();
+        // Each face starts at its lowest-numbered side after the twin-adjacency renumbering.
         for i in 0..face_polygons.len() {
-            faces[i].edge = face_start[i] as u8;
+            let first = (0..slots.len())
+                .filter(|&candidate| slots[candidate].polygon == i)
+                .map(|candidate| slot_of[candidate])
+                .min()
+                .expect("every face has sides");
+            faces[i].edge = first as u8;
         }
 
         let mut planes = Vec::with_capacity(face_polygons.len());

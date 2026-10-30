@@ -94,11 +94,15 @@ fn merge_coplanar(points: &[Vec3], triangles: Vec<Vec<u32>>, eps: f32) -> Vec<Ve
                 edges.insert((f[k], f[(k + 1) % f.len()]));
             }
         }
-        let boundary: Vec<(u32, u32)> = edges
+        // Sort the boundary: `HashSet` iteration order is randomised per process, and the walk
+        // below starts at `boundary[0]`, so an unsorted collection would emit a different
+        // polygon rotation on every run.
+        let mut boundary: Vec<(u32, u32)> = edges
             .iter()
             .filter(|(a, b)| !edges.contains(&(*b, *a)))
             .copied()
             .collect();
+        boundary.sort_unstable();
 
         let mut next: HashMap<u32, u32> = HashMap::new();
         let mut ok = true;
@@ -250,12 +254,15 @@ fn build_from_points(points: &[Vec3]) -> Option<Hull> {
                 *edge_count.entry(e).or_insert(0) += 1;
             }
         }
+        // Sorted for the same reason as the boundary walk above: `HashMap` iteration order is
+        // randomised per process, and the horizon determines the new face winding.
         let mut horizon = Vec::new();
         for (&(a, b), &count) in &edge_count {
             if count > 0 && !edge_count.contains_key(&(b, a)) {
                 horizon.push((a, b));
             }
         }
+        horizon.sort_unstable();
         if horizon.is_empty() {
             continue;
         }
@@ -371,18 +378,20 @@ pub fn create_cone(height: f32, radius1: f32, radius2: f32, slices: i32) -> Opti
     if radius1 == 0.0 && radius2 == 0.0 {
         return None;
     }
-    let y1 = -0.5 * height;
-    let y2 = 0.5 * height;
+    // Swift uses `y = 0` for the lower ring and `y = height` for the upper one, and both rings
+    // advance the same `alpha` from zero with no half-step rotation. Rotating the second ring (or
+    // centring the heights) makes the side quads non-planar, so the coplanar merge cannot fold
+    // them and the half-edge count comes out wrong.
     let mut points = Vec::new();
     if radius1 > 0.0 {
-        points.extend(ring_points(radius1, y1, slices, 0.0));
+        points.extend(ring_points(radius1, 0.0, slices, 0.0));
     } else {
-        points.push(Vec3::new(0.0, y1, 0.0));
+        points.push(Vec3::new(0.0, 0.0, 0.0));
     }
     if radius2 > 0.0 {
-        points.extend(ring_points(radius2, y2, slices, 0.5 * b3::PI / slices as f32));
+        points.extend(ring_points(radius2, height, slices, 0.0));
     } else {
-        points.push(Vec3::new(0.0, y2, 0.0));
+        points.push(Vec3::new(0.0, height, 0.0));
     }
     create_hull(&points, b3::MAX_HULL_VERTICES)
 }
@@ -396,33 +405,70 @@ fn lcg(state: &mut u64) -> f32 {
 
 /// A deterministic irregular rock hull.
 pub fn create_rock(radius: f32) -> Option<Hull> {
-    let mut state: u64 = 0x9E3779B97F4A7C15;
-    let mut points = Vec::with_capacity(32);
-    for _ in 0..32 {
-        let z = -1.0 + 2.0 * lcg(&mut state);
-        let theta = 2.0 * b3::PI * lcg(&mut state);
-        let r = 0.85 + 0.3 * lcg(&mut state);
-        let s = (1.0 - z * z).sqrt();
-        points.push(Vec3::new(r * s * theta.cos() * radius, r * z * radius, r * s * theta.sin() * radius));
-    }
-    create_hull(&points, b3::MAX_HULL_VERTICES)
-}
+    // Swift's Fibonacci-lattice lattice: 10 points, golden-ratio azimuthal step, cosine/sine
+    // advanced by a fixed rotation each iteration. The previous port used a different random
+    // distribution, which produced a different hull.
+    let point_count = 10usize;
+    let phi = (1.0 + 5.0f32.sqrt()) / 2.0;
+    let theta = 2.0 * b3::PI / phi;
+    let delta_cs = compute_cos_sin(theta);
 
-/// A deterministic complex hull.
-pub fn create_complex_hull(radius: f32) -> Option<Hull> {
-    let mut state: u64 = 0xD1B54A32D192ED03;
-    let mut points = Vec::with_capacity(64);
-    for _ in 0..64 {
+    let mut points = Vec::with_capacity(point_count);
+    let mut cs = compute_cos_sin(0.0);
+    for i in 0..point_count {
+        let z = 1.0 - (2.0 * i as f32 + 1.0) / point_count as f32;
+        let radius_xy = (1.0 - z * z).sqrt();
         points.push(Vec3::new(
-            (-1.0 + 2.0 * lcg(&mut state)) * radius,
-            (-1.0 + 2.0 * lcg(&mut state)) * radius,
-            (-1.0 + 2.0 * lcg(&mut state)) * radius,
+            radius * radius_xy * cs.cosine,
+            radius * radius_xy * cs.sine,
+            radius * z,
         ));
+        let cs0 = cs;
+        cs.cosine = delta_cs.cosine * cs0.cosine - delta_cs.sine * cs0.sine;
+        cs.sine = delta_cs.sine * cs0.cosine + delta_cs.cosine * cs0.sine;
     }
-    create_hull(&points, b3::MAX_HULL_VERTICES)
+
+    create_hull(&points, point_count as i32)
 }
 
-/// Clone a hull and apply a transform and scale.
+/// Swift's `nextComplexHullRandom(_:)`: a 32-bit LCG with the PEEL constants.
+fn next_complex_hull_random(state: &mut u32) -> u32 {
+    *state = state.wrapping_mul(2_147_001_325).wrapping_add(715_136_305);
+    *state
+}
+
+/// Swift's `complexHullRandomFloat(_:)`.
+fn complex_hull_random_float(state: &mut u32) -> f32 {
+    ((next_complex_hull_random(state) & 0xffff) as f32) / 65535.0 - 0.5
+}
+
+/// Swift's `complexHullRandomDirection(_:)`: rejection sampling inside a radius-0.5 cube.
+fn complex_hull_random_direction(state: &mut u32) -> Vec3 {
+    let mut point = Vec3::ZERO;
+    let mut length_squared = 0.0f32;
+    loop {
+        point.x = complex_hull_random_float(state);
+        point.y = complex_hull_random_float(state);
+        point.z = complex_hull_random_float(state);
+        length_squared = dot(point, point);
+        if !(length_squared > 0.25) {
+            break;
+        }
+    }
+    normalize(point)
+}
+
+/// Hull of 32 pseudo random points on a sphere. From the convex pile hull in PEEL.
+pub fn create_complex_hull(radius: f32) -> Option<Hull> {
+    let point_count = 32usize;
+    let mut points = Vec::with_capacity(point_count);
+    let mut state: u32 = 42;
+    for _ in 0..point_count {
+        points.push(radius * complex_hull_random_direction(&mut state));
+    }
+    create_hull(&points, point_count as i32)
+}
+
 pub fn clone_and_transform_hull(original: &Hull, transform: Transform, scale: Vec3) -> Option<Hull> {
     let points = original.points();
     let transformed: Vec<Vec3> = points

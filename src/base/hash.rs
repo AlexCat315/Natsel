@@ -149,8 +149,13 @@ pub fn rapidhash(key: &[u8]) -> u64 {
                     }
                 }
             }
-            a = rapid_read64(p.add(i - 16)) ^ i as u64;
-            b = rapid_read64(p.add(i - 8));
+            // `p` has advanced past every 112-byte block, so the remainder `i` may be smaller
+            // than 16 even though these two reads are still in bounds: Swift's `p + i - 16`
+            // performs pointer arithmetic on a signed `Int`, which simply steps backwards. A
+            // `usize` subtraction would underflow here and panic (or wrap and read out of
+            // bounds), so the offset is computed in `isize` like Swift's.
+            a = rapid_read64(p.offset(i as isize - 16)) ^ i as u64;
+            b = rapid_read64(p.offset(i as isize - 8));
         }
     }
 

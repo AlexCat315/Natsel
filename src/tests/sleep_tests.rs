@@ -55,14 +55,14 @@ fn box_sleeps() {
             if i == 59 {
                 // After two seconds of resting the body should be in a sleeping set.
                 assert!(
-                    world.bodies[box_body.index1 as usize].set_index
+                    world.bodies[(box_body.index1 - 1) as usize].set_index
                         >= SetType::FirstSleepingSet.raw_value()
                 );
                 assert!(world.body_move_events.is_empty());
             }
         }
 
-        let b = &world.bodies[box_body.index1 as usize];
+        let b = &world.bodies[(box_body.index1 - 1) as usize];
         let sim = &world.solver_sets[b.set_index as usize].body_sims[b.local_index as usize];
         let v = world.body_linear_velocity(box_body);
 

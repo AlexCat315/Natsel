@@ -126,7 +126,7 @@ fn contact_free_step() {
             h = fnv_f64(h, center.x);
             h = fnv_f64(h, center.y);
             h = fnv_f64(h, center.z);
-            let flags = world.bodies[id.index1 as usize].flags;
+            let flags = world.bodies[(id.index1 - 1) as usize].flags;
             h = fnv(h, &flags.to_ne_bytes());
         }
         samples.push(h);
@@ -145,11 +145,11 @@ fn contact_free_step() {
         // Motion locks zero the x translation.
         samples.push((world.body_transform(b1).p.x as f32).to_bits() as u64);
         assert_eq!(world.body_linear_velocity(b1).x.to_bits(), 0);
-        assert_eq!(world.bodies[b1.index1 as usize].flags, 0x0000_7031);
+        assert_eq!(world.bodies[(b1.index1 - 1) as usize].flags, 0x0000_7031);
 
         // Kinematic body moves but ignores gravity.
         samples.push((world.body_transform(b2).p.z as f32).to_bits() as u64);
-        assert_eq!(world.bodies[b2.index1 as usize].flags, 0x0000_6000);
+        assert_eq!(world.bodies[(b2.index1 - 1) as usize].flags, 0x0000_6000);
 
         // Static body is untouched.
         assert_eq!(world.body_transform(b3s).p, Pos::new(10.0, 10.0, 10.0));
