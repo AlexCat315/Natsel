@@ -37,6 +37,10 @@ Swift file. The crate is ~100,000 Rust lines across 330 files, `cargo build --li
 `cargo build --bin benchmarks` both succeed, and the full test suite compiles.
 `Sources/`, `Tests/` and `Package.swift` are still in place as the translation reference.
 
+Hash parity: both binaries build in release mode and every one of the 18 benchmark scenes
+(`--all`, `NATSEL_HASH=1`) ends with the same `state:` hash in Rust and Swift, including the
+longest runs (`washer` 1000 steps, `spinner` 800, `vehicles` 600, `trees25`/`convex_pile` 500).
+
 ### Batch log
 
 - Batch 0 (setup): placeholder `mod.rs` for `simulation`, `character`, `vehicle`, `skeleton`,
@@ -85,6 +89,19 @@ Swift file. The crate is ~100,000 Rust lines across 330 files, `cargo build --li
   ("Queuing failed") and the whole wave is lost. Batches 5+ dispatch at most 4 agents at a time and
   verify landed files before starting the next wave. Shared briefs live in `.migration/test-agent-brief.md`
   and `.migration/bench-agent-brief.md`.
+- Batch 5 (validation and hash parity): full test suite runs green (530 `#[test]`, `--test-threads=1`),
+  and all 18 benchmark scenes now produce bit-identical `worldStateHash` values against the Swift
+  reference. Three behavioural gaps were found by hash bisection and closed:
+  - `collision/hull_builder.rs` was replaced with a faithful index-based QuickHull port. The critical
+    detail is Swift's `listPushBack` quirk: it inserts before `head.prev`, so a node pushed into an
+    empty list stays at the tail forever. `link_vertex_back`/`link_face_back` replicate that ordering;
+    without it every hull (and the tree/washer/convex_pile scenes) diverged in mass properties.
+  - `math/functions.rs::unwind_angle` used `x - round(x / period) * period` in f32. Swift's
+    `Float.remainder(dividingBy:)` is the IEEE 754 remainder; the f32 form loses low bits and made
+    every procedural wave-mesh vertex differ by a few ULP (trees25 and vehicles then diverged at the
+    first mesh contact). It now computes the exact remainder in f64 and narrows.
+  - Swift's `Float.pi` is `0x40490FDA` while `B3.pi` is `0x40490FDB`; scenes and tests that used
+    `Float.pi` use the `SWIFT_FLOAT_PI` constant.
 
 ## Known defects
 
@@ -136,22 +153,19 @@ Fixed during the final build phase (do not reintroduce):
   (`(*ptr).field[i]`) needs explicit parentheses around the deref.
 - `math/types.rs` had no `Vec2::ZERO` / `Vec2::ONE`.
 
-Open discrepancies (found by the ported tests, not yet resolved):
+Previously open discrepancies, all resolved during the final validation pass (the ported tests now
+assert the Swift values and pass):
 
-- `collision/mesh` binned-SAH tie-breaking still builds one node more than Swift for some scenes:
-  `create_box_mesh` reports `byte_count` 648 vs Swift's 656 (8 bytes = one `MeshNode`), and
-  `generator_tests::primitives` / `ray_tests::ray_repeatability` inherit that. The split *strategy*
-  is now correct and every scene is repeatable; a bucketing or cost tie-break still differs.
-- `collision/distance.rs` GJK picks a different but equally valid witness point for face-face
-  box pairs, so `distance_tests::{box_box_distance, box_cast, overlap, receding_cast}` see a sign
-  flip on the contact point (`(1, -1, -1)` vs Swift's `(1, 1, 1)`) while distances agree. This is a
-  simplex tie-break, not a wrong result.
-- `simulation/wide_joint_solver.rs` diverges from the scalar path at step 2 for the spherical-joint
-  grid (both `wide_joint_tests::joint_grid_*`). Preparation and the wide contact solver agree, so the
-  divergence is in the wide joint solve/store lane grouping.
-- `tests/simulation/wide_equivalence_tests.rs::multi_manifold_terrain` diverges between two *scalar*
-  worlds built by `create_wave_pile`, so the height-field contact path is nondeterministic
-  independently of SIMD.
+- `collision/mesh` binned-SAH tie-breaking built one node more than Swift for some scenes;
+  `create_box_mesh` now reports the Swift `byte_count` of 656, and
+  `generator_tests::primitives` / `ray_tests::ray_repeatability` agree.
+- `collision/distance.rs` GJK picked the opposite but equally valid witness point for face-face box
+  pairs; the witness now matches Swift (`(1, 1, 1)`), and
+  `distance_tests::{box_box_distance, box_cast, overlap, receding_cast}` pass.
+- `simulation/wide_joint_solver.rs` diverged from the scalar path for the spherical-joint grid; both
+  `wide_joint_tests::joint_grid_*` now step in lockstep with the scalar solver.
+- `tests/simulation/wide_equivalence_tests.rs::multi_manifold_terrain` diverged between two scalar
+  worlds built by `create_wave_pile`; the height-field contact path is deterministic again.
 
 ## Shared simulation vocabulary
 
