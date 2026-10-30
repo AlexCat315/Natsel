@@ -123,7 +123,7 @@ struct BoneSpec {
     group: i32,
     friction: f32,
     rolling: f32,
-    capsules: &'static [(Vec3, Vec3, f32)],
+    capsules: Vec<(Vec3, Vec3, f32)>,
     joint_type: JointType,
     local_frame_a: Transform,
     local_frame_b: Transform,
@@ -141,7 +141,7 @@ impl BoneSpec {
         group: i32,
         friction: f32,
         rolling: f32,
-        capsules: &'static [(Vec3, Vec3, f32)],
+        capsules: Vec<(Vec3, Vec3, f32)>,
     ) -> Self {
         Self {
             name,
@@ -268,7 +268,7 @@ pub fn create_human(
             0,
             0.6,
             0.1,
-            &[(Vec3::new(0.040000, 0.000001, 0.000000), Vec3::new(-0.040000, -0.000001, 0.000000), 0.150000)],
+            vec![(Vec3::new(0.040000, 0.000001, 0.000000), Vec3::new(-0.040000, -0.000001, 0.000000), 0.150000)],
         ),
     );
 
@@ -281,7 +281,7 @@ pub fn create_human(
         -group_index,
         0.5,
         0.1,
-        &[(Vec3::new(0.029876, -0.146581, 0.006260), Vec3::new(-0.029876, -0.146574, 0.006260), 0.145663)],
+        vec![(Vec3::new(0.029876, -0.146581, 0.006260), Vec3::new(-0.029876, -0.146574, 0.006260), 0.145663)],
     );
     spec.joint_type = JointType::SphericalJoint;
     spec.local_frame_a = bone_transform(
@@ -315,7 +315,7 @@ pub fn create_human(
         0,
         0.5,
         0.1,
-        &[(Vec3::new(0.063996, -0.117434, -0.040199), Vec3::new(-0.063996, -0.117432, -0.040199), 0.165004)],
+        vec![(Vec3::new(0.063996, -0.117434, -0.040199), Vec3::new(-0.063996, -0.117432, -0.040199), 0.165004)],
     );
     spec.joint_type = JointType::SphericalJoint;
     spec.local_frame_a = bone_transform(
@@ -349,7 +349,7 @@ pub fn create_human(
         0,
         0.2,
         0.05,
-        &[(Vec3::new(0.000000, -0.212340, 0.000000), Vec3::new(0.000000, -0.087340, 0.000000), 0.110000)],
+        vec![(Vec3::new(0.000000, -0.212340, 0.000000), Vec3::new(0.000000, -0.087340, 0.000000), 0.110000)],
     );
     spec.joint_type = JointType::SphericalJoint;
     spec.local_frame_a = bone_transform(
@@ -383,7 +383,7 @@ pub fn create_human(
         -group_index,
         0.6,
         0.1,
-        &[(Vec3::new(-0.047269, 0.000001, 0.000000), Vec3::new(-0.379769, 0.000005, 0.000000), 0.091539)],
+        vec![(Vec3::new(-0.047269, 0.000001, 0.000000), Vec3::new(-0.379769, 0.000005, 0.000000), 0.091539)],
     );
     spec.joint_type = JointType::SphericalJoint;
     spec.local_frame_a = bone_transform(
@@ -417,7 +417,7 @@ pub fn create_human(
         0,
         0.1,
         0.0,
-        &[
+        vec![
             (Vec3::new(-0.445000, 0.000001, 0.000000), Vec3::new(0.005000, -0.000001, 0.000000), 0.080000),
             (Vec3::new(-0.456371, 0.129321, 0.000013), Vec3::new(-0.359977, 0.014394, 0.000013), 0.070000),
         ],
@@ -454,7 +454,7 @@ pub fn create_human(
         -group_index,
         0.6,
         0.1,
-        &[(Vec3::new(0.047269, -0.000001, 0.000000), Vec3::new(0.379769, -0.000005, 0.000000), 0.092587)],
+        vec![(Vec3::new(0.047269, -0.000001, 0.000000), Vec3::new(0.379769, -0.000005, 0.000000), 0.092587)],
     );
     spec.joint_type = JointType::SphericalJoint;
     spec.local_frame_a = bone_transform(
@@ -488,7 +488,7 @@ pub fn create_human(
         0,
         0.1,
         0.0,
-        &[
+        vec![
             (Vec3::new(0.445000, -0.000002, 0.000003), Vec3::new(-0.005000, 0.000000, 0.000003), 0.080000),
             (Vec3::new(0.369113, -0.006830, 0.000017), Vec3::new(0.465507, -0.121757, 0.000017), 0.070000),
         ],
@@ -525,7 +525,7 @@ pub fn create_human(
         0,
         0.6,
         0.1,
-        &[(Vec3::new(0.296038, 0.004386, -0.000794), Vec3::new(-0.016086, 0.004384, -0.016127), 0.065000)],
+        vec![(Vec3::new(0.296038, 0.004386, -0.000794), Vec3::new(-0.016086, 0.004384, -0.016127), 0.065000)],
     );
     spec.joint_type = JointType::SphericalJoint;
     spec.local_frame_a = bone_transform(
@@ -560,7 +560,7 @@ pub fn create_human(
         0,
         0.3,
         0.1,
-        &[(Vec3::new(0.312329, -0.008256, -0.016454), Vec3::new(0.033153, 0.008259, -0.002741), 0.060000)],
+        vec![(Vec3::new(0.312329, -0.008256, -0.016454), Vec3::new(0.033153, 0.008259, -0.002741), 0.060000)],
     );
     spec.joint_type = JointType::RevoluteJoint;
     spec.local_frame_a = bone_transform(
@@ -594,7 +594,7 @@ pub fn create_human(
         0,
         0.6,
         0.1,
-        &[(Vec3::new(-0.300237, -0.000001, -0.000319), Vec3::new(0.011887, 0.000001, 0.015013), 0.065000)],
+        vec![(Vec3::new(-0.300237, -0.000001, -0.000319), Vec3::new(0.011887, 0.000001, 0.015013), 0.065000)],
     );
     spec.joint_type = JointType::SphericalJoint;
     spec.local_frame_a = bone_transform(
@@ -629,7 +629,7 @@ pub fn create_human(
         0,
         0.3,
         0.1,
-        &[(Vec3::new(-0.312649, -0.000003, 0.016471), Vec3::new(-0.032986, 0.000000, 0.002732), 0.060000)],
+        vec![(Vec3::new(-0.312649, -0.000003, 0.016471), Vec3::new(-0.032986, 0.000000, 0.002732), 0.060000)],
     );
     spec.joint_type = JointType::RevoluteJoint;
     spec.local_frame_a = bone_transform(

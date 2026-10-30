@@ -78,7 +78,7 @@ fn is_same_hull(a: &Hull, b: &Hull) -> bool {
 /// phase), so the byte-exact test lives here next to its only user. The identity test is the same
 /// fast path Swift took, and the tail is a byte comparison over `byteCount` bytes of the zeroed,
 /// fully serialized allocation, so serialized padding can never make two equal hulls differ.
-fn compare_hull_data(hull1: &Hull, hull2: &Hull) -> bool {
+pub(crate) fn compare_hull_data(hull1: &Hull, hull2: &Hull) -> bool {
     if is_same_hull(hull1, hull2) {
         return true;
     }

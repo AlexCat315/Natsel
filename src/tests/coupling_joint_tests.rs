@@ -11,7 +11,7 @@ use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::debug_draw::{DebugDraw, HexColor};
 use crate::types::geometry::Capsule;
-use crate::types::ids::BodyID;
+use crate::types::ids::{BodyID, JointID};
 use crate::types::joint_defs::{
     GearJointDef, JointType, PrismaticJointDef, PulleyJointDef, RackAndPinionJointDef,
     RevoluteJointDef,
@@ -35,7 +35,7 @@ fn disk(world: &mut World, position: Vec3, radius: f32) -> BodyID {
 }
 
 /// A revolute joint about world z at the body's position.
-fn hinge(world: &mut World, ground: BodyID, body: BodyID, motor_speed: Option<f32>) -> BodyID {
+fn hinge(world: &mut World, ground: BodyID, body: BodyID, motor_speed: Option<f32>) -> JointID {
     let mut def = RevoluteJointDef::default();
     def.base.body_id_a = ground;
     def.base.body_id_b = body;

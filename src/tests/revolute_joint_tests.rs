@@ -42,8 +42,8 @@ fn spring_revolute() {
         let mut jd = RevoluteJointDef::default();
         jd.base.body_id_a = body_a;
         jd.base.body_id_b = body_b;
-        jd.base.local_frame_a.p = Pos::new(1.0, 0.0, 0.0);
-        jd.base.local_frame_b.p = Pos::new(-0.5, 0.0, 0.0);
+        jd.base.local_frame_a.p = Vec3::new(1.0, 0.0, 0.0);
+        jd.base.local_frame_b.p = Vec3::new(-0.5, 0.0, 0.0);
         jd.enable_spring = true;
         jd.hertz = 4.0;
         jd.damping_ratio = 0.6;
@@ -123,8 +123,8 @@ fn hinged_pendulum() {
         let mut jd = RevoluteJointDef::default();
         jd.base.body_id_a = body_a;
         jd.base.body_id_b = body_b;
-        jd.base.local_frame_a.p = Pos::new(1.0, 0.0, 0.0);
-        jd.base.local_frame_b.p = Pos::new(-0.5, 0.0, 0.0);
+        jd.base.local_frame_a.p = Vec3::new(1.0, 0.0, 0.0);
+        jd.base.local_frame_b.p = Vec3::new(-0.5, 0.0, 0.0);
         let joint = world.create_revolute_joint(&jd);
 
         for _ in 0..120 {

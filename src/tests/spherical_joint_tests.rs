@@ -42,8 +42,8 @@ fn ball_socket() {
         let mut jd = SphericalJointDef::default();
         jd.base.body_id_a = body_a;
         jd.base.body_id_b = body_b;
-        jd.base.local_frame_a.p = Pos::new(1.0, 0.0, 0.0);
-        jd.base.local_frame_b.p = Pos::new(-0.5, 0.0, 0.0);
+        jd.base.local_frame_a.p = Vec3::new(1.0, 0.0, 0.0);
+        jd.base.local_frame_b.p = Vec3::new(-0.5, 0.0, 0.0);
         jd.enable_spring = true;
         jd.hertz = 4.0;
         jd.damping_ratio = 0.6;

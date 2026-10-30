@@ -508,7 +508,7 @@ fn non_dynamic_joint_survives() {
     def.position = Pos::new(2.0, 0.0, 0.0);
     let body_b = world.create_body(&def);
 
-    let mut shape_def = ShapeDef::default();
+    let shape_def = ShapeDef::default();
     let _ = world.create_hull_shape(body_a, &shape_def, &make_cube_hull(0.5));
     let _ = world.create_hull_shape(body_b, &shape_def, &make_cube_hull(0.5));
 

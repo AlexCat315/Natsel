@@ -11,8 +11,8 @@ use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::collision_types::{LocalManifold, LocalManifoldPoint, SATCache};
 use crate::types::geometry::{Capsule, Sphere};
 use crate::types::ids::BodyID;
-use crate::types::queries::{QueryFilter, ShapeProxy};
-use crate::types::shape_def::{ShapeDef, ShapeType};
+use crate::types::queries::ShapeProxy;
+use crate::types::shape_def::{QueryFilter, ShapeDef, ShapeType};
 
 /// Two cubes overlapping by 0.1 along x produce a four point face manifold at the origin.
 // "a two face overlap yields four points at the origin"
@@ -85,14 +85,13 @@ fn far_shape_bounds() {
     world.step(1.0f32 / 60.0, 1);
 
     // A tiny query point at the body centre must overlap the shape.
-    let mut point = Vec3::new(far_far, -far_far, far_far);
+    let point = Vec3::new(far_far, -far_far, far_far);
     let mut hits = 0;
     let proxy = ShapeProxy::new(Some(&point as *const Vec3), 1, 0.0);
     let _ = world.overlap_shape(Pos::ZERO, proxy, QueryFilter::default_filter(), |_id| {
         hits += 1;
         true
     });
-    point = point;
     assert_eq!(hits, 1);
 
     // A ray straight down must hit the top face at the expected height.
@@ -236,7 +235,7 @@ fn queries_at_origin(offset: f64) {
     world.step(1.0f32 / 60.0, 1);
 
     // Sphere proxy swept from the left into the box, hitting the left face at relative x = -1.
-    let mut cast_point = Vec3::new(-5.0, 0.0, 0.0);
+    let cast_point = Vec3::new(-5.0, 0.0, 0.0);
     let cast_rel_x = std::cell::Cell::new(0.0f32);
     let cast_hit = std::cell::Cell::new(false);
     {
@@ -255,12 +254,11 @@ fn queries_at_origin(offset: f64) {
             }),
         );
     }
-    cast_point = cast_point;
     assert!(cast_hit.get());
     assert!(abs_float((cast_rel_x.get() + 1.0) as f64) < 0.05);
 
     // Sphere proxy sitting at the box center.
-    let mut overlap_point = Vec3::new(0.0, 0.0, 0.0);
+    let overlap_point = Vec3::new(0.0, 0.0, 0.0);
     let overlap_hit = std::cell::Cell::new(false);
     {
         let proxy = ShapeProxy::new(Some(&overlap_point as *const Vec3), 1, 0.5);
@@ -275,7 +273,6 @@ fn queries_at_origin(offset: f64) {
             },
         );
     }
-    overlap_point = overlap_point;
     assert!(overlap_hit.get());
 
     // Capsule swept from the left into the box.

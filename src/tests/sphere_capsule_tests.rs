@@ -1,4 +1,4 @@
-//! Ported from Tests/NatselTests/SphereCapsuleTests.swift.
+//! Ported from Tests/NatselTests/SphereTests.swift.
 //!
 //! Sphere and capsule mass/AABB/ray-cast/shape-cast helpers must be deterministic and match
 //! the analytic expectations.
@@ -11,7 +11,8 @@ use crate::collision::sphere::{
     compute_sphere_aabb, compute_sphere_mass, ray_cast_hollow_sphere, ray_cast_sphere,
     shape_cast_sphere,
 };
-use crate::math::types::{Capsule, Sphere, Transform, Vec3};
+use crate::math::types::{Transform, Vec3};
+use crate::types::geometry::{Capsule, Sphere};
 use crate::types::queries::{CastOutput, RayCastInput, ShapeCastInput, ShapeProxy};
 
 fn bits_f32(x: f32) -> u64 {
@@ -55,7 +56,7 @@ fn capsule_mass() {
     // "capsule mass is repeatable"
     fn snapshot() -> Vec<u64> {
         let mut samples: Vec<u64> = Vec::new();
-        let shape = Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
+        let shape = ::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
         let mass = compute_capsule_mass(&shape, 2.0);
         let radius = shape.radius;
         // TODO(migration): confirm `Vec3::length` exists; otherwise use `math::functions::length`.
@@ -138,7 +139,7 @@ fn capsule_ray_cast() {
     // "capsule ray cast is repeatable"
     fn snapshot() -> Vec<u64> {
         let mut samples: Vec<u64> = Vec::new();
-        let shape = Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
+        let shape = ::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
         let mut input = RayCastInput::new(Vec3::new(2.0, 0.2, 0.0), Vec3::new(-4.0, 0.0, 0.0), 1.0);
 
         let output = ray_cast_capsule(&shape, &input);
@@ -184,7 +185,7 @@ fn shape_casts() {
         samples.push(bits_f32(sphere_out.point.x));
 
         let capsule =
-            Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
+            ::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
         input.proxy = ShapeProxy::new(Some(buffer.as_ptr()), 8, 0.0);
         let capsule_out = shape_cast_capsule(&capsule, &input);
         assert!(capsule_out.hit);

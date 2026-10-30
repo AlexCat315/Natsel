@@ -9,7 +9,8 @@ use crate::collision::hull_queries::{
 };
 use crate::collision::proxy::compute_proxy_aabb;
 use crate::math::functions::{make_quat_from_axis_angle, normalize};
-use crate::math::types::{Capsule, Sphere, Transform, Vec3};
+use crate::math::types::{Transform, Vec3};
+use crate::types::geometry::{Capsule, Sphere};
 use crate::simulation::shape_runtime::{
     compute_hull_mass, compute_shape_aabb, compute_shape_extent, compute_shape_mass, make_shape_proxy,
     Shape, ShapeGeometry,
@@ -145,8 +146,8 @@ fn capsule_shape() {
     fn snapshot() -> Vec<u64> {
         let mut samples: Vec<u64> = Vec::new();
         let mut shape = Shape::default();
-        shape.type_ = ShapeType::CapsuleShape;
-        shape.geometry = ShapeGeometry::Capsule(Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5));
+        shape.type_ = ShapeType::Shape;
+        shape.geometry = ShapeGeometry::(::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5));
         shape.density = 2.0;
 
         let mass = compute_shape_mass(&shape);
@@ -191,8 +192,8 @@ fn proxy_aabb() {
         samples.push(bits_f32(aabb.upper_bound.y));
 
         let mut shape = Shape::default();
-        shape.type_ = ShapeType::CapsuleShape;
-        shape.geometry = ShapeGeometry::Capsule(Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5));
+        shape.type_ = ShapeType::Shape;
+        shape.geometry = ShapeGeometry::(::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5));
         let buffer = make_shape_proxy(&shape);
         let capsule_aabb = compute_proxy_aabb(buffer.proxy());
         samples.push(bits_f32(capsule_aabb.lower_bound.y));

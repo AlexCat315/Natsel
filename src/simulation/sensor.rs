@@ -446,6 +446,13 @@ impl World {
     }
 }
 
+/// Buffered sensor touch events from one step. Swift's `(begin:end:)` labelled tuple.
+#[derive(Clone, Debug, Default)]
+pub struct SensorEvents {
+    pub begin: Vec<SensorBeginTouchEvent>,
+    pub end: Vec<SensorEndTouchEvent>,
+}
+
 impl World {
     /// Move CCD sensor hits into their sensors before the overlap pass.
     pub(crate) fn accept_sensor_hits(&mut self) {
@@ -470,11 +477,12 @@ impl World {
 
     /// Buffered sensor begin/end touch events from the last step.
     ///
-    /// Swift returned a labelled tuple; the labels become the positional order `(begin, end)`.
-    pub fn sensor_events(&self) -> (Vec<SensorBeginTouchEvent>, Vec<SensorEndTouchEvent>) {
-        (
-            self.sensor_begin_events.clone(),
-            self.sensor_end_events.published().to_vec(),
-        )
+    /// Swift returned the labelled tuple `(begin:end:)`; the struct keeps those labels as fields
+    /// so a ported call site reads `events.begin` / `events.end` exactly as it did in Swift.
+    pub fn sensor_events(&self) -> SensorEvents {
+        SensorEvents {
+            begin: self.sensor_begin_events.clone(),
+            end: self.sensor_end_events.published().to_vec(),
+        }
     }
 }

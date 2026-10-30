@@ -6,8 +6,10 @@ use crate::collision::hull::make_box_hull;
 use crate::collision::triangle_manifold::{
     collide_triangle_and_capsule, collide_triangle_and_hull, collide_triangle_and_sphere,
 };
-use crate::math::types::{Capsule, Quat, Sphere, Transform, Vec3};
+use crate::math::types::{Quat, Transform, Vec3};
+use crate::types::geometry::{Capsule, Sphere};
 use crate::types::collision_types::{LocalManifold, LocalManifoldPoint, SeparatingFeature, TriangleFeature};
+use crate::types::collision_types::SATCache;
 use crate::types::queries::SimplexCache;
 
 fn with_manifold(
@@ -98,7 +100,7 @@ fn triangle_capsule2() {
         ];
         let result = with_manifold(2, |manifold| {
             let mut cache = SimplexCache::default();
-            let capsule = Capsule::new(Vec3::new(0.1, 0.1, 0.1), Vec3::new(0.6, 0.1, 0.1), 0.2);
+            let capsule = ::new(Vec3::new(0.1, 0.1, 0.1), Vec3::new(0.6, 0.1, 0.1), 0.2);
             collide_triangle_and_capsule(manifold, 2, &tri, capsule, &mut cache);
         });
         assert_eq!(result.2.len(), 2);
@@ -128,7 +130,7 @@ fn triangle_hull_separated() {
             Vec3::new(0.5, 1.2, -0.5),
             Vec3::new(0.0, 1.2, 0.5),
         ];
-        let mut cache = SimplexCache::default();
+        let mut cache = SATCache::default();
         let result = with_manifold(4, |manifold| {
             collide_triangle_and_hull(manifold, 4, tri_h[0], tri_h[1], tri_h[2], 0, &hull, &mut cache, true);
         });
@@ -156,7 +158,7 @@ fn triangle_hull_contact() {
             Vec3::new(0.4, 1.0, -0.3),
             Vec3::new(0.3, 1.15, 0.4),
         ];
-        let mut cache = SimplexCache::default();
+        let mut cache = SATCache::default();
         let result = with_manifold(4, |manifold| {
             collide_triangle_and_hull(manifold, 4, tri_h[0], tri_h[1], tri_h[2], 0, &hull, &mut cache, true);
         });

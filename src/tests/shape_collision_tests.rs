@@ -7,7 +7,8 @@ use crate::collision::convex_manifold_shapes::{
     collide_spheres,
 };
 use crate::collision::hull::make_box_hull;
-use crate::math::types::{Capsule, Quat, Sphere, Transform, Vec3};
+use crate::math::types::{Quat, Transform, Vec3};
+use crate::types::geometry::{Capsule, Sphere};
 use crate::types::collision_types::{LocalManifold, LocalManifoldPoint};
 use crate::types::queries::SimplexCache;
 
@@ -53,7 +54,7 @@ fn capsules() {
     fn snapshot() -> Vec<u64> {
         let mut samples: Vec<u64> = Vec::new();
         let (normal, points) = with_manifold(2, |manifold| {
-            let a = Capsule::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
+            let a = ::new(Vec3::new(0.0, -1.0, 0.0), Vec3::new(0.0, 1.0, 0.0), 0.5);
             let b = a;
             collide_capsules(
                 manifold,
@@ -90,7 +91,7 @@ fn capsule_sphere() {
     fn snapshot() -> Vec<u64> {
         let mut samples: Vec<u64> = Vec::new();
         let (normal, points) = with_manifold(1, |manifold| {
-            let a = Capsule::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.5);
+            let a = ::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.5);
             let b = Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0);
             collide_capsule_and_sphere(
                 manifold,
@@ -159,7 +160,7 @@ fn hull_capsule() {
         let hull = make_box_hull(1.0, 1.0, 1.0);
         let mut cache = SimplexCache::default();
         let (normal, points) = with_manifold(2, |manifold| {
-            let capsule = Capsule::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.25);
+            let capsule = ::new(Vec3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 0.0), 0.25);
             collide_hull_and_capsule(
                 manifold,
                 2,

@@ -39,10 +39,10 @@ fn bullet_through_sensor() {
         world.step(1.0f32 / 60.0, 4);
         let bullet_pos = world.body_transform(bullet).p;
         let events = world.sensor_events();
-        if !events.begin_events.is_empty() {
+        if !events.begin.is_empty() {
             begin_count += 1;
         }
-        if !events.end_events.is_empty() {
+        if !events.end.is_empty() {
             end_count += 1;
         }
         if bullet_pos.x < -1.0 {
@@ -81,8 +81,8 @@ fn resting_inside_sensor() {
     for _ in 0..30 {
         world.step(1.0f32 / 60.0, 4);
         let events = world.sensor_events();
-        begin_count += events.begin_events.len();
-        end_count += events.end_events.len();
+        begin_count += events.begin.len();
+        end_count += events.end.len();
     }
 
     // Overlapping from the start: one begin, no end while it stays inside.

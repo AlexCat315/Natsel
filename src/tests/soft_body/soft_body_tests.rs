@@ -403,7 +403,7 @@ fn ray_cast() {
     );
     assert!(hit.hit);
     assert!(hit.soft_body_id == cloth);
-    assert!(((hit.point.y - 1.0) as f32).abs() < 1.0e-4);
+    assert!((hit.point.y - 1.0).abs() < 1.0e-4);
     assert!(hit.normal.y > 0.99);
     // Single sided faces are missed from below.
     let below =

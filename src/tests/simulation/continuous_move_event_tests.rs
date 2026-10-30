@@ -29,7 +29,7 @@ fn move_event_matches_pose() {
 
     shape_def = ShapeDef::default();
     shape_def.density = 1.0;
-    let _ = world.create_sphere_shape(ball, &shape_def, &Sphere::new(Vec3::ZERO, 0.25));
+    let _ = world.create_sphere_shape(ball, &shape_def, Sphere::new(Vec3::ZERO, 0.25));
 
     let time_step: f32 = 1.0 / 60.0;
     let mut have_move = false;

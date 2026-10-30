@@ -1,14 +1,12 @@
 //! Ported from Tests/NatselTests/Simulation/LocatorSceneTests.swift.
 
 use crate::collision::hull::make_box_hull;
-use crate::math::functions::sub_pos;
 use crate::math::types::{Pos, Vec3};
 use crate::simulation::World;
-use crate::tests::world_position_assertions::abs_float;
 use crate::types::body_def::{BodyDef, BodyType, MotionLocks};
 use crate::types::geometry::Sphere;
 use crate::types::ids::BodyID;
-use crate::types::joint_defs::{JointType, SphericalJointDef};
+use crate::types::joint_defs::SphericalJointDef;
 use crate::types::shape_def::ShapeDef;
 
 fn make_body(

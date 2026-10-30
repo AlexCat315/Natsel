@@ -31,7 +31,7 @@ fn is_normalized(v: Vec3) -> bool {
 
 #[test]
 fn cast_ray_hits_sphere() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let mut shape_def = ShapeDef::default();
     let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
@@ -58,7 +58,7 @@ fn cast_ray_hits_sphere() {
 
 #[test]
 fn cast_ray_miss() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let mut shape_def = ShapeDef::default();
     let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
@@ -75,7 +75,7 @@ fn cast_ray_miss() {
 
 #[test]
 fn cast_ray_closest_shape() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let shape_def = ShapeDef::default();
     let near = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
     let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(4.0, 0.0, 0.0), 1.0));
@@ -97,7 +97,7 @@ fn cast_ray_closest_shape() {
 
 #[test]
 fn cast_ray_far_from_origin() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let mut shape_def = ShapeDef::default();
     let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::new(0.0, 0.0, 0.0), 1.0));
 
@@ -119,7 +119,7 @@ fn cast_ray_far_from_origin() {
 
 #[test]
 fn cast_shape_hits_box() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let shape_def = ShapeDef::default();
     let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(1.0, 1.0, 1.0));
 
@@ -145,7 +145,7 @@ fn cast_shape_hits_box() {
 
 #[test]
 fn overlap_respects_body_transform() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let shape_def = ShapeDef::default();
     let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(1.0, 1.0, 1.0));
 
@@ -174,7 +174,7 @@ fn overlap_respects_body_transform() {
 
 #[test]
 fn overlap_true_and_false() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let shape_def = ShapeDef::default();
     let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(1.0, 1.0, 1.0));
 
@@ -203,7 +203,7 @@ fn overlap_true_and_false() {
 
 #[test]
 fn mover_touches_box() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let shape_def = ShapeDef::default();
     let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(0.5, 0.5, 0.5));
 
@@ -225,7 +225,7 @@ fn mover_touches_box() {
 
 #[test]
 fn mover_capacity() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let shape_def = ShapeDef::default();
     for i in 0..4 {
         let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(0.5, 0.5, 0.5));
@@ -246,7 +246,7 @@ fn mover_capacity() {
 
 #[test]
 fn mover_separated() {
-    let (world, body) = make_query_world();
+    let (mut world, body) = make_query_world();
     let shape_def = ShapeDef::default();
     let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(0.5, 0.5, 0.5));
 

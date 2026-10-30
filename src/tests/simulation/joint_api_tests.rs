@@ -5,7 +5,7 @@ use crate::collision::hull::make_box_hull;
 use crate::math::types::Pos;
 use crate::simulation::World;
 use crate::types::body_def::{BodyDef, BodyType};
-use crate::types::ids::{BodyID, JointID};
+use crate::types::ids::BodyID;
 use crate::types::joint_defs::{DistanceJointDef, FilterJointDef};
 use crate::types::shape_def::ShapeDef;
 
@@ -143,7 +143,6 @@ fn filter_joint() {
     }
     assert_eq!(contacts_between, 0);
 
-    let _: JointID = joint;
     f.world.destroy_joint(joint.index1 - 1, true);
     assert_eq!(
         f.world.joints[(joint.index1 - 1) as usize].joint_id,

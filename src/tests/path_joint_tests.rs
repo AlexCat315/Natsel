@@ -12,11 +12,8 @@ use crate::simulation::path_joint::{
 use crate::tests::world_position_assertions::distance;
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::Sphere;
-use crate::types::ids::JointID;
+use crate::types::ids::{BodyID, JointID};
 use crate::types::shape_def::ShapeDef;
-
-// TODO(migration): `World::default()` and `World::gravity` are not yet confirmed public; reconcile
-// during the build-fix phase if the compiler complains.
 
 struct PathRig {
     world: World,

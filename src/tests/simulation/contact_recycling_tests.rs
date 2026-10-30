@@ -78,7 +78,7 @@ fn run_recycled_approach(capsule_target: bool) -> f32 {
     );
     def.linear_velocity = Vec3::new(0.0, -speed, 0.0);
     let body = world.create_body(&def);
-    let _ = world.create_sphere_shape(body, &shape_def, &Sphere::new(Vec3::ZERO, radius));
+    let _ = world.create_sphere_shape(body, &shape_def, Sphere::new(Vec3::ZERO, radius));
 
     let mut min_separation = f32::MAX;
     for _ in 0..20 {
@@ -124,7 +124,7 @@ fn resting_contact_persists() {
     let ball = world.create_body(&def);
     shape_def = ShapeDef::default();
     shape_def.density = 1000.0;
-    let _ = world.create_sphere_shape(ball, &shape_def, &Sphere::new(Vec3::ZERO, 0.5));
+    let _ = world.create_sphere_shape(ball, &shape_def, Sphere::new(Vec3::ZERO, 0.5));
 
     for _ in 0..180 {
         world.step(1.0f32 / 60.0, 4);

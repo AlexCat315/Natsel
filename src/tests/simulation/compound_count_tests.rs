@@ -3,7 +3,7 @@
 use crate::collision::hull::make_box_hull;
 use crate::math::types::{Transform, Vec3};
 use crate::simulation::World;
-use crate::simulation::compound::compound::Compound;
+use crate::collision::compound::compound::Compound;
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::{CompoundDef, CompoundHullDef};
 use crate::types::shape_def::{ShapeDef, SurfaceMaterial};
