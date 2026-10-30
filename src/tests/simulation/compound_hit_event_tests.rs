@@ -87,7 +87,7 @@ fn run(side: i32) -> Option<RunResult> {
     let _ = world.create_sphere_shape(
         sphere_body,
         &shape_def,
-        &Sphere::new(Vec3::ZERO, 0.5),
+        Sphere::new(Vec3::ZERO, 0.5),
     );
 
     let mut hit_count = 0;

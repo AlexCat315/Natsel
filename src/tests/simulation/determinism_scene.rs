@@ -168,10 +168,10 @@ pub(crate) fn create_wave_pile(world: &mut World) -> WavePileScene {
 
                 match index % 4 {
                     0 => {
-                        let _ = world.create_sphere_shape(body, &shape_def, &sphere);
+                        let _ = world.create_sphere_shape(body, &shape_def, sphere);
                     }
                     1 => {
-                        let _ = world.create_capsule_shape(body, &shape_def, &capsule);
+                        let _ = world.create_capsule_shape(body, &shape_def, capsule);
                     }
                     2 => {
                         let _ = world.create_hull_shape(body, &shape_def, &box_hull);
@@ -398,7 +398,7 @@ pub(crate) fn query_spawn_once(
             let _ = world.create_capsule_shape(
                 body,
                 &shape_def,
-                &Capsule::new(
+                Capsule::new(
                     Vec3::new(0.0, -size, 0.0),
                     Vec3::new(0.0, size, 0.0),
                     0.7 * size,
@@ -446,6 +446,6 @@ pub(crate) fn hash_float(hash: u32, value: f32) -> u32 {
 }
 
 /// Swift's bare `hash(_:_:_:)`.
-pub(crate) fn hash_bytes_raw(hash: u32, data: &[u8]) -> u32 {
-    hash(hash, data)
+pub(crate) fn hash_bytes_raw(seed: u32, data: &[u8]) -> u32 {
+    hash(seed, data)
 }

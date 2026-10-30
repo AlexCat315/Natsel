@@ -52,13 +52,13 @@ fn run_recycled_approach(capsule_target: bool) -> f32 {
         let _ = world.create_capsule_shape(
             target,
             &shape_def,
-            &Capsule::new(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), target_radius),
+            Capsule::new(Vec3::new(-1.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), target_radius),
         );
     } else {
         let _ = world.create_sphere_shape(
             target,
             &shape_def,
-            &Sphere::new(Vec3::ZERO, target_radius),
+            Sphere::new(Vec3::ZERO, target_radius),
         );
     }
 
@@ -165,14 +165,14 @@ fn enlarged_proxy_destroyed() {
         def.position = Pos::new(f64::from(2.0 * i as f32), 0.0, 0.0);
         def.linear_velocity = Vec3::ZERO;
         let resting = world.create_body(&def);
-        let _ = world.create_sphere_shape(resting, &shape_def, &sphere);
+        let _ = world.create_sphere_shape(resting, &shape_def, sphere);
     }
 
     // This body outruns its AABB margin every step
     def.position = Pos::new(7.0, 1.0, 0.0);
     def.linear_velocity = Vec3::new(6.0, 0.0, 0.0);
     let mover = world.create_body(&def);
-    let _ = world.create_sphere_shape(mover, &shape_def, &sphere);
+    let _ = world.create_sphere_shape(mover, &shape_def, sphere);
 
     let time_step: f32 = 1.0 / 60.0;
     world.step(time_step, 4);

@@ -97,33 +97,38 @@ fn tree_repeatability() {
             Vec3::new(2.5, 1.5, 0.5),
         );
 
-        fn run_query(tree: &DynamicTree, query_box: AABB, mask: u64, require_all: bool) -> (u64, i32) {
+        fn run_query(
+            tree: &DynamicTree,
+            query_box: AABB,
+            mask: u64,
+            require_all: bool,
+        ) -> (u64, i32, crate::collision::dynamic_tree::TreeStats) {
             let mut h: u64 = 14_695_981_039_346_656_037;
             let mut n = 0;
-            tree.query(query_box, mask, require_all, |proxy_id, user_data| {
+            let stats = tree.query(query_box, mask, require_all, |proxy_id, user_data| {
                 h = fnv_i32(h, proxy_id);
                 h = fnv_u64(h, user_data);
                 n += 1;
                 true
             });
-            (h, n)
+            (h, n, stats)
         }
 
-        let (mut qh, mut qn) = run_query(&tree, query_box, u64::MAX, false);
+        let (mut qh, qn, q_stats) = run_query(&tree, query_box, u64::MAX, false);
         samples.push(qh);
         assert_eq!(qn, 6);
+        assert_eq!(q_stats.node_visits, 10);
+        assert_eq!(q_stats.leaf_visits, 6);
 
-        let (qh_next, qn_next) = run_query(&tree, query_box, 1, false);
+        let (qh_next, qn_next, _) = run_query(&tree, query_box, 1, false);
         qh = qh_next;
-        qn = qn_next;
         samples.push(qh);
-        assert_eq!(qn, 3);
+        assert_eq!(qn_next, 3);
 
-        let (qh_next, qn_next) = run_query(&tree, query_box, 1, true);
+        let (qh_next, qn_next, _) = run_query(&tree, query_box, 1, true);
         qh = qh_next;
-        qn = qn_next;
         samples.push(qh);
-        assert_eq!(qn, 3);
+        assert_eq!(qn_next, 3);
 
         // Ray cast
         let ray_input = RayCastInput::new(Vec3::new(-1.0, 0.45, 0.5), Vec3::new(10.0, 0.0, 0.0), 1.0);

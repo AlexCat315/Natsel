@@ -1,7 +1,7 @@
 //! Ported from Tests/NatselTests/Simulation/DoublePrecisionWorldTests.swift.
 
 use crate::character::character_virtual::{CharacterDef, CharacterGroundState, CharacterVirtual};
-use crate::collision::hull::{make_box_hull, make_offset_box_hull};
+use crate::collision::hull::make_offset_box_hull;
 use crate::math::functions::{lerp_position, offset_aabb, offset_pos, sub_pos};
 use crate::math::types::{AABB, Pos, Quat, Vec3};
 use crate::math::world_aabb::WorldAABB;
@@ -13,8 +13,7 @@ use crate::soft_body::soft_body_settings::{
 use crate::types::body_def::{BodyDef, BodyType};
 use crate::types::geometry::Sphere;
 use crate::types::joint_defs::DistanceJointDef;
-use crate::types::queries::QueryFilter;
-use crate::types::shape_def::ShapeDef;
+use crate::types::shape_def::{QueryFilter, ShapeDef};
 
 // "world position boundaries retain small offsets"
 #[test]
