@@ -244,7 +244,7 @@ fn split_binned_sah(primitives: &mut [MeshPrimitive], start: usize, end: usize) 
             let index = (factor
                 * (get_by_index(primitives[i].center, axis_usize)
                     - get_by_index(bounds.lower_bound, axis_usize))) as usize;
-            let index = index.min(7);
+            // Swift asserted `0 <= index && index < 8` after a truncating `Int()` cast.
             buckets[index].count += 1;
             buckets[index].bounds = aabb_union(buckets[index].bounds, primitives[i].bounds);
         }

@@ -19,20 +19,23 @@ Updated as batches land. "Lines" are source lines.
 
 | Module | Swift files | Swift lines | Rust files | Status |
 |---|---|---|---|---|
-| Base | 5 | 1,028 | 6 | translated |
-| Math | 4 | 1,149 | 5 | translated |
-| Containers | 10 | 1,110 | 11 | translated |
-| Types | 10 | 2,425 | 11 | translated |
-| Collision | 52 | 13,680 | 53 | translated |
-| Simulation | 63 | 24,647 | 31 | in progress (world, bodies, shapes, solver infra, joints A, mesh contact, debug draw) |
-| Character | 1 | 567 | 0 | **pending** |
-| Vehicle | 5 | 2,290 | 0 | **pending** |
-| Skeleton | 4 | 696 | 0 | **pending** |
-| SoftBody | 10 | 4,385 | 0 | **pending** |
-| Benchmarks | 4 | 1,190 | 0 (stub) | **pending** |
-| Tests | 134 | ~15,000 | 0 | **pending** |
+| Base | 5 | 862 | 5 | translated |
+| Math | 4 | 957 | 4 | translated |
+| Containers | 10 | 934 | 10 | translated |
+| Types | 10 | 1,829 | 10 | translated |
+| Collision | 52 | 11,349 | 52 | translated |
+| Simulation | 63 | 21,011 | 63 | translated |
+| Character | 1 | 495 | 1 | translated |
+| Vehicle | 5 | 1,973 | 5 | translated |
+| Skeleton | 4 | 620 | 4 | translated |
+| SoftBody | 10 | 4,023 | 10 | translated |
+| Benchmarks | 4 | 1,190 | 4 | translated |
+| Tests | 134 | ~15,000 | 134 | translated (530 `#[test]`) |
 
-Migrated core so far: 20,386 Rust lines across 97 files. Remaining Swift: ~34,000 lines plus tests.
+Every Swift file under `Sources/Natsel/` has a Rust counterpart: 164/164 files, one Rust file per
+Swift file. The crate is ~100,000 Rust lines across 330 files, `cargo build --lib` and
+`cargo build --bin benchmarks` both succeed, and the full test suite compiles.
+`Sources/`, `Tests/` and `Package.swift` are still in place as the translation reference.
 
 ### Batch log
 
@@ -83,28 +86,72 @@ Migrated core so far: 20,386 Rust lines across 97 files. Remaining Swift: ~34,00
   verify landed files before starting the next wave. Shared briefs live in `.migration/test-agent-brief.md`
   and `.migration/bench-agent-brief.md`.
 
-## Known defects (baseline, to fix in the final build phase)
+## Known defects
 
-All in already-translated files; no new translation is blocked by them.
+The baseline compile-error list is closed: `cargo check --lib` reports **0 errors** and
+`cargo build --bin benchmarks` succeeds. What remains are behavioural discrepancies the ported
+tests found, tracked here rather than hidden.
 
-- `base/hash.rs:216,229` — `E0618`: value called as a function.
-- `base/worker_pool.rs:168` — `E0277`: closure `F` not `Send`/`Sync`.
-- `collision/compound/compound.rs` (6) — `E0133`: unsafe calls outside `unsafe` block (edition 2024).
-- `collision/compound/interning.rs:16` — `E0599`: `Default` bound unsatisfied.
-- `collision/convex_manifold.rs:1488,1532` — `E0425`: missing `find_hull_support_vertex`.
-- `collision/height_field/mod.rs` — `E0583`: `factories`, `text_file` modules absent (batch 1).
-- `collision/height_field/{planes,proxy_overlap,regions}.rs` — `E0382`: moved `region.columns`.
-- `collision/height_field/sweep_cast.rs:206`, `collision/hull_queries.rs:96`,
-  `collision/mesh/overlap.rs:218` — `E0308`: `&ShapeCastPairInput` vs value.
-- `collision/hull.rs:263,296,698` — mutability, arity, missing `box_inertia`.
-- `collision/hull_queries.rs:39` — missing `b3_assert` import.
-- `collision/internal_math.rs:186,200` — `Vec2::ZERO` missing.
-- `collision/manifold.rs:166,168` — `i32` vs `u8`.
-- `collision/mesh/overlap.rs:40,288` — arity; `:154,237` missing `get_by_index`.
-- `collision/proxy.rs:43,51` — `Hull::vertex_count` is a method.
-- `containers/dynamic_array.rs:119` — missing `b3_assert_msg`.
-- `math/types.rs:133` — `Vec3` vs `Transform`.
-- `types/debug_draw.rs:9` — `Capsule`/`HullData`/`Sphere` live in `types::geometry`, not `math::types`.
+Fixed during the final build phase (do not reintroduce):
+
+- `base/hash.rs` `rapidhash` tail read `p + i - 16` with `usize` arithmetic. `p` has already
+  advanced past the 112-byte blocks, so the remainder can be smaller than 16 even though the read
+  is in bounds; Swift's `p + i - 16` was signed pointer arithmetic. Now uses `p.offset(i as isize - 16)`.
+  This was a SubtractWithOverflow panic on any buffer whose length after block peeling is < 16.
+- `base/worker_pool.rs`: the stage closure captured the bare `F` field because of precise capture,
+  demanding `F: Send + Sync` and defeating `SendFn`'s erasure. Now calls through `SendFn::call(&self)`.
+- `simulation/continuous.rs` + `continuous/`: Rust cannot have both `continuous.rs` and
+  `continuous/mod.rs`. The directory's children are declared inside `continuous.rs`.
+- Duplicate `MeshContactScratch`: `collision::convex_manifold` had a wrapper struct that duplicated
+  `simulation::contact_payload::MeshContactScratch`. The wrapper is gone;
+  `collide_hulls_with_scratch` now takes `sat: &mut SatScratch, face: &mut FaceScratch`, and the
+  payload keeps the two typed scratches. The dead `sat_scratch`/`face_scratch` byte slabs and their
+  `*_BYTE_COUNT` consts were removed (Swift reached those arenas by pointer arithmetic).
+- `collision/hull.rs::hull_from_faces` linked twins through a `HashMap`, so twin pairs were not
+  adjacent. `is_valid_hull`, the manifold feature queries and `hull_builder` all require
+  `edges[2k].twin == 2k + 1` and `twin.twin == index`. The builder now renumbers edges so twins land
+  in adjacent slot pairs.
+- `collision/hull_builder.rs` iteration order: `merge_coplanar`'s boundary and the horizon walk both
+  read out of `HashSet`/`HashMap`, whose order is randomised per process, so `create_hull` returned a
+  different polygon rotation on every run. Both are sorted before use.
+- `collision/hull_builder.rs::create_cone` rotated the upper ring by a half step and centred the
+  ring heights; Swift advances the same `alpha` from zero with `y = 0` and `y = height`. The rotated
+  version made the side quads non-planar so the coplanar merge could not fold them (64 half edges
+  instead of 48).
+- `collision/hull_builder.rs::create_rock` and `create_complex_hull` used invented RNGs. Both now
+  follow Swift: the Fibonacci lattice for the rock, and the PEEL 32-bit LCG (`state = state *
+  2147001325 + 715136305`, seed 42, `& 0xffff / 65535 - 0.5`) for the complex hull.
+- `collision/mesh/tree_builder.rs` implemented only the median split and used it unconditionally.
+  `MeshTreeBuild::with_options(primitives, use_median_split)` now implements Swift's three
+  strategies: binned SAH (8 buckets per axis, cost = count × area), median (partition about the
+  centre on the major axis, falling back to `count / 2` at the ends), and the half split used when
+  SAH finds no axis and the range exceeds 8.
+- `simulation/world_runtime.rs` had no `impl Default for World`; Swift's `init(capacity:)` defaulted
+  its argument. Added, delegating to `World::new(Capacity::default())`.
+- `simulation/sensor.rs::sensor_events` returned a positional tuple where Swift returned the
+  labelled `(begin:end:)`. Now returns `SensorEvents { begin, end }`.
+- `simulation/six_dof_joint.rs`: `SixDOFSwingLimit` has data-carrying variants, so its explicit
+  discriminants need `#[repr(i32)]`.
+- Edition 2024 `dangerous_implicit_autorefs`: field access through a raw-pointer deref
+  (`(*ptr).field[i]`) needs explicit parentheses around the deref.
+- `math/types.rs` had no `Vec2::ZERO` / `Vec2::ONE`.
+
+Open discrepancies (found by the ported tests, not yet resolved):
+
+- `collision/mesh` binned-SAH tie-breaking still builds one node more than Swift for some scenes:
+  `create_box_mesh` reports `byte_count` 648 vs Swift's 656 (8 bytes = one `MeshNode`), and
+  `generator_tests::primitives` / `ray_tests::ray_repeatability` inherit that. The split *strategy*
+  is now correct and every scene is repeatable; a bucketing or cost tie-break still differs.
+- `collision/distance.rs` GJK picks a different but equally valid witness point for face-face
+  box pairs, so `distance_tests::{box_box_distance, box_cast, overlap, receding_cast}` see a sign
+  flip on the contact point (`(1, -1, -1)` vs Swift's `(1, 1, 1)`) while distances agree. This is a
+  simplex tie-break, not a wrong result.
+- `simulation/wide_joint_solver.rs` diverges from the scalar path at step 2 for the spherical-joint
+  grid (both `wide_joint_tests::joint_grid_*`). Preparation and the wide contact solver agree, so the
+  divergence is in the wide joint solve/store lane grouping.
+- `tests/simulation/wide_equivalence_tests.rs::multi_manifold_terrain` diverges between two *scalar*
+  worlds built by `create_wave_pile`, so the height-field contact path is nondeterministic
+  independently of SIMD.
 
 ## Shared simulation vocabulary
 
