@@ -63,13 +63,17 @@ fn exact_quat(axis: Vec3, radians: f32) -> Quat {
 /// Scratch buffer plus manifold for one collision call, mirroring Swift's
 /// `withUnsafeMutableBufferPointer` setup.
 struct Scratch {
-    points: [LocalManifoldPoint; 8],
+    /// Heap buffer that `manifold.points` addresses. It must not move after `manifold.points` is
+    /// set, so it is boxed rather than stored inline: a `Vec`/array field would be relocated when
+    /// `Scratch` is returned from `new`, leaving `manifold.points` dangling and letting the collide
+    /// call write through a stale pointer.
+    points: Vec<LocalManifoldPoint>,
     manifold: LocalManifold,
 }
 
 impl Scratch {
     fn new(capacity: i32) -> Self {
-        let mut points = [LocalManifoldPoint::default(); 8];
+        let mut points = vec![LocalManifoldPoint::default(); 8];
         let mut manifold = LocalManifold::default();
         manifold.points = points.as_mut_ptr();
         let _ = capacity;

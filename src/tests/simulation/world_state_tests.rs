@@ -37,6 +37,9 @@ use crate::vehicle::vehicle_types::{
 /// interleaving did. `character` is declared before `world` so it is dropped first.
 struct StateScene {
     character: CharacterVirtual<'static>,
+    /// Owns the world allocation and keeps its address stable; every access goes through
+    /// `world_ptr` so the borrow checker does not tie the character's lifetime to this field.
+    #[allow(dead_code)]
     world: Box<World>,
     world_ptr: *mut World,
     vehicles: Vec<VehicleID>,

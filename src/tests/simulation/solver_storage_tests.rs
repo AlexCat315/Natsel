@@ -35,11 +35,14 @@ fn stable_slabs() {
 
     let mut contact = Contact::default();
     contact.payload = Some(first);
-    let view = contact.manifold_buffer();
+    // Swift's `let view = contact.manifoldBuffer` was a live window into the pool slot, so the
+    // reads below re-fetched the value after each store. A Rust `&[Manifold]` would instead promise
+    // the contents cannot change while it is held, which the test deliberately breaks; read through
+    // the view accessor each time, exactly as Swift's pointer-based accessor did.
     for id in 1..1025 {
         let _ = pool.initialize(id);
     }
-    assert_eq!(view[0].points[0].normal_impulse, 7.0);
+    assert_eq!(contact.manifold_buffer()[0].points[0].normal_impulse, 7.0);
 
     // SAFETY: `first` is still slot 0 of `pool`; the intervening `initialize` calls touched other
     // slots only, so this write lands on the same initialized payload the view reads.
@@ -53,7 +56,7 @@ fn stable_slabs() {
             },
         );
     }
-    assert_eq!(view[0].points[0].normal_impulse, 9.0);
+    assert_eq!(contact.manifold_buffer()[0].points[0].normal_impulse, 9.0);
 
     assert_eq!(pool.initialize(0), first);
     // SAFETY: `initialize(0)` just reset slot 0 to a fresh payload.
