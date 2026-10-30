@@ -15,13 +15,17 @@
 | `SphereShape` | `create_sphere_shape` | `Sphere { center, radius }` | 解析解 | 可以 |
 | `CapsuleShape` | `create_capsule_shape` | `Capsule { center1, center2, radius }` | 解析解 | 可以 |
 | `HullShape` | `create_hull_shape` | `&Hull` | 从凸包体积积分 | 可以 |
-| `MeshShape` | `create_mesh_shape` | `TriangleMesh` + `Vec3` 缩放 | **不计质量** | 可以创建，但不会动 |
+| `MeshShape` | `create_mesh_shape` | `TriangleMesh` + `Vec3` 缩放 | **不计质量** | **不可以，仅静态体** |
 | `HeightShape` | `create_height_field_shape` | `HeightField` | **不计质量** | **不可以，仅静态体** |
 | `CompoundShape` | `create_compound_shape` | `&Compound` | **不计质量** | **不可以，仅静态体** |
 
-"仅静态体"是硬性限制：在动态刚体上创建高度场或复合形状会返回空 `ShapeID`（全零），形状不会被创建，也不会报错。所以动态物体需要复合几何时，应该用多个独立形状拼出来，而不是复合形状。
+"仅静态体"是硬性限制：**高度场、复合形状、网格**这三种都不能挂在动态或运动学刚体上，调用会返回空 `ShapeID`（全零），形状不会被创建。
 
-**"不计质量"是更隐蔽的陷阱。** 球、胶囊、凸包三种形状会把密度积分成质量；网格、高度场、复合形状不参与质量计算。这意味着一个只挂了网格形状的动态刚体质量为 0、`inv_mass` 为 0，于是**完全不会移动** —— 它看起来创建成功了，形状类型也正确，但永远停在原地。动态物体必须至少挂一个球/胶囊/凸包来提供质量。
+这条规则存在的原因就是下面的质量问题：这三种形状不计质量。如果一个动态体只挂它们，`inv_mass` 会是 0，物体永远不动 —— 而且看起来一切正常。引擎选择直接拒绝，而不是让你得到一个静默失效的刚体。
+
+动态体需要复合几何时，用 `create_dynamic_compound`（它把复合拆成球/胶囊/凸包子形状，每个子形状正常计质量），或者手动创建多个独立形状。
+
+**质量只来自球、胶囊、凸包。** 这三种形状把密度积分成质量；网格、高度场、复合形状不参与质量计算。因此动态物体必须至少挂一个球/胶囊/凸包。若确实想让某个形状不贡献质量（例如纯触发区域），把它的 `density` 设为 `0.0`。
 
 `create_*_shape` 全部返回 `ShapeID`。空 ID 表示创建失败 —— 常见原因是刚体 ID 无效、或者把静态体专属形状挂到了动态体上。判断方法：
 
@@ -70,7 +74,7 @@ let shape = world.create_capsule_shape(body, &ShapeDef::default(), capsule);
 // 会变成球
 let flat = Capsule::new(Vec3::ZERO, Vec3::new(0.0, 1e-9, 0.0), 0.5);
 let s = world.create_capsule_shape(body, &ShapeDef::default(), flat);
-assert_eq!(world.shape_type(s), ShapeType::SphereShape);
+assert_eq!(world.shape_type(s), Some(ShapeType::SphereShape));
 ```
 
 胶囊是角色胶囊体的标准选择：两段半球的形状让它在楼梯和斜坡上滑动比胶囊化的圆柱自然得多。
@@ -264,13 +268,15 @@ world.enable_shape_pre_solve_events(shape, true);
 
 `enable_speculative_contact`（默认 `true`）让引擎在物体还没真正接触时就生成预测性接触约束，提前阻止穿透。对快速移动但不想开全量 CCD 的物体，这是便宜的替代方案。
 
+需要两方形状都开启才会生效。世界级开关 `world.enable_speculative`（默认 `true`）是总闸，关掉它会让所有形状的预测性接触失效。
+
 关掉它（`false`）会减少一些接触计算，但高速物体更容易穿模。除非你在做性能极紧的场景，否则保持默认。
 
 ## 形状查询
 
 ```rust
-let t = world.shape_type(shape);              // ShapeType
-let b = world.shape_body(shape);              // ShapeID 所属的 BodyID
+let t = world.shape_type(shape);              // Option<ShapeType>
+let b = world.shape_body(shape);              // BodyID（无效 ID 返回空 ID）
 let d = world.shape_density(shape);           // f32
 let f = world.shape_filter(shape);            // Filter
 let aabb = world.shape_aabb(shape);           // AABB（世界空间）
@@ -304,13 +310,13 @@ fn main() {
     let field = create_wave_height_field(64, 64, Vec3::new(100.0, 6.0, 100.0), 2.0, 2.0, false)
         .expect("height field");
     let terrain = world.create_height_field_shape(terrain_body, &ShapeDef::default(), field);
-    assert_eq!(world.shape_type(terrain), ShapeType::HeightShape);
+    assert_eq!(world.shape_type(terrain), Some(ShapeType::HeightShape));
 
     // 静态网格
     let mesh_body = world.create_body(&BodyDef::default());
     let mesh = create_wave_mesh(16, 16, 1.0, 0.3, 1.0, 1.0).expect("mesh");
     let mesh_shape = world.create_mesh_shape(mesh_body, &ShapeDef::default(), mesh, Vec3::ONE);
-    assert_eq!(world.shape_type(mesh_shape), ShapeType::MeshShape);
+    assert_eq!(world.shape_type(mesh_shape), Some(ShapeType::MeshShape));
 
     // 静态复合体
     let compound_body = world.create_body(&BodyDef::default());
@@ -322,7 +328,7 @@ fn main() {
     let compound = Compound::new(&cdef).expect("compound");
     let compound_shape =
         world.create_compound_shape(compound_body, &ShapeDef::default(), &compound);
-    assert_eq!(world.shape_type(compound_shape), ShapeType::CompoundShape);
+    assert_eq!(world.shape_type(compound_shape), Some(ShapeType::CompoundShape));
 
     // 动态：球 + 胶囊 + 凸包，三个形状共用一个刚体
     let mut def = BodyDef::default();
@@ -371,7 +377,7 @@ fn main() {
 
 **参数是半长而不是全尺寸。** `make_box_hull(10.0, 0.5, 10.0)` 得到的是 20×1×20 的地面。写成 `(20.0, 1.0, 20.0)` 会得到两倍大的地面 —— 通常只是看起来"地面比预想的大"，不容易发现。
 
-**在动态刚体上只挂网格/高度场/复合形状。** 这三种形状不计质量，刚体 `inv_mass` 为 0，于是永远不动。触摸起来像"物理系统没启动"。给动态体至少加一个球、胶囊或凸包提供质量。
+**试图在动态刚体上挂网格/高度场/复合形状。** 这三种形状不计质量，只有静态体能挂。调用会返回空 `ShapeID`（用 `world.shape_is_valid(id)` 可判断），形状不会被创建。动态体需要复合几何时用 `create_dynamic_compound`。
 
 **以为传感器不影响质量。** 传感器仍按 `density` 贡献质量。想让触发区域"无重量"，把 `density` 设为 `0.0`。
 

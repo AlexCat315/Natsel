@@ -458,11 +458,18 @@ impl World {
 
         let index = self.body_index(body_id);
         let mut body = self.bodies[index as usize].clone();
-        if body.type_ != BodyType::StaticBody
-            && (shape_type == ShapeType::CompoundShape || shape_type == ShapeType::HeightShape)
-        {
-            // Compound and height shapes must be on static bodies.
-            return ShapeID::default();
+        if body.type_ != BodyType::StaticBody {
+            if shape_type == ShapeType::CompoundShape || shape_type == ShapeType::HeightShape {
+                // Compound and height shapes must be on static bodies.
+                return ShapeID::default();
+            }
+            if shape_type == ShapeType::MeshShape {
+                // Meshes contribute no mass, so a dynamic body relying on one would get zero
+                // inverse mass and silently never move. `create_dynamic_compound` already
+                // rejects mesh children for the same reason. Use a hull/sphere/capsule for the
+                // moving body, or attach the mesh to a static body.
+                return ShapeID::default();
+            }
         }
 
         let body_transform = self.body_sim(&body).transform;
@@ -644,7 +651,11 @@ impl World {
         self.shapes[(id.index1 - 1) as usize].clone()
     }
 
-    pub(crate) fn shape_is_valid(&self, id: ShapeID) -> bool {
+    /// True while the shape id refers to a live shape in this world.
+    ///
+    /// Shape creation returns a null `ShapeID` when the request is rejected (for example a mesh
+    /// shape on a dynamic body), so check this before dereferencing the result.
+    pub fn shape_is_valid(&self, id: ShapeID) -> bool {
         if id.world0 != self.world_id {
             return false;
         }

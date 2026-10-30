@@ -103,7 +103,12 @@ fn mesh_materials() {
     let mesh = TriangleMesh::new(&vertices, &indices, Some(&materials), MeshBuildOptions::default())
         .expect("mesh creation failed");
 
-    let body = make_body(&mut world);
+    // Mesh shapes are static-only: they contribute no mass, so attaching one to a dynamic body
+    // would leave it with zero inverse mass. This test only exercises material storage, so a
+    // static body is the right fixture.
+    let mut body_def = BodyDef::default();
+    body_def.type_ = BodyType::StaticBody;
+    let body = world.create_body(&body_def);
     let mut shape_def = ShapeDef::default();
     let mut material_a = SurfaceMaterial::default_material();
     material_a.friction = 0.2;

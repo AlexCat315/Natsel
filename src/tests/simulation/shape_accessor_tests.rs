@@ -25,9 +25,9 @@ fn type_and_owner() {
     );
     let hull_shape = world.create_hull_shape(body, &shape_def, &make_box_hull(0.5, 0.5, 0.5));
 
-    assert_eq!(world.shape_type(sphere_shape), ShapeType::SphereShape);
-    assert_eq!(world.shape_type(capsule_shape), ShapeType::CapsuleShape);
-    assert_eq!(world.shape_type(hull_shape), ShapeType::HullShape);
+    assert_eq!(world.shape_type(sphere_shape), Some(ShapeType::SphereShape));
+    assert_eq!(world.shape_type(capsule_shape), Some(ShapeType::CapsuleShape));
+    assert_eq!(world.shape_type(hull_shape), Some(ShapeType::HullShape));
 
     for shape in [sphere_shape, capsule_shape, hull_shape] {
         assert!(world.shape_is_valid(shape));

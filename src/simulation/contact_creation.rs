@@ -337,7 +337,10 @@ impl World {
             contact.flags |= ContactFlags::ENABLE_CONTACT_EVENTS.0;
         }
 
-        if (shape_a.flags & ShapeFlags::ENABLE_SPECULATIVE.0) != 0
+        // The world-level switch gates the per-shape opt-in: both shapes must allow speculative
+        // points and the world must not have disabled speculative collision.
+        if self.enable_speculative
+            && (shape_a.flags & ShapeFlags::ENABLE_SPECULATIVE.0) != 0
             && (shape_b.flags & ShapeFlags::ENABLE_SPECULATIVE.0) != 0
         {
             contact.flags |= ContactFlags::ENABLE_SPECULATIVE_POINTS.0;

@@ -27,9 +27,11 @@ pub enable_speculative: bool;         // 默认 true
 |------|------|------|
 | `enable_continuous` | `true` | 关闭后全部 CCD 停止，高速物体将穿透 |
 | `enable_dynamic_continuous` | `false` | 额外让**动态↔动态**的配对也做扫掠 |
-| `enable_speculative` | `true` | 保存于快照，但当前版本不据此改变模拟行为 |
+| `enable_speculative` | `true` | 预测性接触的总闸；关闭后所有形状的预测性接触失效 |
 
-预测接触实际由**形状级**的 `ShapeDef.enable_speculative_contact` 控制（默认 `true`），不是由 `world.enable_speculative` 控制。后者只是一个会被快照保存/恢复的标志位，写入它不会改变模拟结果。
+预测性接触需要**两级开关同时开启**：世界级 `world.enable_speculative` 是总闸，形状级 `ShapeDef.enable_speculative_contact`（默认 `true`）是逐个形状的选择。只有参与接触的两个形状都开启了 `enable_speculative_contact`，且世界总闸也开着，接触才会带上预测性约束。
+
+想整体关掉预测性接触，设置 `world.enable_speculative = false` 即可，不必逐个改形状。
 
 对应的方法：
 

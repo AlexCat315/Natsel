@@ -312,8 +312,9 @@ pub fn create_mesh_shape(&mut self, body_id: BodyID, def: &ShapeDef, data: Trian
 ### 查询形状
 
 ```rust
-pub fn shape_type(&self, shape_id: ShapeID) -> ShapeType
-pub fn shape_body(&self, shape_id: ShapeID) -> BodyID
+pub fn shape_type(&self, shape_id: ShapeID) -> Option<ShapeType>
+pub fn shape_body(&self, shape_id: ShapeID) -> BodyID   // 无效 ID 返回空 BodyID
+pub fn shape_is_valid(&self, id: ShapeID) -> bool
 pub fn shape_aabb(&self, shape_id: ShapeID) -> AABB
 pub fn shape_world_aabb(&self, id: ShapeID) -> WorldAABB
 pub fn shape_is_sensor(&self, shape_id: ShapeID) -> bool

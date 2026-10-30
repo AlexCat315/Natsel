@@ -1338,23 +1338,36 @@ impl World {
 // MARK: - Shape accessors
 
 impl World {
-    /// The shape's geometry type.
-    pub fn shape_type(&self, shape_id: ShapeID) -> ShapeType {
-        self.shapes[(shape_id.index1 - 1) as usize].type_
+    /// The live shape for `id`, or `None` when the id is stale or was never created.
+    ///
+    /// Several shape queries go through this so a rejected or destroyed id returns a sensible
+    /// default instead of panicking.
+    pub(crate) fn live_shape(&self, id: ShapeID) -> Option<&crate::simulation::shape_runtime::Shape> {
+        if !self.shape_is_valid(id) {
+            return None;
+        }
+        Some(&self.shapes[(id.index1 - 1) as usize])
     }
 
-    /// The body that owns this shape.
+    /// The shape's geometry type, or `None` when the id is not a live shape.
+    pub fn shape_type(&self, shape_id: ShapeID) -> Option<ShapeType> {
+        self.live_shape(shape_id).map(|shape| shape.type_)
+    }
+
+    /// The body that owns this shape, or a null `BodyID` when the id is not a live shape.
     pub fn shape_body(&self, shape_id: ShapeID) -> BodyID {
-        let shape = self.shapes[(shape_id.index1 - 1) as usize].clone();
+        let Some(shape) = self.live_shape(shape_id) else {
+            return BodyID::default();
+        };
         let body = self.bodies[shape.body_id as usize].clone();
         BodyID::new(body.id + 1, self.world_id, body.generation)
     }
 
     // MARK: Material
 
-    /// The shape's density.
+    /// The shape's density, or zero when the id is not a live shape.
     pub fn shape_density(&self, shape_id: ShapeID) -> f32 {
-        self.shapes[(shape_id.index1 - 1) as usize].density
+        self.live_shape(shape_id).map_or(0.0, |shape| shape.density)
     }
 
     /// Set the shape density. Updating the body mass requires a body pass.

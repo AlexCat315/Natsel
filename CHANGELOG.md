@@ -27,3 +27,20 @@
   `trees25`, `vehicles`, `washer` and `convex_pile`.
 - Mesh binned-SAH node counts, GJK box-box witness points, wide vs scalar joint stepping, and the
   height-field contact determinism now agree with the reference implementation.
+- `world.enable_speculative` was declared and snapshot-restored but never read, so writing it had no
+  effect. It is now the master gate for speculative contacts in `create_contact`: a contact only
+  gets `ENABLE_SPECULATIVE_POINTS` when the world switch and both shapes'
+  `ShapeDef::enable_speculative_contact` are set. Defaults are unchanged, so existing scenes hash
+  identically.
+- Mesh shapes could be attached to dynamic and kinematic bodies, where they contribute no mass
+  (`compute_shape_mass` only integrates capsules, hulls and spheres). The body ended up with zero
+  inverse mass and silently never moved. Mesh shapes are now static-only, matching the existing
+  rule for height fields and compounds and the mesh rejection already performed by
+  `create_dynamic_compound`; the call returns a null `ShapeID`.
+
+### Changed
+
+- `World::shape_type` returns `Option<ShapeType>` instead of `ShapeType`, and `World::shape_body`
+  returns a null `BodyID` for a stale id. Both previously indexed the shape array unchecked and
+  panicked on a rejected or destroyed id, which the new mesh rejection made easy to hit.
+- `World::shape_is_valid` is now public, so callers can test a shape id before using it.
