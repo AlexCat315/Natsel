@@ -1,36 +1,35 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 
-const spmSnippet = `// Package.swift
-dependencies: [
-    .package(url: "https://github.com/AlexCat315/Natsel", branch: "main"),
-]`
+const cargoSnippet = `# Cargo.toml
+[dependencies]
+natsel = { git = "https://github.com/AlexCat315/Natsel", branch = "main" }`
 
 const copied = ref(false)
 async function copy() {
-  await navigator.clipboard.writeText(spmSnippet)
+  await navigator.clipboard.writeText(cargoSnippet)
   copied.value = true
   setTimeout(() => (copied.value = false), 1600)
 }
 
 const ways = [
   {
-    title: 'Swift Package Manager',
-    desc: '推荐方式。跟随 main 分支，锁文件记录实际提交。',
+    title: 'Cargo git 依赖',
+    desc: '推荐方式。跟随 main 分支，Cargo.lock 记录实际提交。',
     icon: 'M12 2 2 7l10 5 10-5zM2 17l10 5 10-5M2 12l10 5 10-5',
   },
   {
     title: '本地路径引用',
-    desc: '克隆后用 .package(path:) 引用，便于调试与贡献。',
+    desc: '克隆后用 path 依赖引用，便于调试与贡献。',
     icon: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3',
   },
 ]
 
 const steps = [
   { n: '01', t: '克隆仓库', d: 'git clone https://github.com/AlexCat315/Natsel.git' },
-  { n: '02', t: '添加依赖', d: '在 Package.swift 中加入 Natsel 包' },
-  { n: '03', t: '构建', d: 'swift build' },
-  { n: '04', t: '验证', d: 'swift test，或 swift run Benchmarks' },
+  { n: '02', t: '添加依赖', d: '在 Cargo.toml 的 [dependencies] 中加入 natsel' },
+  { n: '03', t: '构建', d: 'cargo build --release' },
+  { n: '04', t: '验证', d: 'cargo test，或 cargo run --release --bin benchmarks' },
 ]
 </script>
 
@@ -41,7 +40,7 @@ const steps = [
         <span class="eyebrow reveal">获取</span>
         <h1 class="reveal" style="font-size: clamp(32px, 4.5vw, 50px)">获取 Natsel</h1>
         <p class="reveal" style="color: var(--text-dim); max-width: 640px; font-size: 17px">
-          Natsel 通过 Swift Package Manager 分发，要求 Swift 6.4 与 macOS 26 / iOS 26。
+          Natsel 通过 Cargo 分发，要求 Rust 1.85 及以上（edition 2024），无第三方依赖。
         </p>
       </div>
     </section>
@@ -61,10 +60,10 @@ const steps = [
 
       <div class="snippet-card glass hud reveal">
         <div class="snippet-head">
-          <span>Package.swift</span>
+          <span>Cargo.toml</span>
           <button class="copy-btn" @click="copy">{{ copied ? '已复制 ✓' : '复制' }}</button>
         </div>
-        <pre class="snippet-body">{{ spmSnippet }}</pre>
+        <pre class="snippet-body">{{ cargoSnippet }}</pre>
       </div>
 
       <div class="steps-grid">

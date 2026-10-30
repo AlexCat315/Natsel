@@ -1,8 +1,8 @@
 const KEYWORDS =
-  /\b(import|func|let|var|struct|class|enum|protocol|extension|return|if|else|for|while|switch|case|default|guard|in|init|self|nil|true|false|private|public|internal|static|final|throws|try|await|async|do|catch|some|where|typealias|associatedtype|deinit|subscript|operator|break|continue|repeat|defer|inout|weak|unowned|indirect|convenience|required|override|open|mutating|nonmutating|get|set|willSet|didSet)\b/g
+  /\b(fn|let|mut|struct|enum|trait|impl|pub|crate|mod|use|return|if|else|for|while|match|loop|in|self|Self|true|false|const|static|unsafe|where|as|ref|move|async|await|dyn|type|break|continue|extern|super|Option|Result|Some|None|Ok|Err)\b/g
 
 const SHELL_KEYWORDS =
-  /\b(curl|sh|sudo|brew|apt|git|cd|ls|export|swift|echo|source|chmod|mkdir)\b/g
+  /\b(curl|sh|sudo|brew|apt|git|cd|ls|export|cargo|rustc|echo|source|chmod|mkdir)\b/g
 
 const STRING_RE = /(&quot;.*?&quot;|&#39;.*?&#39;)/g
 

@@ -14,7 +14,7 @@ const rows = [
 
 const conditions = [
   { label: '机器', value: 'Apple M1 · 8 核 · macOS 27.0.1' },
-  { label: '构建', value: 'swift build -c release' },
+  { label: '构建', value: 'cargo build --release' },
   { label: '线程', value: 'workerCount = 1' },
   { label: '步长', value: 'dt = 1/60 · 4 子步' },
   { label: '取值', value: '每场景 3 次，取最小值' },

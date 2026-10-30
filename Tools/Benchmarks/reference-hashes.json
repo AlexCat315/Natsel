@@ -1,0 +1,106 @@
+{
+  "note": "Reference worldStateHash values captured from the Swift implementation (NATSEL_HASH=1, --all -r=1) on 2026-10-30, immediately before the Swift tree was removed.",
+  "harness": {
+    "binary": "Benchmarks",
+    "args": [
+      "--all",
+      "-r=1"
+    ],
+    "env": {
+      "NATSEL_HASH": "1"
+    }
+  },
+  "seed": "0xcbf29ce484222325",
+  "scenes": [
+    {
+      "scene": "large_pyramid",
+      "steps": 200,
+      "state_hash": "d7b22e12898c8d1a"
+    },
+    {
+      "scene": "many_pyramids",
+      "steps": 100,
+      "state_hash": "dc7d403ce310514c"
+    },
+    {
+      "scene": "joint_grid",
+      "steps": 100,
+      "state_hash": "da51181e40a83165"
+    },
+    {
+      "scene": "spinner",
+      "steps": 800,
+      "state_hash": "ee0d94534e6a0736"
+    },
+    {
+      "scene": "sleep",
+      "steps": 300,
+      "state_hash": "8c96745911c15f56"
+    },
+    {
+      "scene": "trees25",
+      "steps": 500,
+      "state_hash": "b27b797582275cb2"
+    },
+    {
+      "scene": "washer",
+      "steps": 1000,
+      "state_hash": "5cc48804c01920e"
+    },
+    {
+      "scene": "convex_pile",
+      "steps": 500,
+      "state_hash": "643398563f6aa9bc"
+    },
+    {
+      "scene": "vehicles",
+      "steps": 600,
+      "state_hash": "460702f3dd552f8b"
+    },
+    {
+      "scene": "cloth",
+      "steps": 300,
+      "state_hash": "bca1f3ae632bea44"
+    },
+    {
+      "scene": "cloth_self64",
+      "steps": 240,
+      "state_hash": "cbf29ce484222325"
+    },
+    {
+      "scene": "soft_cubes",
+      "steps": 300,
+      "state_hash": "f78b19f394076aa7"
+    },
+    {
+      "scene": "cloth_stack",
+      "steps": 300,
+      "state_hash": "f78b19f394076aa7"
+    },
+    {
+      "scene": "path_beads",
+      "steps": 300,
+      "state_hash": "cf96da92f19a77c1"
+    },
+    {
+      "scene": "ragdoll_motors",
+      "steps": 300,
+      "state_hash": "fb7197cd26851dd6"
+    },
+    {
+      "scene": "rollback",
+      "steps": 200,
+      "state_hash": "d7b22e12898c8d1a"
+    },
+    {
+      "scene": "soft_queries",
+      "steps": 30,
+      "state_hash": "cbf29ce484222325"
+    },
+    {
+      "scene": "sparse_soft",
+      "steps": 100,
+      "state_hash": "cbf29ce484222325"
+    }
+  ]
+}

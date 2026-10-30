@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { highlight } from '@/utils/highlight'
 
 const props = withDefaults(defineProps<{ code: string; lang?: string; title?: string }>(), {
-  lang: 'swift',
+  lang: 'rust',
   title: '',
 })
 

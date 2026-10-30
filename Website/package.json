@@ -2,7 +2,7 @@
   "name": "natsel-website",
   "version": "1.0.0",
   "private": true,
-  "description": "Official website for Natsel — the fast, deterministic Swift physics engine.",
+  "description": "Official website for Natsel — the fast, deterministic Rust physics engine.",
   "type": "module",
   "scripts": {
     "dev": "vite",

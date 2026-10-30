@@ -1,73 +1,82 @@
 # 快速开始
 
-本指南带你通过 SwiftPM 集成 Natsel，并运行第一个物理世界。
+本指南带你通过 Cargo 集成 Natsel，并运行第一个物理世界。
 
 ## 环境要求
 
-- Swift 6.4 工具链
-- macOS 26 / iOS 26 及以上（需要 `InlineArray`）
+- Rust 1.85 及以上（edition 2024）
+- 无需第三方依赖，`std`-only
 
 ## 添加依赖
 
-在你的 `Package.swift` 中加入：
+在 `Cargo.toml` 中通过 git 依赖引入：
 
-```swift
-dependencies: [
-    .package(url: "https://github.com/AlexCat315/Natsel", branch: "main"),
-],
-targets: [
-    .target(name: "MyApp", dependencies: ["Natsel"]),
-]
+```toml
+[dependencies]
+natsel = { git = "https://github.com/AlexCat315/Natsel", branch = "main" }
 ```
 
 ## 创建一个世界
 
-```swift
-import Natsel
+```rust
+use natsel::simulation::world_runtime::World;
 
-let world = World()
+let mut world = World::default();
 ```
 
 ## 添加地面
 
 地面是一个静态刚体：
 
-```swift
-world.addBox(
-    position: Vec3(0, -1, 0),
-    halfExtents: Vec3(20, 1, 20),
-    isStatic: true)
+```rust
+use natsel::collision::hull::make_box_hull;
+use natsel::math::types::Pos;
+use natsel::types::body_def::BodyDef;
+use natsel::types::shape_def::ShapeDef;
+
+let mut ground_def = BodyDef::default();
+ground_def.position = Pos::new(0.0, -1.0, 0.0);
+let ground = world.create_body(&ground_def);
+
+let shape_def = ShapeDef::default();
+let _ = world.create_hull_shape(ground, &shape_def, &make_box_hull(20.0, 1.0, 20.0));
 ```
 
 ## 添加一个动态盒子
 
-```swift
-let body = world.addBody(BodyDef(
-    type: .dynamic,
-    position: Vec3(0, 5, 0),
-    shape: .box(halfExtents: Vec3(0.5, 0.5, 0.5))))
+```rust
+let mut body_def = BodyDef::default();
+body_def.type_ = BodyType::DynamicBody;
+body_def.position = Pos::new(0.0, 5.0, 0.0);
+let body = world.create_body(&body_def);
+
+let _ = world.create_hull_shape(body, &shape_def, &make_box_hull(0.5, 0.5, 0.5));
 ```
+
+`BodyType` 位于 `natsel::types::body_def`。
 
 ## 推进模拟
 
-```swift
-for _ in 0 ..< 60 {
-    world.step(1.0 / 60.0)
+```rust
+for _ in 0..60 {
+    world.step(1.0 / 60.0, 4);
 }
 ```
 
+`step` 的第二个参数是子步数；求解器内部按子步推进。
+
 ## 读取位置
 
-```swift
-let position = world.position(body)
-print(position)
+```rust
+let position = world.body_position(body);
+println!("{position:?}");
 ```
 
 ## 运行测试与基准
 
 ```bash
-swift test
-swift run Benchmarks
+cargo test
+cargo run --release --bin benchmarks -- --all -r=1
 ```
 
 ## 下一步

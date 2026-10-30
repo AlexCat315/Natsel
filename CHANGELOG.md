@@ -13,6 +13,13 @@
 - `math/functions.rs::unwind_angle` now implements the IEEE 754 remainder exactly, matching Swift's
   `Float.remainder(dividingBy:)`; the previous f32 form shifted procedural wave-mesh vertices by a
   few ULP.
+- CI, editor configuration, and developer documentation target Cargo only.
+
+### Removed
+
+- The Swift implementation tree (`Sources/`, `Tests/`, `Package.swift`) and its build artifacts.
+  The Swift sources remain available in git history; reference state hashes captured before
+  removal live in `Tools/Benchmarks/reference-hashes.json`.
 
 ### Fixed
 

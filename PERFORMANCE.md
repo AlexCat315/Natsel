@@ -8,12 +8,12 @@
 每个场景至少三次，记录全部耗时并比较最小值。世界创建、预热与最终状态哈希在计时区间之外。
 
 ```sh
-swift build -c release --product Benchmarks
+cargo build --release --bin benchmarks
 # 修改代码前保存基准程序，再构建修改后的版本。
-cp .build/release/Benchmarks /tmp/Natsel-before
+cp target/release/benchmarks /tmp/Natsel-before
 # 完成修改后重新构建。
-swift build -c release --product Benchmarks
-python3 Tools/Benchmarks/compare.py /tmp/Natsel-before .build/release/Benchmarks \
+cargo build --release --bin benchmarks
+python3 Tools/Benchmarks/compare.py /tmp/Natsel-before target/release/benchmarks \
   --scenes many_pyramids joint_grid --repeats 3 --output /tmp/natsel-comparison
 ```
 
@@ -28,7 +28,7 @@ python3 Tools/Benchmarks/compare.py /tmp/Natsel-before .build/release/Benchmarks
 ## 历史优化记录
 
 以下为同一轮 Natsel 优化前后的历史测量，不代表当前版本的性能。
-机器：Apple M1，8 核，macOS 27.0.1；`swift build -c release`；单个 worker；
+机器：Apple M1，8 核，macOS 27.0.1；迁移前的 Swift 构建（`swift build -c release`）；单个 worker；
 `dt = 1/60`，4 子步，每场景三次取最小值。
 
 | 场景 | 优化前 ms | 优化后 ms | 提速 |

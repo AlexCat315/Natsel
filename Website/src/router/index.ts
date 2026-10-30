@@ -7,7 +7,7 @@ const router = createRouter({
       path: '/',
       name: 'home',
       component: () => import('@/views/HomeView.vue'),
-      meta: { title: 'Natsel · Swift 物理引擎' },
+      meta: { title: 'Natsel · Rust 物理引擎' },
     },
     {
       path: '/features',

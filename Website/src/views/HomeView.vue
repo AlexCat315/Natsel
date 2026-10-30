@@ -3,24 +3,34 @@ import { onMounted, reactive } from 'vue'
 import { RouterLink } from 'vue-router'
 import CodeBlock from '@/components/CodeBlock.vue'
 
-const quickCode = `import Natsel
+const quickCode = `use natsel::collision::hull::make_box_hull;
+use natsel::math::types::Pos;
+use natsel::simulation::world_runtime::World;
+use natsel::types::body_def::{BodyDef, BodyType};
+use natsel::types::shape_def::ShapeDef;
 
-let world = World()
+let mut world = World::default();
+let shape_def = ShapeDef::default();
 
 // 地面与一个盒子
-world.addBox(position: Vec3(0, -1, 0), halfExtents: Vec3(20, 1, 20))
-let body = world.addBody(
-  BodyDef(type: .dynamic,
-          position: Vec3(0, 5, 0),
-          shape: .box(halfExtents: Vec3(0.5, 0.5, 0.5))))
+let mut ground_def = BodyDef::default();
+ground_def.position = Pos::new(0.0, -1.0, 0.0);
+let ground = world.create_body(&ground_def);
+world.create_hull_shape(ground, &shape_def, &make_box_hull(20.0, 1.0, 20.0));
+
+let mut box_def = BodyDef::default();
+box_def.type_ = BodyType::DynamicBody;
+box_def.position = Pos::new(0.0, 5.0, 0.0);
+let body = world.create_body(&box_def);
+world.create_hull_shape(body, &shape_def, &make_box_hull(0.5, 0.5, 0.5));
 
 // 以固定步长推进
-for _ in 0 ..< 60 {
-  world.step(1.0 / 60.0)
+for _ in 0..60 {
+    world.step(1.0 / 60.0, 4);
 }
 
-let position = world.position(body)
-print(position.y)  // 正在下落…`
+let position = world.body_position(body);
+println!("{}", position.y);  // 正在下落…`
 
 const highlights = [
   {
@@ -73,14 +83,14 @@ onMounted(() => {
     <div class="container">
       <div class="hero-top">
         <div class="hero-badge reveal">
-          <span class="dot"></span> Swift · 确定性 · 多线程 · 100% 原生
+          <span class="dot"></span> Rust · 确定性 · 多线程 · 100% 原生
         </div>
         <h1 class="hero-title reveal">
           让世界<br />
           <span class="gradient-text">按物理规律运转</span>
         </h1>
         <p class="hero-sub reveal">
-          Natsel 是用 Swift 编写的快速、确定性物理引擎。刚体、车辆、角色、骨骼、软体、关节、连续碰撞
+          Natsel 是用 Rust 编写的快速、确定性物理引擎。刚体、车辆、角色、骨骼、软体、关节、连续碰撞
           与多线程宽 SIMD 求解器——为游戏与实时模拟提供坚实底座。
         </p>
         <div class="hero-cta reveal">
@@ -130,11 +140,11 @@ onMounted(() => {
       <div class="code-copy reveal">
         <span class="eyebrow">简洁 API</span>
         <h2 class="section-title">十几行，跑起一个世界</h2>
-        <p class="section-sub">Swift 风格的 API：`Vec3`、`Transform`、`World`，配合自由函数与类型化的 `BodyDef`，直观且可发现。</p>
+        <p class="section-sub">b3 风格的 API：`Vec3`、`Transform`、`World`，配合自由函数与类型化的 `BodyDef`，直观且可发现。</p>
         <RouterLink to="/docs/concepts" class="btn btn-ghost">学习核心概念</RouterLink>
       </div>
       <div class="reveal">
-        <CodeBlock :code="quickCode" title="hello-physics.swift" />
+        <CodeBlock :code="quickCode" title="hello-physics.rs" />
       </div>
     </div>
   </section>
@@ -144,7 +154,7 @@ onMounted(() => {
     <div class="container reveal">
       <div class="cta-box glass hud">
         <h2>为你的世界注入物理</h2>
-        <p>通过 SwiftPM 加入 Natsel，立即开始。</p>
+        <p>通过 Cargo 加入 Natsel，立即开始。</p>
         <div class="hero-cta" style="justify-content: center">
           <RouterLink to="/download" class="btn btn-primary">获取 Natsel</RouterLink>
           <RouterLink to="/benchmarks" class="btn btn-ghost">查看性能数据</RouterLink>

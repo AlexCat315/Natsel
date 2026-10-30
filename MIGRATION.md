@@ -1,17 +1,18 @@
 # Natsel: Swift → Rust migration
 
-This document tracks the full rewrite of the Natsel deterministic 3D physics engine from Swift to
-Rust. It is the working contract for every translation step: read it before translating a file.
+This document records the full rewrite of the Natsel deterministic 3D physics engine from Swift to
+Rust. It documents how each translation step was carried out and how parity was verified; the
+migration is complete and the Swift sources have been removed.
 
 ## Target
 
 - Crate: `natsel` (see [Cargo.toml](file:///Cargo.toml)), edition 2024, `rust-version = 1.85`,
   `std`-only (no third-party dependencies).
-- Sources: `src/` mirrors `Sources/Natsel/` one Rust file per Swift file.
-- Binary: `src/bin/benchmarks.rs` from `Sources/Benchmarks/`.
-- Tests: Rust `#[cfg(test)]` modules / `tests/` from `Tests/NatselTests/`.
-- The Swift tree (`Sources/`, `Tests/`, `Package.swift`) stays in place as the translation
-  reference until the port is complete and validated, then it is removed.
+- Sources: `src/` mirrors the former `Sources/Natsel/`, one Rust file per Swift file.
+- Binary: `src/bin/benchmarks.rs` from the former `Sources/Benchmarks/`.
+- Tests: in-crate `#[cfg(test)]` modules from the former `Tests/NatselTests/`.
+- The Swift tree (`Sources/`, `Tests/`, `Package.swift`) was removed on 2026-10-30 after the
+  coverage audit and hash parity check below. Git history retains it as the translation reference.
 
 ## Progress
 
@@ -34,12 +35,21 @@ Updated as batches land. "Lines" are source lines.
 
 Every Swift file under `Sources/Natsel/` has a Rust counterpart: 164/164 files, one Rust file per
 Swift file. The crate is ~100,000 Rust lines across 330 files, `cargo build --lib` and
-`cargo build --bin benchmarks` both succeed, and the full test suite compiles.
-`Sources/`, `Tests/` and `Package.swift` are still in place as the translation reference.
+`cargo build --bin benchmarks` both succeed, and the full test suite passes (530 `#[test]`).
 
-Hash parity: both binaries build in release mode and every one of the 18 benchmark scenes
-(`--all`, `NATSEL_HASH=1`) ends with the same `state:` hash in Rust and Swift, including the
+Final coverage audit (2026-10-30, before the Swift tree was deleted): all 164 engine modules and
+all 134 Swift test files have Rust counterparts; 436 Swift type declarations resolve to Rust types
+(six were renamed or inlined, e.g. `QHVertex` → `QhVertex`, `MeshBucket` → `Bucket`); 1,558 of
+1,580 function names match directly and the remaining 22 were verified as renames or nested
+helpers; no `unimplemented!`/`todo!` placeholders exist in `src/`. The crate cross-checks for
+`x86_64-pc-windows-msvc`, and `base/platform.rs` uses `std` primitives on every platform.
+
+Hash parity: both binaries were built in release mode and every one of the 18 benchmark scenes
+(`--all`, `NATSEL_HASH=1`) ended with the same `state:` hash in Rust and Swift, including the
 longest runs (`washer` 1000 steps, `spinner` 800, `vehicles` 600, `trees25`/`convex_pile` 500).
+The reference values are recorded in
+[Tools/Benchmarks/reference-hashes.json](Tools/Benchmarks/reference-hashes.json) so parity stays
+verifiable after the Swift tree was removed.
 
 ### Batch log
 

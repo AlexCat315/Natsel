@@ -36,7 +36,7 @@ const columns = [
             </svg>
             <span>Natsel</span>
           </div>
-          <p>用 Swift 编写的快速、确定性物理引擎，为游戏与实时模拟而生。</p>
+          <p>用 Rust 编写的快速、确定性物理引擎，为游戏与实时模拟而生。</p>
           <div class="socials">
             <a href="https://github.com/AlexCat315/Natsel" target="_blank" rel="noopener" aria-label="GitHub">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
@@ -60,7 +60,7 @@ const columns = [
 
       <div class="footer-bottom">
         <span>© {{ year }} Natsel.</span>
-        <span>Swift · SIMD · Multithreaded Determinism</span>
+        <span>Rust · Wide Lanes · Multithreaded Determinism</span>
       </div>
     </div>
   </footer>
