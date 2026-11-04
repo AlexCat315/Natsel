@@ -19,9 +19,9 @@
 //   `clipVector`).
 //
 // Swift holds the world as `unowned let world`, a non-owning class reference usable for both
-// read-only queries and mutations. Rust models that as a single `&'w mut World` field: the
-// callbacks below only ever read the world while they write the character's own vectors, so the
-// split field borrows compile, mirroring Swift's unchecked class-exclusivity aliasing.
+// read-only queries and mutations. WorldAccess creates references only while a character method
+// runs. The safe constructor keeps an exclusive lifetime borrow; the unsafe constructor lets an
+// owner store several characters alongside a stable world and serialize their operations.
 //
 // Swift's `maxSlopeAngle` carries a `didSet` observer. Rust has no observers; `set_max_slope_angle`
 // reproduces it (the stored field stays `pub` exactly as Swift's `public var`, but a direct field
@@ -30,6 +30,9 @@
 // ported callers per the migration convention.
 
 use std::ffi::c_void;
+use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
+use std::ptr::NonNull;
 
 use crate::base::constants as b3;
 use crate::collision::mover::plane_solver::{clip_vector, solve_planes};
@@ -191,10 +194,34 @@ pub struct State {
 /// Return false to ignore a shape. Swift's `((ShapeID, BodyID) -> Bool)?`.
 type ContactFilter = dyn Fn(ShapeID, BodyID) -> bool;
 
+/// Non-owning world access; no reference is retained between character calls.
+struct WorldAccess<'w> {
+    pointer: NonNull<World>,
+    borrow: PhantomData<&'w mut World>,
+}
+
+impl Deref for WorldAccess<'_> {
+    type Target = World;
+
+    fn deref(&self) -> &World {
+        // SAFETY: the constructors guarantee the world outlives this handle and
+        // no external mutation overlaps a character call or its returned borrow.
+        unsafe { self.pointer.as_ref() }
+    }
+}
+
+impl DerefMut for WorldAccess<'_> {
+    fn deref_mut(&mut self) -> &mut World {
+        // SAFETY: the safe constructor holds the exclusive world borrow. The
+        // raw constructor requires the owner to serialize all world access.
+        unsafe { self.pointer.as_mut() }
+    }
+}
+
 /// A virtual character driven by [`CharacterVirtual::update`] or
 /// [`CharacterVirtual::extended_update`] once per frame.
 pub struct CharacterVirtual<'w> {
-    world: &'w mut World,
+    world: WorldAccess<'w>,
 
     /// Position of the feet. `private(set)` in Swift; read through [`Self::position`].
     position: Pos,
@@ -324,8 +351,46 @@ impl<'w> CharacterVirtual<'w> {
         &*self.world
     }
 
+    /// Access the world between character updates. The borrow prevents access
+    /// to this character until the returned world reference is released.
+    pub fn world_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+
     /// Swift's failable `init?(world:_:)`. Returns `None` when the definition is invalid.
     pub fn new(world: &'w mut World, def: &CharacterDef) -> Option<Self> {
+        Self::with_world(
+            WorldAccess {
+                pointer: NonNull::from(world),
+                borrow: PhantomData,
+            },
+            def,
+        )
+    }
+
+    /// Construct a character stored alongside a world owned by its caller.
+    /// A null pointer or invalid definition returns `None`.
+    ///
+    /// # Safety
+    /// - `world` must point to a fully initialized, aligned World at a stable
+    ///   address, live for `'w` and until every character using it is discarded.
+    /// - All access to that world and its characters must be serialized. No
+    ///   conflicting reference may overlap a character method or a borrow it
+    ///   returns, including during construction and `destroy`.
+    /// - The caller must preserve pointer validity/provenance and destroy each
+    ///   character's inner body before replacing or dropping the world. Several
+    ///   characters may share the pointer under these same rules.
+    pub unsafe fn from_raw_world(world: *mut World, def: &CharacterDef) -> Option<Self> {
+        Self::with_world(
+            WorldAccess {
+                pointer: NonNull::new(world)?,
+                borrow: PhantomData,
+            },
+            def,
+        )
+    }
+
+    fn with_world(world: WorldAccess<'w>, def: &CharacterDef) -> Option<Self> {
         if !(def.radius > 0.0
             && def.height >= 2.0 * def.radius
             && is_valid_position(def.position)
@@ -494,9 +559,13 @@ impl<'w> CharacterVirtual<'w> {
         // `overlaps_ignoring` only reads the buffer for the duration of the call.
         let blocked = unsafe {
             let proxy = ShapeProxy::new(Some(points.as_ptr()), 2, test_radius);
-            w.overlaps_ignoring(self.position, proxy, &self.filter, ignore_body, |shape_index| {
-                accepts_shape(w, &self.contact_filter, shape_index)
-            })
+            w.overlaps_ignoring(
+                self.position,
+                proxy,
+                &self.filter,
+                ignore_body,
+                |shape_index| accepts_shape(w, &self.contact_filter, shape_index),
+            )
         };
         if blocked == false {
             self.radius = new_radius;
@@ -578,7 +647,10 @@ impl<'w> CharacterVirtual<'w> {
             && length_squared(desired_horizontal) > 1.0e-10
         {
             let moved = self.position - start;
-            let achieved = dot(moved - dot(moved, self.up) * self.up, normalize(desired_horizontal));
+            let achieved = dot(
+                moved - dot(moved, self.up) * self.up,
+                normalize(desired_horizontal),
+            );
             let wanted = length(desired_horizontal);
             if achieved < 0.9 * wanted && self.touches_steep_contact(desired_horizontal) {
                 self.walk_stairs(start, desired_horizontal, achieved, dt);
@@ -602,8 +674,13 @@ impl<'w> CharacterVirtual<'w> {
         {
             let weight = dt * self.mass * dot(gravity, -self.ground_normal);
             if weight > 0.0 {
-                let (id, normal, point) = (self.ground_body_id, self.ground_normal, self.ground_position);
-                self.world.apply_body_linear_impulse(id, (-weight) * normal, point, true);
+                let (id, normal, point) = (
+                    self.ground_body_id,
+                    self.ground_normal,
+                    self.ground_position,
+                );
+                self.world
+                    .apply_body_linear_impulse(id, (-weight) * normal, point, true);
             }
         }
         self.follow_inner_body(dt);
@@ -626,40 +703,47 @@ impl<'w> CharacterVirtual<'w> {
         let w: &World = &*self.world;
         let up = self.up;
         let cos_max_slope = self.cos_max_slope;
-        w.collide_mover_ignoring(target, &mover, &self.filter, ignore_body, |shape_index, results| {
-            if !accepts_shape(w, &self.contact_filter, shape_index) {
-                return;
-            }
-            let shape = &w.shapes[shape_index as usize];
-            for result in results {
-                let mut plane = CollisionPlane::default();
-                plane.plane = result.plane;
-                plane.plane.offset -= extra;
-                plane.push_limit = f32::MAX;
-                plane.clip_velocity = true;
-
-                // A slope too steep to walk acts as a wall for a grounded character.
-                let n_up = dot(result.plane.normal, up);
-                if grounded_slopes && n_up > 0.0 && n_up < cos_max_slope {
-                    let horizontal = result.plane.normal - n_up * up;
-                    let len = length(horizontal);
-                    if len > 1.0e-4 {
-                        plane.plane.normal = (1.0 / len) * horizontal;
-                        plane.plane.offset /= len;
-                    }
+        w.collide_mover_ignoring(
+            target,
+            &mover,
+            &self.filter,
+            ignore_body,
+            |shape_index, results| {
+                if !accepts_shape(w, &self.contact_filter, shape_index) {
+                    return;
                 }
-                planes.push(plane);
+                let shape = &w.shapes[shape_index as usize];
+                for result in results {
+                    let mut plane = CollisionPlane::default();
+                    plane.plane = result.plane;
+                    plane.plane.offset -= extra;
+                    plane.push_limit = f32::MAX;
+                    plane.clip_velocity = true;
 
-                let mut contact = CharacterContact::default();
-                contact.shape_id = ShapeID::new(shape.id + 1, w.world_id, shape.generation);
-                contact.body_id = w.make_body_id(shape.body_id);
-                contact.position = offset_pos(target, result.point);
-                contact.normal = result.plane.normal;
-                contact.depth = result.plane.offset - extra;
-                contact.user_material_id = shape.material(result.material_index).user_material_id;
-                plane_contacts.push(contact);
-            }
-        });
+                    // A slope too steep to walk acts as a wall for a grounded character.
+                    let n_up = dot(result.plane.normal, up);
+                    if grounded_slopes && n_up > 0.0 && n_up < cos_max_slope {
+                        let horizontal = result.plane.normal - n_up * up;
+                        let len = length(horizontal);
+                        if len > 1.0e-4 {
+                            plane.plane.normal = (1.0 / len) * horizontal;
+                            plane.plane.offset /= len;
+                        }
+                    }
+                    planes.push(plane);
+
+                    let mut contact = CharacterContact::default();
+                    contact.shape_id = ShapeID::new(shape.id + 1, w.world_id, shape.generation);
+                    contact.body_id = w.make_body_id(shape.body_id);
+                    contact.position = offset_pos(target, result.point);
+                    contact.normal = result.plane.normal;
+                    contact.depth = result.plane.offset - extra;
+                    contact.user_material_id =
+                        shape.material(result.material_index).user_material_id;
+                    plane_contacts.push(contact);
+                }
+            },
+        );
     }
 
     /// Cast the capsule. Returns the free fraction of `translation`, backed off by the padding.
@@ -725,7 +809,8 @@ impl<'w> CharacterVirtual<'w> {
     fn refresh_contacts(&mut self) {
         self.gather_planes(self.position, self.predictive_contact_distance, false);
         // Velocity clipping uses only touching planes.
-        self.planes.retain(|plane| !(plane.plane.offset < -b3::linear_slop()));
+        self.planes
+            .retain(|plane| !(plane.plane.offset < -b3::linear_slop()));
         self.contacts = self.plane_contacts.clone();
 
         let mut best_up: f32 = -1.0;
@@ -855,8 +940,10 @@ impl<'w> CharacterVirtual<'w> {
     fn stick_to_floor(&mut self) {
         let (fraction, hit) = self.cast_fraction(self.position, (-self.step_down_height) * self.up);
         if hit.hit && self.is_slope_walkable(hit.normal) {
-            self.position =
-                offset_pos(self.position, ((-fraction) * self.step_down_height) * self.up);
+            self.position = offset_pos(
+                self.position,
+                ((-fraction) * self.step_down_height) * self.up,
+            );
             self.refresh_contacts();
         }
     }
@@ -896,7 +983,8 @@ impl<'w> CharacterVirtual<'w> {
     }
 
     fn follow_inner_body(&mut self, dt: f32) {
-        if self.inner_body_id.is_null() == false && self.world_ref().body_is_valid(self.inner_body_id)
+        if self.inner_body_id.is_null() == false
+            && self.world_ref().body_is_valid(self.inner_body_id)
         {
             // Swift defaulted `wake` to true in `setBodyTargetTransform`; passed explicitly here.
             let (id, target) = (

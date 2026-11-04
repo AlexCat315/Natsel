@@ -1134,6 +1134,15 @@ pub struct World {
     pub(crate) in_use: bool,
 }
 
+// SAFETY: World exclusively owns its heap allocations, traversal stacks, payload
+// pointers and solver scratch; moving it preserves their addresses. Solver jobs
+// finish before step returns, and views into fields are rebuilt before reuse.
+// Stored callbacks are Send + Sync; user_data pointers are opaque handles never
+// dereferenced by the engine. Moving ownership therefore grants no concurrent
+// access. World deliberately remains !Sync: raw scratch and query internals do
+// not provide the synchronization needed for arbitrary shared access.
+unsafe impl Send for World {}
+
 impl Drop for World {
     fn drop(&mut self) {
         // SAFETY: both pointers were allocated in `World::new` with capacity `TREE_STACK_SIZE`

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Added
+
+- `CharacterVirtual::from_raw_world` supports characters stored alongside a caller-owned,
+  stable world with serialized access; `world_mut()` exposes the world between updates.
+  World references are scoped to each access, and the existing safe constructor keeps its
+  exclusive lifetime borrow.
+- `World` implements `Send` for ownership transfer between threads; it remains non-`Sync`.
+
 ### Changed
 
 - Full Swift → Rust 2024 migration of the engine (`natsel` crate): every file under
