@@ -16,6 +16,16 @@ migration is complete and the Swift sources have been removed.
 
 ## Progress
 
+2026-11-04 integration update, authorized by the Diffuse user: `World` now implements `Send`
+(not `Sync`); `CharacterVirtual::from_raw_world` and `world_mut()` support an owner storing
+several characters alongside a stable world. The character uses a private `NonNull<World>`
+handle and borrows the world only for each access. The safe `new(&mut World, def)` constructor
+retains its exclusive lifetime restriction. The raw constructor documents world lifetime,
+pointer validity and serialized-access obligations. No algorithms or platform branches were
+changed. This update received formatting and source inspection only; compilation, tests and
+hash parity were not rerun under the standing Diffuse migration constraint. The historical
+verification counts below do not validate this update.
+
 Updated as batches land. "Lines" are source lines.
 
 | Module | Swift files | Swift lines | Rust files | Status |
