@@ -676,15 +676,143 @@ impl SoftBodyRecord {
         }
 
         // Integrate.
+        let h_inv_mass: &[f32] = &self.inv_masses;
+        let damping_h = damping;
+        let max_velocity = self.max_linear_velocity;
+        #[cfg(target_arch = "aarch64")]
+        {
+            let g0 = unsafe { std::arch::aarch64::vdupq_n_f32(g.x) };
+            let g1 = unsafe { std::arch::aarch64::vdupq_n_f32(g.y) };
+            let g2 = unsafe { std::arch::aarch64::vdupq_n_f32(g.z) };
+            let d = unsafe { std::arch::aarch64::vdupq_n_f32(damping_h) };
+            let hv = unsafe { std::arch::aarch64::vdupq_n_f32(h) };
+            let m2 = unsafe { std::arch::aarch64::vdupq_n_f32(max_speed_squared) };
+            let mv = unsafe { std::arch::aarch64::vdupq_n_f32(max_velocity) };
+            let mut i = 0;
+            while n >= 16 && i + 4 <= n {
+                for k in 0..4 {
+                    x0s[i + k] = xs[i + k];
+                }
+                let w = unsafe {
+                    std::arch::aarch64::vld1q_f32(h_inv_mass.as_ptr().add(i))
+                };
+                let active = unsafe {
+                    std::arch::aarch64::vcgtq_f32(w, std::arch::aarch64::vdupq_n_f32(0.0))
+                };
+                let packed_v = unsafe {
+                    std::arch::aarch64::vld3q_f32(vs.as_ptr().add(i) as *const f32)
+                };
+                let vx = packed_v.0;
+                let vy = packed_v.1;
+                let vz = packed_v.2;
+                let packed_p = unsafe {
+                    std::arch::aarch64::vld3q_f32(xs.as_ptr().add(i) as *const f32)
+                };
+                let px = packed_p.0;
+                let py = packed_p.1;
+                let pz = packed_p.2;
+                // vi = damping * (v + g*h)
+                let mut nx = unsafe {
+                    std::arch::aarch64::vmulq_f32(
+                        d,
+                        std::arch::aarch64::vaddq_f32(vx, std::arch::aarch64::vmulq_f32(g0, hv)),
+                    )
+                };
+                let mut ny = unsafe {
+                    std::arch::aarch64::vmulq_f32(
+                        d,
+                        std::arch::aarch64::vaddq_f32(vy, std::arch::aarch64::vmulq_f32(g1, hv)),
+                    )
+                };
+                let mut nz = unsafe {
+                    std::arch::aarch64::vmulq_f32(
+                        d,
+                        std::arch::aarch64::vaddq_f32(vz, std::arch::aarch64::vmulq_f32(g2, hv)),
+                    )
+                };
+                let s2 = unsafe {
+                    std::arch::aarch64::vaddq_f32(
+                        std::arch::aarch64::vaddq_f32(
+                            std::arch::aarch64::vmulq_f32(nx, nx),
+                            std::arch::aarch64::vmulq_f32(ny, ny),
+                        ),
+                        std::arch::aarch64::vmulq_f32(nz, nz),
+                    )
+                };
+                let fast = unsafe { std::arch::aarch64::vcgtq_f32(s2, m2) };
+                let scale = unsafe {
+                    std::arch::aarch64::vdivq_f32(
+                        mv,
+                        std::arch::aarch64::vsqrtq_f32(s2),
+                    )
+                };
+                let mul = unsafe {
+                    std::arch::aarch64::vbslq_f32(
+                        fast,
+                        scale,
+                        std::arch::aarch64::vdupq_n_f32(1.0),
+                    )
+                };
+                nx = unsafe { std::arch::aarch64::vmulq_f32(nx, mul) };
+                ny = unsafe { std::arch::aarch64::vmulq_f32(ny, mul) };
+                nz = unsafe { std::arch::aarch64::vmulq_f32(nz, mul) };
+                nx = unsafe { std::arch::aarch64::vbslq_f32(active, nx, vx) };
+                ny = unsafe { std::arch::aarch64::vbslq_f32(active, ny, vy) };
+                nz = unsafe { std::arch::aarch64::vbslq_f32(active, nz, vz) };
+                let next_pos_x = unsafe {
+                    std::arch::aarch64::vaddq_f32(px, std::arch::aarch64::vmulq_f32(hv, nx))
+                };
+                let next_pos_y = unsafe {
+                    std::arch::aarch64::vaddq_f32(py, std::arch::aarch64::vmulq_f32(hv, ny))
+                };
+                let next_pos_z = unsafe {
+                    std::arch::aarch64::vaddq_f32(pz, std::arch::aarch64::vmulq_f32(hv, nz))
+                };
+                let next_pos_x = unsafe {
+                    std::arch::aarch64::vbslq_f32(active, next_pos_x, px)
+                };
+                let next_pos_y = unsafe {
+                    std::arch::aarch64::vbslq_f32(active, next_pos_y, py)
+                };
+                let next_pos_z = unsafe {
+                    std::arch::aarch64::vbslq_f32(active, next_pos_z, pz)
+                };
+                unsafe {
+                    std::arch::aarch64::vst3q_f32(
+                        vs.as_mut_ptr().add(i) as *mut f32,
+                        std::arch::aarch64::float32x4x3_t(nx, ny, nz),
+                    );
+                    std::arch::aarch64::vst3q_f32(
+                        xs.as_mut_ptr().add(i) as *mut f32,
+                        std::arch::aarch64::float32x4x3_t(next_pos_x, next_pos_y, next_pos_z),
+                    );
+                }
+                i += 4;
+            }
+            for i in i..n {
+                x0s[i] = xs[i];
+                if !(self.inv_masses[i] > 0.0) {
+                    continue;
+                }
+                let mut vi = damping_h * mul_add(vs[i], h, g);
+                let s2 = length_squared(vi);
+                if s2 > max_speed_squared {
+                    vi = (max_velocity / s2.sqrt()) * vi;
+                }
+                vs[i] = vi;
+                xs[i] = mul_add(xs[i], h, vi);
+            }
+        }
+        #[cfg(not(target_arch = "aarch64"))]
         for i in 0..n {
             x0s[i] = xs[i];
             if !(self.inv_masses[i] > 0.0) {
                 continue;
             }
-            let mut vi = damping * mul_add(vs[i], h, g);
+            let mut vi = damping_h * mul_add(vs[i], h, g);
             let s2 = length_squared(vi);
             if s2 > max_speed_squared {
-                vi = (self.max_linear_velocity / s2.sqrt()) * vi;
+                vi = (max_velocity / s2.sqrt()) * vi;
             }
             vs[i] = vi;
             xs[i] = mul_add(xs[i], h, vi);

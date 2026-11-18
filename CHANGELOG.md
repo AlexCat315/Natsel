@@ -21,6 +21,11 @@
   targets keep the scalar per-lane arrays. The dihedral-heavy `cloth` benchmark is ~24%
   faster on a single worker, with `soft_cubes` slightly faster and `cloth_stack` within
   noise; all 18 reference state hashes and the 530-test suite match the baseline.
+- The `solve_substep` vertex integrator (damping, velocity clamping, position integration)
+  lowers to four-lane AArch64 NEON with structured `vld3`/`vst3` loads and stores; bodies
+  below 16 vertices and all non-AArch64 targets retain the scalar loop. `cloth` is ~3%
+  faster on a single worker, with the remaining measured soft-body scenes within paired
+  noise; all 18 reference state hashes and the 530-test suite match the baseline.
 - Full Swift → Rust 2024 migration of the engine (`natsel` crate): every file under
   `Sources/Natsel/` has a Rust counterpart, and the benchmarks/test harness moved to
   `src/bin/benchmarks.rs` and the in-crate test suite.
