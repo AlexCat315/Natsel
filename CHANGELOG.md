@@ -12,6 +12,10 @@
 
 ### Changed
 
+- The hot-path segment/line closest-point helpers (`segment_distance`, `line_distance`,
+  `point_to_segment_distance`) are now `#[inline(always)]`, matching the rest of the math
+  hot loop; soft-body edge detection (`cloth_stack`, `soft_cubes`) is ~2% faster on a
+  single worker with identical state hashes.
 - Full Swift → Rust 2024 migration of the engine (`natsel` crate): every file under
   `Sources/Natsel/` has a Rust counterpart, and the benchmarks/test harness moved to
   `src/bin/benchmarks.rs` and the in-crate test suite.

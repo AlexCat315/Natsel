@@ -1065,6 +1065,7 @@ pub fn compute_quat_between_unit_vectors(v1: Vec3, v2: Vec3) -> Quat {
 }
 
 /// Compute the closest points on two infinite lines.
+#[inline(always)]
 pub fn line_distance(p1: Vec3, d1: Vec3, p2: Vec3, d2: Vec3) -> SegmentDistanceResult {
     let mut result = SegmentDistanceResult::default();
 
@@ -1100,6 +1101,7 @@ pub fn line_distance(p1: Vec3, d1: Vec3, p2: Vec3, d2: Vec3) -> SegmentDistanceR
 }
 
 /// Compute the closest points on two line segments.
+#[inline(always)]
 pub fn segment_distance(p1: Vec3, q1: Vec3, p2: Vec3, q2: Vec3) -> SegmentDistanceResult {
     let mut result = SegmentDistanceResult::default();
 
@@ -1163,6 +1165,7 @@ pub fn segment_distance(p1: Vec3, q1: Vec3, p2: Vec3, q2: Vec3) -> SegmentDistan
 }
 
 /// Compute the closest point on the segment `a-b` to the target `q`.
+#[inline(always)]
 pub fn point_to_segment_distance(a: Vec3, b: Vec3, q: Vec3) -> Vec3 {
     let ab = b - a;
     let aq = q - a;
