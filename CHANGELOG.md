@@ -16,6 +16,11 @@
   `point_to_segment_distance`) are now `#[inline(always)]`, matching the rest of the math
   hot loop; soft-body edge detection (`cloth_stack`, `soft_cubes`) is ~2% faster on a
   single worker with identical state hashes.
+- The four-wide constraint batch lane types (`FloatX4`, `BoolX4`) lower to AArch64 NEON
+  `float32x4_t` / `uint32x4_t` intrinsics in the edge/bend/volume batch solvers; other
+  targets keep the scalar per-lane arrays. The dihedral-heavy `cloth` benchmark is ~24%
+  faster on a single worker, with `soft_cubes` slightly faster and `cloth_stack` within
+  noise; all 18 reference state hashes and the 530-test suite match the baseline.
 - Full Swift → Rust 2024 migration of the engine (`natsel` crate): every file under
   `Sources/Natsel/` has a Rust counterpart, and the benchmarks/test harness moved to
   `src/bin/benchmarks.rs` and the in-crate test suite.

@@ -34,15 +34,100 @@ use crate::base::constants as b3;
 use crate::math::types::Vec3;
 use crate::soft_body::soft_body_runtime::SoftBodyRecord;
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::*;
+
 // MARK: - Lane value types
 
-/// Swift's `typealias FloatX4 = SIMD4<Float>`.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// Swift's `typealias FloatX4 = SIMD4<Float>`. On AArch64 the four lanes ride a NEON
+/// `float32x4_t`; other targets keep the scalar lane array.
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct FloatX4 {
+    #[cfg(target_arch = "aarch64")]
+    v: float32x4_t,
+    #[cfg(not(target_arch = "aarch64"))]
     pub lanes: [f32; 4],
 }
 
+#[cfg(target_arch = "aarch64")]
+impl Default for FloatX4 {
+    #[inline(always)]
+    fn default() -> Self {
+        Self::splat(0.0)
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl PartialEq for FloatX4 {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.lanes() == other.lanes()
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl FloatX4 {
+    #[inline(always)]
+    pub fn new(a: f32, b: f32, c: f32, d: f32) -> Self {
+        Self { v: unsafe { [a, b, c, d].as_ptr().cast::<float32x4_t>().read_unaligned() } }
+    }
+
+    #[inline(always)]
+    pub fn splat(s: f32) -> Self {
+        Self { v: unsafe { vdupq_n_f32(s) } }
+    }
+
+    #[inline(always)]
+    pub fn square_root(self) -> FloatX4 {
+        Self { v: unsafe { vsqrtq_f32(self.v) } }
+    }
+
+    #[inline(always)]
+    pub fn gt(self, b: FloatX4) -> BoolX4 {
+        BoolX4 { m: unsafe { vcgtq_f32(self.v, b.v) } }
+    }
+
+    #[inline(always)]
+    pub fn gt_splat(self, s: f32) -> BoolX4 {
+        self.gt(FloatX4::splat(s))
+    }
+
+    #[inline(always)]
+    pub fn lt(self, b: FloatX4) -> BoolX4 {
+        BoolX4 { m: unsafe { vcltq_f32(self.v, b.v) } }
+    }
+
+    #[inline(always)]
+    pub fn lt_splat(self, s: f32) -> BoolX4 {
+        self.lt(FloatX4::splat(s))
+    }
+
+    #[inline(always)]
+    pub fn eq(self, b: FloatX4) -> BoolX4 {
+        BoolX4 { m: unsafe { vceqq_f32(self.v, b.v) } }
+    }
+
+    #[inline(always)]
+    pub fn eq_splat(self, s: f32) -> BoolX4 {
+        self.eq(FloatX4::splat(s))
+    }
+
+    #[inline(always)]
+    pub fn replacing(self, with: impl Into<FloatX4>, mask: BoolX4) -> FloatX4 {
+        let with = with.into();
+        Self { v: unsafe { vbslq_f32(mask.m, with.v, self.v) } }
+    }
+
+    #[inline(always)]
+    fn lanes(self) -> [f32; 4] {
+        let mut out = [0.0f32; 4];
+        unsafe { vst1q_f32(out.as_mut_ptr(), self.v) };
+        out
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl FloatX4 {
     #[inline(always)]
     pub fn new(a: f32, b: f32, c: f32, d: f32) -> Self {
@@ -146,6 +231,7 @@ impl From<f32> for FloatX4 {
     }
 }
 
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::Index<usize> for FloatX4 {
     type Output = f32;
     #[inline(always)]
@@ -154,6 +240,7 @@ impl std::ops::Index<usize> for FloatX4 {
     }
 }
 
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::IndexMut<usize> for FloatX4 {
     #[inline(always)]
     fn index_mut(&mut self, k: usize) -> &mut f32 {
@@ -161,7 +248,27 @@ impl std::ops::IndexMut<usize> for FloatX4 {
     }
 }
 
+#[cfg(target_arch = "aarch64")]
+impl FloatX4 {
+    #[inline(always)]
+    pub fn set_lane(&mut self, k: usize, value: f32) {
+        let mut lanes = self.lanes();
+        lanes[k] = value;
+        self.v = unsafe { [lanes[0], lanes[1], lanes[2], lanes[3]].as_ptr().cast::<float32x4_t>().read_unaligned() };
+    }
+}
+
 /// Swift's per-lane `+` (vector-vector).
+#[cfg(target_arch = "aarch64")]
+impl std::ops::Add for FloatX4 {
+    type Output = FloatX4;
+    #[inline(always)]
+    fn add(self, b: FloatX4) -> FloatX4 {
+        FloatX4 { v: unsafe { vaddq_f32(self.v, b.v) } }
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::Add for FloatX4 {
     type Output = FloatX4;
     #[inline(always)]
@@ -196,6 +303,16 @@ impl std::ops::Add<FloatX4> for f32 {
 }
 
 /// Swift's per-lane `-` (vector-vector).
+#[cfg(target_arch = "aarch64")]
+impl std::ops::Sub for FloatX4 {
+    type Output = FloatX4;
+    #[inline(always)]
+    fn sub(self, b: FloatX4) -> FloatX4 {
+        FloatX4 { v: unsafe { vsubq_f32(self.v, b.v) } }
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::Sub for FloatX4 {
     type Output = FloatX4;
     #[inline(always)]
@@ -230,6 +347,16 @@ impl std::ops::Sub<FloatX4> for f32 {
 }
 
 /// Swift's per-lane `*` (vector-vector).
+#[cfg(target_arch = "aarch64")]
+impl std::ops::Mul for FloatX4 {
+    type Output = FloatX4;
+    #[inline(always)]
+    fn mul(self, b: FloatX4) -> FloatX4 {
+        FloatX4 { v: unsafe { vmulq_f32(self.v, b.v) } }
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::Mul for FloatX4 {
     type Output = FloatX4;
     #[inline(always)]
@@ -264,6 +391,16 @@ impl std::ops::Mul<FloatX4> for f32 {
 }
 
 /// Swift's per-lane `/` (vector-vector).
+#[cfg(target_arch = "aarch64")]
+impl std::ops::Div for FloatX4 {
+    type Output = FloatX4;
+    #[inline(always)]
+    fn div(self, b: FloatX4) -> FloatX4 {
+        FloatX4 { v: unsafe { vdivq_f32(self.v, b.v) } }
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::Div for FloatX4 {
     type Output = FloatX4;
     #[inline(always)]
@@ -298,6 +435,16 @@ impl std::ops::Div<FloatX4> for f32 {
 }
 
 /// Swift's per-lane prefix `-`.
+#[cfg(target_arch = "aarch64")]
+impl std::ops::Neg for FloatX4 {
+    type Output = FloatX4;
+    #[inline(always)]
+    fn neg(self) -> FloatX4 {
+        FloatX4 { v: unsafe { vnegq_f32(self.v) } }
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::Neg for FloatX4 {
     type Output = FloatX4;
     #[inline(always)]
@@ -309,13 +456,55 @@ impl std::ops::Neg for FloatX4 {
 }
 
 /// Swift's `SIMD4<Bool>` produced by the `.>`, `.<`, `.==` operators and combined with `.&` / `.!`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 #[repr(C)]
 pub struct BoolX4 {
+    #[cfg(target_arch = "aarch64")]
+    m: uint32x4_t,
+    #[cfg(not(target_arch = "aarch64"))]
     pub lanes: [bool; 4],
 }
 
+#[cfg(target_arch = "aarch64")]
+impl Default for BoolX4 {
+    #[inline(always)]
+    fn default() -> Self {
+        Self { m: unsafe { vdupq_n_u32(0) } }
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl PartialEq for BoolX4 {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.lanes() == other.lanes()
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+impl Eq for BoolX4 {}
+
+#[cfg(target_arch = "aarch64")]
+impl BoolX4 {
+    #[inline(always)]
+    fn lanes(&self) -> [bool; 4] {
+        let mut out = [0u32; 4];
+        unsafe { vst1q_u32(out.as_mut_ptr(), self.m) };
+        [out[0] != 0, out[1] != 0, out[2] != 0, out[3] != 0]
+    }
+}
+
 /// Swift's `a .& b`.
+#[cfg(target_arch = "aarch64")]
+impl std::ops::BitAnd for BoolX4 {
+    type Output = BoolX4;
+    #[inline(always)]
+    fn bitand(self, b: BoolX4) -> BoolX4 {
+        BoolX4 { m: unsafe { vandq_u32(self.m, b.m) } }
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::BitAnd for BoolX4 {
     type Output = BoolX4;
     #[inline(always)]
@@ -332,6 +521,16 @@ impl std::ops::BitAnd for BoolX4 {
 }
 
 /// Swift's prefix `.!a`.
+#[cfg(target_arch = "aarch64")]
+impl std::ops::Not for BoolX4 {
+    type Output = BoolX4;
+    #[inline(always)]
+    fn not(self) -> BoolX4 {
+        BoolX4 { m: unsafe { vmvnq_u32(self.m) } }
+    }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 impl std::ops::Not for BoolX4 {
     type Output = BoolX4;
     #[inline(always)]
@@ -456,8 +655,8 @@ impl SoftBodyRecord {
             for (k, e) in lanes.iter().enumerate() {
                 batch.v0[k] = edges[*e].vertex.x as i32;
                 batch.v1[k] = edges[*e].vertex.y as i32;
-                batch.rest_length[k] = edges[*e].rest_length;
-                batch.compliance[k] = edges[*e].compliance;
+                batch.rest_length.set_lane(k, edges[*e].rest_length);
+                batch.compliance.set_lane(k, edges[*e].compliance);
             }
             batch
         })
@@ -486,8 +685,8 @@ impl SoftBodyRecord {
                 batch.v1[k] = v.y as i32;
                 batch.v2[k] = v.z as i32;
                 batch.v3[k] = v.w as i32;
-                batch.initial_angle[k] = bends[*b].initial_angle;
-                batch.compliance[k] = bends[*b].compliance;
+                batch.initial_angle.set_lane(k, bends[*b].initial_angle);
+                batch.compliance.set_lane(k, bends[*b].compliance);
             }
             batch
         })
@@ -516,8 +715,8 @@ impl SoftBodyRecord {
                 batch.v1[k] = v.y as i32;
                 batch.v2[k] = v.z as i32;
                 batch.v3[k] = v.w as i32;
-                batch.six_rest_volume[k] = volumes[*t].six_rest_volume;
-                batch.compliance[k] = volumes[*t].compliance;
+                batch.six_rest_volume.set_lane(k, volumes[*t].six_rest_volume);
+                batch.compliance.set_lane(k, volumes[*t].compliance);
             }
             batch
         })
@@ -558,16 +757,19 @@ impl Vec3X4 {
 
     #[inline(always)]
     pub fn scatter(self, p: &mut [Vec3], index: [i32; 4], lanes: i32) {
+        let xs = self.x.lanes();
+        let ys = self.y.lanes();
+        let zs = self.z.lanes();
         if lanes == 4 {
             // Full batch: straight line stores.
-            p[index[0] as usize] = Vec3::new(self.x[0], self.y[0], self.z[0]);
-            p[index[1] as usize] = Vec3::new(self.x[1], self.y[1], self.z[1]);
-            p[index[2] as usize] = Vec3::new(self.x[2], self.y[2], self.z[2]);
-            p[index[3] as usize] = Vec3::new(self.x[3], self.y[3], self.z[3]);
+            p[index[0] as usize] = Vec3::new(xs[0], ys[0], zs[0]);
+            p[index[1] as usize] = Vec3::new(xs[1], ys[1], zs[1]);
+            p[index[2] as usize] = Vec3::new(xs[2], ys[2], zs[2]);
+            p[index[3] as usize] = Vec3::new(xs[3], ys[3], zs[3]);
             return;
         }
         for k in 0..lanes as usize {
-            p[index[k] as usize] = Vec3::new(self.x[k], self.y[k], self.z[k]);
+            p[index[k] as usize] = Vec3::new(xs[k], ys[k], zs[k]);
         }
     }
 }
@@ -638,6 +840,13 @@ fn abs_x4(a: FloatX4) -> FloatX4 {
 }
 
 /// Swift's stdlib SIMD `pointwiseMax(_:_:)`, lane-wise `max`.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub fn pointwise_max(a: FloatX4, b: FloatX4) -> FloatX4 {
+    FloatX4 { v: unsafe { vmaxq_f32(a.v, b.v) } }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 pub fn pointwise_max(a: FloatX4, b: FloatX4) -> FloatX4 {
     FloatX4 {
@@ -651,6 +860,13 @@ pub fn pointwise_max(a: FloatX4, b: FloatX4) -> FloatX4 {
 }
 
 /// Swift's stdlib SIMD `pointwiseMin(_:_:)`, lane-wise `min`.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+pub fn pointwise_min(a: FloatX4, b: FloatX4) -> FloatX4 {
+    FloatX4 { v: unsafe { vminq_f32(a.v, b.v) } }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
 #[inline(always)]
 pub fn pointwise_min(a: FloatX4, b: FloatX4) -> FloatX4 {
     FloatX4 {
